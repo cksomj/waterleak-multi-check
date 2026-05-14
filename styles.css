@@ -637,6 +637,20 @@ canvas {
   padding: 5px 9px;
 }
 
+.map-panel {
+  display: grid;
+  gap: 8px;
+}
+
+.map-canvas {
+  background: #e9f1f3;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  height: 320px;
+  overflow: hidden;
+  width: 100%;
+}
+
 .storage-row {
   align-items: center;
   display: flex;
