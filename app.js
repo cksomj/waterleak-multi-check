@@ -25,8 +25,7 @@ const defaultState = {
 };
 
 let state = loadState();
-let mediaRecorder = null;
-let recordedChunks = [];
+let wavRecorder = null;
 let audioContext = null;
 let analyser = null;
 let animationFrame = null;
@@ -777,27 +776,15 @@ async function toggleRecording(target = { kind: "situation" }) {
     notify("마이크가 꺼져 있습니다. 마이크 아이콘을 눌러 켜세요.");
     return;
   }
-  if (mediaRecorder && mediaRecorder.state === "recording") {
-    mediaRecorder.stop();
+  if (wavRecorder?.recording) {
+    stopWavRecording();
     notify("녹음을 종료했습니다.");
     return;
   }
   try {
     const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-    recordedChunks = [];
     recordingTarget = target;
-    const options = getRecorderOptions();
-    mediaRecorder = new MediaRecorder(stream, options.mediaRecorderOptions);
-    mediaRecorder.ondataavailable = (event) => recordedChunks.push(event.data);
-    mediaRecorder.onstop = () => {
-      state.micListening = false;
-      const savedName = saveRecordingFile(recordedChunks, options.mimeType, options.extension);
-      appendTargetText(recordingTarget || { kind: "situation" }, `녹음파일 저장: ${savedName}`);
-      recordingTarget = null;
-      stream.getTracks().forEach((track) => track.stop());
-      render();
-    };
-    mediaRecorder.start();
+    await startWavRecording(stream);
     state.micListening = true;
     saveState();
     render();
@@ -807,21 +794,87 @@ async function toggleRecording(target = { kind: "situation" }) {
   }
 }
 
-function getRecorderOptions() {
-  const candidates = [
-    { mimeType: "audio/mpeg", extension: "mp3" },
-    { mimeType: "audio/mp3", extension: "mp3" },
-    { mimeType: "audio/webm;codecs=opus", extension: "webm" },
-    { mimeType: "audio/webm", extension: "webm" },
-    { mimeType: "audio/ogg;codecs=opus", extension: "ogg" },
-  ];
-  const supported = candidates.find((item) => window.MediaRecorder?.isTypeSupported?.(item.mimeType));
-  if (!supported) return { mimeType: "", extension: "webm", mediaRecorderOptions: undefined };
-  return { ...supported, mediaRecorderOptions: { mimeType: supported.mimeType } };
+async function startWavRecording(stream) {
+  const context = new AudioContext();
+  const source = context.createMediaStreamSource(stream);
+  const processor = context.createScriptProcessor(4096, 1, 1);
+  const samples = [];
+  processor.onaudioprocess = (event) => {
+    if (!wavRecorder?.recording) return;
+    samples.push(new Float32Array(event.inputBuffer.getChannelData(0)));
+  };
+  source.connect(processor);
+  processor.connect(context.destination);
+  wavRecorder = {
+    context,
+    source,
+    processor,
+    samples,
+    sampleRate: context.sampleRate,
+    stream,
+    recording: true,
+  };
 }
 
-function saveRecordingFile(chunks, mimeType, extension) {
-  const blob = new Blob(chunks, { type: mimeType || "audio/webm" });
+async function stopWavRecording() {
+  if (!wavRecorder) return;
+  const recorder = wavRecorder;
+  recorder.recording = false;
+  recorder.processor.disconnect();
+  recorder.source.disconnect();
+  recorder.stream.getTracks().forEach((track) => track.stop());
+  await recorder.context.close();
+  const blob = createWavBlob(recorder.samples, recorder.sampleRate);
+  const savedName = saveBlobFile(blob, "wav");
+  state.micListening = false;
+  appendTargetText(recordingTarget || { kind: "situation" }, `녹음파일 저장: ${savedName}`);
+  recordingTarget = null;
+  wavRecorder = null;
+  saveState();
+  render();
+}
+
+function createWavBlob(buffers, sampleRate) {
+  const totalLength = buffers.reduce((sum, buffer) => sum + buffer.length, 0);
+  const pcm = new Int16Array(totalLength);
+  let offset = 0;
+  buffers.forEach((buffer) => {
+    for (let i = 0; i < buffer.length; i += 1) {
+      const sample = Math.max(-1, Math.min(1, buffer[i]));
+      pcm[offset] = sample < 0 ? sample * 0x8000 : sample * 0x7fff;
+      offset += 1;
+    }
+  });
+  const wav = new ArrayBuffer(44 + pcm.length * 2);
+  const view = new DataView(wav);
+  writeAscii(view, 0, "RIFF");
+  view.setUint32(4, 36 + pcm.length * 2, true);
+  writeAscii(view, 8, "WAVE");
+  writeAscii(view, 12, "fmt ");
+  view.setUint32(16, 16, true);
+  view.setUint16(20, 1, true);
+  view.setUint16(22, 1, true);
+  view.setUint32(24, sampleRate, true);
+  view.setUint32(28, sampleRate * 2, true);
+  view.setUint16(32, 2, true);
+  view.setUint16(34, 16, true);
+  writeAscii(view, 36, "data");
+  view.setUint32(40, pcm.length * 2, true);
+  let dataOffset = 44;
+  for (let i = 0; i < pcm.length; i += 1) {
+    view.setInt16(dataOffset, pcm[i], true);
+    dataOffset += 2;
+  }
+  return new Blob([view], { type: "audio/wav" });
+}
+
+function writeAscii(view, offset, text) {
+  for (let i = 0; i < text.length; i += 1) {
+    view.setUint8(offset + i, text.charCodeAt(i));
+  }
+}
+
+function saveBlobFile(blob, extension) {
   const date = new Date();
   const stamp = `${date.getFullYear()}${pad2(date.getMonth() + 1)}${pad2(date.getDate())}-${pad2(date.getHours())}${pad2(date.getMinutes())}${pad2(date.getSeconds())}`;
   const filename = `waterleak-recording-${stamp}.${extension}`;
