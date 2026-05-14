@@ -414,10 +414,8 @@ function renderEstimate(job) {
             <th>대표/담당</th><td>${inlineField("vendorOwner", job.vendorOwner || PROVIDER.owner, "담당자")}</td>
           </tr>
           <tr>
-            <th>공급자 주소</th><td colspan="3">${inlineField("vendorAddress", job.vendorAddress || PROVIDER.address, "공급자 주소")}</td>
-          </tr>
-          <tr>
-            <th>공사명</th><td colspan="3">${inlineField("workSummary", job.workSummary || "누수 진단 및 보수 공사", "공사명")}</td>
+            <th>공사명</th><td>${inlineField("workSummary", job.workSummary || "누수 진단 및 보수 공사", "공사명")}</td>
+            <th>공급자 주소</th><td>${inlineField("vendorAddress", job.vendorAddress || PROVIDER.address, "공급자 주소")}</td>
           </tr>
         </tbody>
       </table>
