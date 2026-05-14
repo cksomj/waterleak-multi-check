@@ -1,5 +1,11 @@
 const STORAGE_KEY = "waterleak_multi_check_v1";
 const KAKAO_JS_KEY = "7fc926e3eef2a8fefa95def2a59ff5ed";
+const PROVIDER = {
+  name: "최씨누수탐지종합설비",
+  bizNo: "381-26-00781",
+  address: "속초시 조양로 22번길7",
+  owner: "최규석",
+};
 
 const basePlumbingChecks = [
   ["toilet_parts", "화장실 변기부속 누수검사", "밸브를 잠그고 열어 계량기 움직임을 확인합니다. 물이 없으면 보충 후 재검사합니다."],
@@ -312,6 +318,7 @@ function renderReport(job) {
       </div>
       <div class="toolbar">
         <button class="btn primary" data-action="generate-report">소견서 만들기</button>
+        <button class="btn ghost" data-action="download-report-pdf">소견서 PDF 다운로드</button>
         <button class="btn ghost" data-action="clear-report">새로만들기</button>
       </div>
     </div>
@@ -379,7 +386,7 @@ function renderEstimate(job) {
       <div class="toolbar">
         <button class="btn ghost" data-action="add-estimate">항목 추가</button>
         <button class="btn primary" data-action="save">저장 및 수정</button>
-        <button class="btn ghost" data-action="print">PDF/출력 미리보기</button>
+        <button class="btn ghost" data-action="download-estimate-pdf">견적서 PDF 다운로드</button>
       </div>
     </div>
     <section class="print-area estimate-form">
@@ -394,15 +401,18 @@ function renderEstimate(job) {
           <tr><th colspan="2">수신</th><th colspan="2">공급자</th></tr>
           <tr>
             <th>고객명</th><td>${inlineField("customerName", job.customerName || "", "고객명")}</td>
-            <th>상호</th><td>${inlineField("vendorName", job.vendorName || "누수진단 업체", "상호")}</td>
+            <th>상호</th><td>${inlineField("vendorName", job.vendorName || PROVIDER.name, "상호")}</td>
           </tr>
           <tr>
             <th>주소</th><td>${inlineField("address", job.address || "", "주소")}</td>
-            <th>사업자번호</th><td>${inlineField("vendorBizNo", job.vendorBizNo || "", "000-00-00000")}</td>
+            <th>사업자번호</th><td>${inlineField("vendorBizNo", job.vendorBizNo || PROVIDER.bizNo, "000-00-00000")}</td>
           </tr>
           <tr>
             <th>전화번호</th><td>${inlineField("phone", job.phone || "", "전화번호")}</td>
-            <th>대표/담당</th><td>${inlineField("vendorOwner", job.vendorOwner || "", "담당자")}</td>
+            <th>대표/담당</th><td>${inlineField("vendorOwner", job.vendorOwner || PROVIDER.owner, "담당자")}</td>
+          </tr>
+          <tr>
+            <th>공급자 주소</th><td colspan="3">${inlineField("vendorAddress", job.vendorAddress || PROVIDER.address, "공급자 주소")}</td>
           </tr>
           <tr>
             <th>공사명</th><td colspan="3">${inlineField("workSummary", job.workSummary || "누수 진단 및 보수 공사", "공사명")}</td>
@@ -410,12 +420,11 @@ function renderEstimate(job) {
         </tbody>
       </table>
       <table class="table" style="margin-top:16px">
-        <thead><tr><th>품명</th><th>규격/내용</th><th style="width:80px">수량</th><th style="width:80px">단위</th><th style="width:140px">단가</th><th style="width:150px">공급가액</th><th class="no-print" style="width:80px">관리</th></tr></thead>
+        <thead><tr><th>품명</th><th style="width:80px">수량</th><th style="width:80px">단위</th><th style="width:140px">단가</th><th style="width:150px">공급가액</th><th class="no-print" style="width:80px">관리</th></tr></thead>
         <tbody>
           ${items.map((item, index) => `
             <tr>
-              <td><input data-estimate="${index}" data-field="name" value="${escapeAttr(item.name)}" placeholder="예: 누수 진단" /></td>
-              <td><input data-estimate="${index}" data-field="spec" value="${escapeAttr(item.spec || "")}" placeholder="작업 내용" /></td>
+              <td><input data-estimate="${index}" data-field="name" value="${escapeAttr([item.name, item.spec].filter(Boolean).join(" / "))}" placeholder="예: 누수 진단 및 온수 배관 보수" /></td>
               <td><input data-estimate="${index}" data-field="qty" type="number" value="${escapeAttr(item.qty || 1)}" placeholder="1" /></td>
               <td><input data-estimate="${index}" data-field="unit" value="${escapeAttr(item.unit || "식")}" placeholder="식" /></td>
               <td><input data-estimate="${index}" data-field="unitPrice" type="number" value="${escapeAttr(item.unitPrice || item.cost || "")}" placeholder="0" /></td>
@@ -431,7 +440,7 @@ function renderEstimate(job) {
       <div class="estimate-note">
         ${textarea("estimateNote", "비고", job.estimateNote || "상기 견적은 현장 상황 및 추가 작업 범위에 따라 변경될 수 있습니다.", "비고")}
       </div>
-      <div class="estimate-sign">공급자 확인: ____________________ (인)</div>
+      <div class="estimate-sign">공급자 확인: ${escapeHtml(PROVIDER.owner)} <span class="stamp-seal">최규석<br />印</span></div>
     </section>
   `;
 }
@@ -563,7 +572,9 @@ function bindEvents() {
   app.querySelectorAll("[data-estimate]").forEach((input) => {
     input.addEventListener("input", () => {
       const job = currentJob();
-      job.estimateItems[Number(input.dataset.estimate)][input.dataset.field] = input.value;
+      const item = job.estimateItems[Number(input.dataset.estimate)];
+      item[input.dataset.field] = input.value;
+      if (input.dataset.field === "name") item.spec = "";
       job.updatedAt = new Date().toISOString();
       saveState();
     });
@@ -639,6 +650,7 @@ function handleAction(action, data) {
   if (action === "save-tracker") notify("추적 데이터가 현재 작업에 저장되었습니다.");
   if (action === "clear-tracker") notify("화면 그래프 로그를 삭제했습니다.");
   if (action === "generate-report") updateJob({ report: generateReport(job) });
+  if (action === "download-report-pdf") openPdfPrintWindow("report");
   if (action === "clear-report" || action === "delete-report") updateJob({ report: "" });
   if (action === "generate-blog") updateJob({ blog: generateBlog(job) });
   if (action === "add-blog-photo") document.querySelector("#blogPhotoInput")?.click();
@@ -655,6 +667,7 @@ function handleAction(action, data) {
     render();
   }
   if (action === "print") window.print();
+  if (action === "download-estimate-pdf") openPdfPrintWindow("estimate");
   if (action === "select-job") {
     state.currentJobId = data.id;
     state.activeView = "dashboard";
@@ -950,6 +963,116 @@ function estimateLineTotal(item) {
   return Number(item.cost || 0);
 }
 
+function openPdfPrintWindow(type) {
+  const job = currentJob();
+  const title = type === "report" ? "누수진단 소견서" : "누수공사 견적서";
+  const html = type === "report" ? buildReportPrintHtml(job) : buildEstimatePrintHtml(job);
+  const popup = window.open("", "_blank", "width=920,height=1100");
+  if (!popup) {
+    notify("팝업이 차단되었습니다. 브라우저 팝업 허용 후 다시 시도하세요.");
+    return;
+  }
+  popup.document.open();
+  popup.document.write(`
+    <!doctype html>
+    <html lang="ko">
+      <head>
+        <meta charset="UTF-8" />
+        <title>${escapeHtml(title)}</title>
+        <style>
+          @page { size: A4; margin: 14mm; }
+          * { box-sizing: border-box; }
+          body { color: #111827; font-family: "Malgun Gothic", Arial, sans-serif; line-height: 1.55; margin: 0; }
+          h1 { font-size: 28px; letter-spacing: 0; margin: 0 0 18px; text-align: center; }
+          h2 { border-bottom: 2px solid #111827; font-size: 17px; margin: 18px 0 8px; padding-bottom: 5px; }
+          p { margin: 6px 0; }
+          table { border-collapse: collapse; margin: 10px 0; width: 100%; }
+          th, td { border: 1px solid #222; padding: 8px; text-align: left; vertical-align: top; }
+          th { background: #f3f4f6; font-weight: 700; width: 120px; }
+          .doc { padding: 10px; }
+          .right { text-align: right; }
+          .pre { white-space: pre-wrap; }
+          .total th, .total td { background: #ecfdf5; font-size: 16px; font-weight: 700; }
+          .stamp-wrap { align-items: center; display: inline-flex; gap: 12px; justify-content: flex-end; margin-top: 28px; width: 100%; }
+          .stamp { align-items: center; border: 3px solid #c1121f; border-radius: 50%; color: #c1121f; display: inline-flex; font-size: 18px; font-weight: 800; height: 72px; justify-content: center; letter-spacing: 2px; line-height: 1.05; opacity: .86; transform: rotate(-8deg); width: 72px; }
+          @media print { body { print-color-adjust: exact; -webkit-print-color-adjust: exact; } }
+        </style>
+      </head>
+      <body>
+        <div class="doc">${html}</div>
+        <script>
+          window.addEventListener("load", () => setTimeout(() => window.print(), 250));
+        <\/script>
+      </body>
+    </html>
+  `);
+  popup.document.close();
+}
+
+function buildReportPrintHtml(job) {
+  const report = job.report || generateReport(job);
+  return `
+    <h1>누수진단 소견서</h1>
+    <table>
+      <tbody>
+        <tr><th>진단일자</th><td>${escapeHtml(job.date || "")}</td><th>연락처</th><td>${escapeHtml(job.phone || "")}</td></tr>
+        <tr><th>현장주소</th><td colspan="3">${escapeHtml(job.address || "")}</td></tr>
+        <tr><th>작성자</th><td>${escapeHtml(PROVIDER.name)}</td><th>사업자번호</th><td>${escapeHtml(PROVIDER.bizNo)}</td></tr>
+        <tr><th>공급자 주소</th><td colspan="3">${escapeHtml(PROVIDER.address)}</td></tr>
+      </tbody>
+    </table>
+    <h2>소견 내용</h2>
+    <div class="pre">${escapeHtml(report)}</div>
+    <div class="stamp-wrap">
+      <span>공급자 확인: ${escapeHtml(PROVIDER.owner)}</span>
+      <span class="stamp">최규석<br />印</span>
+    </div>
+  `;
+}
+
+function buildEstimatePrintHtml(job) {
+  const items = job.estimateItems || [];
+  const supplyTotal = items.reduce((sum, item) => sum + estimateLineTotal(item), 0);
+  const tax = Math.round(supplyTotal * 0.1);
+  const total = supplyTotal + tax;
+  return `
+    <h1>견 적 서</h1>
+    <table>
+      <tbody>
+        <tr><th>견적일자</th><td>${escapeHtml(job.date || "")}</td><th>견적번호</th><td>${escapeHtml(job.estimateNo || `WL-${(job.date || "").replaceAll("-", "")}`)}</td></tr>
+        <tr><th colspan="2">수신</th><th colspan="2">공급자</th></tr>
+        <tr><th>고객명</th><td>${escapeHtml(job.customerName || "")}</td><th>상호</th><td>${escapeHtml(PROVIDER.name)}</td></tr>
+        <tr><th>주소</th><td>${escapeHtml(job.address || "")}</td><th>사업자번호</th><td>${escapeHtml(PROVIDER.bizNo)}</td></tr>
+        <tr><th>전화번호</th><td>${escapeHtml(job.phone || "")}</td><th>대표/담당</th><td>${escapeHtml(PROVIDER.owner)}</td></tr>
+        <tr><th>공사명</th><td>${escapeHtml(job.workSummary || "누수 진단 및 보수 공사")}</td><th>공급자 주소</th><td>${escapeHtml(PROVIDER.address)}</td></tr>
+      </tbody>
+    </table>
+    <table>
+      <thead><tr><th style="width:44%">품명</th><th>수량</th><th>단위</th><th>단가</th><th>공급가액</th></tr></thead>
+      <tbody>
+        ${items.map((item) => `
+          <tr>
+            <td>${escapeHtml([item.name, item.spec].filter(Boolean).join(" / "))}</td>
+            <td>${escapeHtml(item.qty || 1)}</td>
+            <td>${escapeHtml(item.unit || "식")}</td>
+            <td class="right">${Number(item.unitPrice || item.cost || 0).toLocaleString()}원</td>
+            <td class="right">${estimateLineTotal(item).toLocaleString()}원</td>
+          </tr>
+        `).join("")}
+        <tr><th colspan="4" class="right">공급가액</th><td class="right">${supplyTotal.toLocaleString()}원</td></tr>
+        <tr><th colspan="4" class="right">부가세</th><td class="right">${tax.toLocaleString()}원</td></tr>
+        <tr class="total"><th colspan="4" class="right">합계금액</th><td class="right">${total.toLocaleString()}원</td></tr>
+      </tbody>
+    </table>
+    <h2>비고</h2>
+    <p class="pre">${escapeHtml(job.estimateNote || "상기 견적은 현장 상황 및 추가 작업 범위에 따라 변경될 수 있습니다.")}</p>
+    <div class="stamp-wrap">
+      <span>공급자 확인: ${escapeHtml(PROVIDER.owner)}</span>
+      <span class="stamp">최규석<br />印</span>
+    </div>
+  `;
+}
+
 async function connectBluetooth() {
   if (!navigator.bluetooth) {
     notify("이 브라우저는 Web Bluetooth를 지원하지 않습니다.");
@@ -1045,6 +1168,10 @@ function generateReport(job) {
 진단일자: ${job.date}
 현장주소: ${job.address || "미입력"}
 연락처: ${job.phone || "미입력"}
+작성자: ${PROVIDER.name}
+사업자번호: ${PROVIDER.bizNo}
+공급자 주소: ${PROVIDER.address}
+공급자 확인: ${PROVIDER.owner}
 
 1. 현장 상황
 ${job.situation || "현장 상황 기록이 필요합니다."}
