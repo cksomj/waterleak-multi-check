@@ -420,27 +420,25 @@ function renderEstimate(job) {
         </tbody>
       </table>
       <table class="table" style="margin-top:16px">
-        <thead><tr><th>품명</th><th style="width:80px">수량</th><th style="width:80px">단위</th><th style="width:140px">단가</th><th style="width:150px">공급가액</th><th class="no-print" style="width:80px">관리</th></tr></thead>
+        <thead><tr><th>품명</th><th style="width:90px">수량</th><th style="width:150px">공급가액</th><th class="no-print" style="width:80px">관리</th></tr></thead>
         <tbody>
           ${items.map((item, index) => `
             <tr>
-              <td><input data-estimate="${index}" data-field="name" value="${escapeAttr([item.name, item.spec].filter(Boolean).join(" / "))}" placeholder="예: 누수 진단 및 온수 배관 보수" /></td>
+              <td><textarea class="estimate-item-name" data-estimate="${index}" data-field="name" placeholder="예: 누수 진단 및 온수 배관 보수">${escapeHtml([item.name, item.spec].filter(Boolean).join(" / "))}</textarea></td>
               <td><input data-estimate="${index}" data-field="qty" type="number" value="${escapeAttr(item.qty || 1)}" placeholder="1" /></td>
-              <td><input data-estimate="${index}" data-field="unit" value="${escapeAttr(item.unit || "식")}" placeholder="식" /></td>
-              <td><input data-estimate="${index}" data-field="unitPrice" type="number" value="${escapeAttr(item.unitPrice || item.cost || "")}" placeholder="0" /></td>
               <td><input data-estimate="${index}" data-field="cost" type="number" value="${escapeAttr(estimateLineTotal(item) || "")}" placeholder="0" /></td>
               <td class="no-print"><button class="btn warn" data-action="remove-estimate" data-index="${index}">삭제</button></td>
             </tr>
           `).join("")}
-          <tr><th colspan="5">공급가액</th><td colspan="2"><strong>${supplyTotal.toLocaleString()}원</strong></td></tr>
-          <tr><th colspan="5">부가세</th><td colspan="2"><strong>${tax.toLocaleString()}원</strong></td></tr>
-          <tr class="estimate-total"><th colspan="5">합계금액</th><td colspan="2"><strong>${total.toLocaleString()}원</strong></td></tr>
+          <tr><th colspan="2">공급가액</th><td colspan="2"><strong>${supplyTotal.toLocaleString()}원</strong></td></tr>
+          <tr><th colspan="2">부가세</th><td colspan="2"><strong>${tax.toLocaleString()}원</strong></td></tr>
+          <tr class="estimate-total"><th colspan="2">합계금액</th><td colspan="2"><strong>${total.toLocaleString()}원</strong></td></tr>
         </tbody>
       </table>
       <div class="estimate-note">
         ${textarea("estimateNote", "비고", job.estimateNote || "상기 견적은 현장 상황 및 추가 작업 범위에 따라 변경될 수 있습니다.", "비고")}
       </div>
-      <div class="estimate-sign">공급자 확인: ${escapeHtml(PROVIDER.owner)} <span class="stamp-seal">최규석<br />印</span></div>
+      <div class="estimate-sign">공급자 확인: ${escapeHtml(PROVIDER.owner)} ${stampSealSvg("stamp-seal")}</div>
     </section>
   `;
 }
@@ -575,6 +573,7 @@ function bindEvents() {
       const item = job.estimateItems[Number(input.dataset.estimate)];
       item[input.dataset.field] = input.value;
       if (input.dataset.field === "name") item.spec = "";
+      maybeAddEstimateRow(input);
       job.updatedAt = new Date().toISOString();
       saveState();
     });
@@ -956,6 +955,17 @@ function clearCheckMemo(type, id, shouldRender = true) {
   if (shouldRender) render();
 }
 
+function maybeAddEstimateRow(input) {
+  if (input.dataset.field !== "name") return;
+  const job = currentJob();
+  const index = Number(input.dataset.estimate);
+  const isLast = index === job.estimateItems.length - 1;
+  const isLong = input.value.length >= 80 || input.scrollHeight > input.clientHeight + 12;
+  if (!isLast || !isLong) return;
+  job.estimateItems.push({ name: "", spec: "", qty: 1, unit: "식", unitPrice: "", cost: "" });
+  setTimeout(render, 0);
+}
+
 function estimateLineTotal(item) {
   const qty = Number(item.qty || 0);
   const unitPrice = Number(item.unitPrice || 0);
@@ -994,7 +1004,7 @@ function openPdfPrintWindow(type) {
           .pre { white-space: pre-wrap; }
           .total th, .total td { background: #ecfdf5; font-size: 16px; font-weight: 700; }
           .stamp-wrap { align-items: center; display: inline-flex; gap: 12px; justify-content: flex-end; margin-top: 28px; width: 100%; }
-          .stamp { align-items: center; border: 3px solid #c1121f; border-radius: 50%; color: #c1121f; display: inline-flex; font-size: 18px; font-weight: 800; height: 72px; justify-content: center; letter-spacing: 2px; line-height: 1.05; opacity: .86; transform: rotate(-8deg); width: 72px; }
+          .stamp-svg { height: 78px; opacity: .9; transform: rotate(-8deg); width: 78px; }
           @media print { body { print-color-adjust: exact; -webkit-print-color-adjust: exact; } }
         </style>
       </head>
@@ -1025,7 +1035,7 @@ function buildReportPrintHtml(job) {
     <div class="pre">${escapeHtml(report)}</div>
     <div class="stamp-wrap">
       <span>공급자 확인: ${escapeHtml(PROVIDER.owner)}</span>
-      <span class="stamp">최규석<br />印</span>
+      ${stampSealSvg("stamp-svg")}
     </div>
   `;
 }
@@ -1048,28 +1058,56 @@ function buildEstimatePrintHtml(job) {
       </tbody>
     </table>
     <table>
-      <thead><tr><th style="width:44%">품명</th><th>수량</th><th>단위</th><th>단가</th><th>공급가액</th></tr></thead>
+      <thead><tr><th style="width:68%">품명</th><th>수량</th><th>공급가액</th></tr></thead>
       <tbody>
         ${items.map((item) => `
           <tr>
             <td>${escapeHtml([item.name, item.spec].filter(Boolean).join(" / "))}</td>
             <td>${escapeHtml(item.qty || 1)}</td>
-            <td>${escapeHtml(item.unit || "식")}</td>
-            <td class="right">${Number(item.unitPrice || item.cost || 0).toLocaleString()}원</td>
             <td class="right">${estimateLineTotal(item).toLocaleString()}원</td>
           </tr>
         `).join("")}
-        <tr><th colspan="4" class="right">공급가액</th><td class="right">${supplyTotal.toLocaleString()}원</td></tr>
-        <tr><th colspan="4" class="right">부가세</th><td class="right">${tax.toLocaleString()}원</td></tr>
-        <tr class="total"><th colspan="4" class="right">합계금액</th><td class="right">${total.toLocaleString()}원</td></tr>
+        <tr><th colspan="2" class="right">공급가액</th><td class="right">${supplyTotal.toLocaleString()}원</td></tr>
+        <tr><th colspan="2" class="right">부가세</th><td class="right">${tax.toLocaleString()}원</td></tr>
+        <tr class="total"><th colspan="2" class="right">합계금액</th><td class="right">${total.toLocaleString()}원</td></tr>
       </tbody>
     </table>
     <h2>비고</h2>
     <p class="pre">${escapeHtml(job.estimateNote || "상기 견적은 현장 상황 및 추가 작업 범위에 따라 변경될 수 있습니다.")}</p>
     <div class="stamp-wrap">
       <span>공급자 확인: ${escapeHtml(PROVIDER.owner)}</span>
-      <span class="stamp">최규석<br />印</span>
+      ${stampSealSvg("stamp-svg")}
     </div>
+  `;
+}
+
+function stampSealSvg(className = "stamp-seal") {
+  return `
+    <svg class="${className}" viewBox="0 0 120 120" aria-label="최규석 도장" role="img">
+      <defs>
+        <filter id="stampRough">
+          <feTurbulence type="fractalNoise" baseFrequency="0.85" numOctaves="2" seed="7" result="noise" />
+          <feDisplacementMap in="SourceGraphic" in2="noise" scale="2.2" />
+        </filter>
+        <mask id="stampInkMask">
+          <rect width="120" height="120" fill="white" />
+          <circle cx="29" cy="24" r="4" fill="black" opacity=".45" />
+          <circle cx="88" cy="34" r="3" fill="black" opacity=".35" />
+          <circle cx="41" cy="87" r="5" fill="black" opacity=".28" />
+          <path d="M18 62 C42 56, 68 66, 102 58" stroke="black" stroke-width="3" opacity=".22" />
+        </mask>
+      </defs>
+      <g filter="url(#stampRough)" mask="url(#stampInkMask)" fill="none" stroke="#b91c1c" stroke-linecap="round" stroke-linejoin="round">
+        <rect x="13" y="13" width="94" height="94" rx="8" stroke-width="7" opacity=".9" />
+        <rect x="22" y="22" width="76" height="76" rx="4" stroke-width="2.4" opacity=".46" />
+        <line x1="60" y1="24" x2="60" y2="96" stroke-width="2.2" opacity=".5" />
+      </g>
+      <g fill="#b91c1c" filter="url(#stampRough)" mask="url(#stampInkMask)" font-family="serif" font-weight="900" text-anchor="middle">
+        <text x="42" y="54" font-size="28" transform="rotate(-3 42 54)">최</text>
+        <text x="78" y="54" font-size="28" transform="rotate(2 78 54)">규</text>
+        <text x="60" y="88" font-size="30" transform="rotate(-2 60 88)">석</text>
+      </g>
+    </svg>
   `;
 }
 
