@@ -1,0 +1,959 @@
+const STORAGE_KEY = "waterleak_multi_check_v1";
+
+const basePlumbingChecks = [
+  ["toilet_parts", "화장실 변기부속 누수검사", "밸브를 잠그고 열어 계량기 움직임을 확인합니다. 물이 없으면 보충 후 재검사합니다."],
+  ["hot_water", "온수 누수검사", "보일러 온수밸브를 잠그고 열어 계량기 누수 변화를 확인합니다."],
+  ["all_valves", "모든 밸브류 검사", "화장실, 싱크대, 개수대, 외부수도, 밸브고장 여부를 순차 확인합니다."],
+];
+
+const baseWaterproofChecks = [
+  ["window_frame", "창틀검사", "외부 빗물 유입, 실리콘 벌어짐, 하부 물길 상태를 확인합니다."],
+  ["rain_pipe", "우수관검사", "우수관 막힘, 파손, 역류 흔적과 주변 오염을 확인합니다."],
+  ["bathroom_waterproof", "화장실 방수상태", "바닥/벽체 방수층 의심 구간, 하부세대 피해 방향을 확인합니다."],
+  ["drain_trap", "유가상태", "유가 주변 크랙, 배수 불량, 악취 및 물고임 여부를 확인합니다."],
+  ["toilet_body", "변기상태", "변기 정심, 백시멘트, 배관 연결부 흔들림과 누수 흔적을 확인합니다."],
+];
+
+const defaultState = {
+  activeView: "dashboard",
+  currentJobId: null,
+  storageMode: "local",
+  micEnabled: true,
+  micListening: false,
+  jobs: [],
+};
+
+let state = loadState();
+let mediaRecorder = null;
+let recordedChunks = [];
+let audioContext = null;
+let analyser = null;
+let animationFrame = null;
+let micStream = null;
+let recordingTarget = null;
+
+const app = document.querySelector("#app");
+
+function createJob() {
+  const today = new Date().toISOString().slice(0, 10);
+  const id = `job-${Date.now()}`;
+  return {
+    id,
+    date: today,
+    address: "",
+    phone: "",
+    situation: "",
+    environment: "",
+    plumbingChecks: createChecks(basePlumbingChecks),
+    waterproofChecks: createChecks(baseWaterproofChecks),
+    photos: [],
+    blogPhotos: [],
+    videos: [],
+    pressureSet: 3.0,
+    pressureLive: 0,
+    compressorOn: false,
+    bluetoothDevice: "",
+    report: "",
+    blog: "",
+    estimateItems: [{ name: "", cost: "" }],
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  };
+}
+
+function createChecks(items) {
+  return items.map(([id, title, guide]) => ({ id, title, guide, done: false, result: "대기", memo: "" }));
+}
+
+function loadState() {
+  try {
+    const saved = localStorage.getItem(STORAGE_KEY);
+    if (saved) {
+      const parsed = JSON.parse(saved);
+      return { ...defaultState, ...parsed };
+    }
+  } catch (error) {
+    console.warn(error);
+  }
+  const firstJob = createJob();
+  return { ...defaultState, currentJobId: firstJob.id, jobs: [firstJob] };
+}
+
+function saveState() {
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+}
+
+function currentJob() {
+  let job = state.jobs.find((item) => item.id === state.currentJobId);
+  if (!job) {
+    job = state.jobs[0] || createJob();
+    if (!state.jobs.length) state.jobs.push(job);
+    state.currentJobId = job.id;
+  }
+  return job;
+}
+
+function updateJob(patch) {
+  const job = currentJob();
+  Object.assign(job, patch, { updatedAt: new Date().toISOString() });
+  saveState();
+  render();
+}
+
+function updateCheck(type, id, patch) {
+  const job = currentJob();
+  job[type] = job[type].map((check) => (check.id === id ? { ...check, ...patch } : check));
+  job.updatedAt = new Date().toISOString();
+  saveState();
+  render();
+}
+
+function setView(view) {
+  state.activeView = view;
+  saveState();
+  render();
+}
+
+function render() {
+  const job = currentJob();
+  app.innerHTML = `
+    <div class="shell">
+      <header class="topbar">
+        <div class="brand">
+          <span class="brand-mark">WL</span>
+          <div>
+            <strong>WaterLeak Multi Check</strong>
+            <small>누수진단 · 소견서 · 견적서 · 블로그 작성</small>
+          </div>
+        </div>
+        <div class="top-actions">
+          <span class="status-pill">${escapeHtml(job.date || "-")} · ${escapeHtml(job.address || "주소 미입력")}</span>
+          <button class="btn ghost" data-action="new-job">새 작업</button>
+          <button class="btn primary" data-action="save">저장</button>
+        </div>
+      </header>
+      <div class="layout">
+        <aside class="sidebar">${renderNav()}</aside>
+        <main class="content">${renderView()}</main>
+      </div>
+    </div>
+  `;
+  bindEvents();
+  if (state.activeView === "tracker") drawIdleSpectrum();
+}
+
+function renderNav() {
+  const nav = [
+    ["dashboard", "메인메뉴"],
+    ["basic", "기본점검"],
+    ["waterproof", "방수문제"],
+    ["tracker", "누수추적기"],
+    ["report", "AI 소견서"],
+    ["blog", "블로그 작성"],
+    ["estimate", "견적서"],
+    ["history", "작업 리스트"],
+  ];
+  return nav.map(([id, label]) => `<button class="nav-button ${state.activeView === id ? "active" : ""}" data-view="${id}">${label}</button>`).join("");
+}
+
+function renderView() {
+  const job = currentJob();
+  const views = {
+    dashboard: renderDashboard,
+    basic: () => renderChecklist("기본점검목록", "plumbingChecks"),
+    waterproof: () => renderChecklist("방수문제목록", "waterproofChecks"),
+    tracker: renderTracker,
+    report: renderReport,
+    blog: renderBlog,
+    estimate: renderEstimate,
+    history: renderHistory,
+  };
+  return (views[state.activeView] || views.dashboard)(job);
+}
+
+function renderDashboard(job) {
+  return `
+    <div class="section-head">
+      <div>
+        <h1>현장 기본정보</h1>
+        <p class="muted">날짜, 주소, 연락처, 현장 상황을 저장하고 이후 서식에 자동 반영합니다.</p>
+      </div>
+      <div class="toolbar">
+        <button class="btn ghost" data-action="open-map">지도</button>
+        <button class="btn ghost" data-action="take-photo">작업사진 찍기</button>
+        <button class="btn ghost" data-action="view-photos">작업사진 보기</button>
+      </div>
+    </div>
+    <section class="panel grid">
+      <div class="grid three">
+        ${field("date", "날짜", "date", job.date)}
+        ${field("address", "소비자 주소", "text", job.address, "예: 서울시 강남구 ...")}
+        ${field("phone", "전화번호", "tel", job.phone, "010-0000-0000")}
+      </div>
+      <div class="grid two">
+        ${textareaWithVoice("situation", "상황 기록", job.situation, "누수 발생 위치, 시간, 피해상황, 고객 진술을 기록합니다.")}
+        ${textareaWithVoice("environment", "주소 및 환경", job.environment, "건물 유형, 층수, 계량기 위치, 보일러/배관 환경 등")}
+      </div>
+      <input class="hidden-input" id="jobPhotoInput" data-file-type="photos" type="file" accept="image/*" capture="environment" multiple />
+      <div class="photo-strip">
+        ${(job.photos || []).length ? job.photos.map((name) => `<span>${escapeHtml(name)}</span>`).join("") : `<span>작업사진 없음</span>`}
+      </div>
+      <div id="recordingStatus" class="muted">녹음/받아쓰기 상태: 대기</div>
+    </section>
+    <section class="meter-cards" style="margin-top:14px">
+      ${metric("기본점검 완료", countDone(job.plumbingChecks), `${job.plumbingChecks.length}개 중`)}
+      ${metric("방수점검 완료", countDone(job.waterproofChecks), `${job.waterproofChecks.length}개 중`)}
+      ${metric("소견서", job.report ? "작성됨" : "미작성", "AI 초안")}
+      ${metric("저장방식", state.storageMode === "local" ? "로컬" : "구글", "선택 옵션")}
+    </section>
+  `;
+}
+
+function renderChecklist(title, type) {
+  const job = currentJob();
+  const checks = job[type];
+  return `
+    <div class="section-head">
+      <div>
+        <h1>${title}</h1>
+        <p class="muted">개별 항목을 체크하고 결과와 메모를 저장합니다.</p>
+      </div>
+      <div class="toolbar">
+        <button class="btn ghost" data-action="reset-checks" data-type="${type}">초기화</button>
+        <button class="btn primary" data-action="save">점검목록 저장</button>
+      </div>
+    </div>
+    <section class="panel check-list">
+      ${checks.map((check) => renderCheckRow(type, check)).join("")}
+    </section>
+  `;
+}
+
+function renderCheckRow(type, check) {
+  return `
+    <div class="check-row">
+      <input type="checkbox" ${check.done ? "checked" : ""} data-check="${check.id}" data-check-type="${type}" data-field="done" />
+      <div>
+        <strong>${escapeHtml(check.title)}</strong>
+        <p class="muted">${escapeHtml(check.guide)}</p>
+        <div class="mini-actions">
+          <button class="btn ghost dictate-btn" data-action="dictate-check" data-check="${check.id}" data-check-type="${type}"><span class="voice-icon blue"></span>받아적기</button>
+          ${micStatusControl()}
+          <button class="btn ghost record-btn" data-action="record-check" data-check="${check.id}" data-check-type="${type}"><span class="voice-icon red"></span>녹음</button>
+          <button class="btn ghost clear-btn" data-action="clear-check" data-check="${check.id}" data-check-type="${type}">삭제</button>
+          <button class="btn ghost retry-btn" data-action="retry-check" data-check="${check.id}" data-check-type="${type}">새로다시</button>
+        </div>
+      </div>
+      <div class="grid">
+        <select data-check="${check.id}" data-check-type="${type}" data-field="result">
+          ${["대기", "정상", "의심", "누수확인", "재검필요"].map((item) => `<option ${check.result === item ? "selected" : ""}>${item}</option>`).join("")}
+        </select>
+        <textarea data-check="${check.id}" data-check-type="${type}" data-field="memo" placeholder="점검 메모">${escapeHtml(check.memo)}</textarea>
+      </div>
+    </div>
+  `;
+}
+
+function renderTracker(job) {
+  return `
+    <div class="section-head">
+      <div>
+        <h1>누수추적기</h1>
+        <p class="muted">마이크 입력을 실시간 주파수 그래프로 표시하고, 블루투스/콤프레셔 제어 패널을 준비합니다.</p>
+      </div>
+      <div class="toolbar">
+        <button class="btn ghost" data-action="bluetooth">블루투스 연결</button>
+        <button class="btn primary" data-action="start-spectrum">소리 분석 시작</button>
+        <button class="btn warn" data-action="stop-spectrum">정지</button>
+      </div>
+    </div>
+    <div class="split">
+      <section class="audio-panel">
+        <div class="toolbar" style="justify-content:space-between;margin-bottom:10px">
+          <h2>실시간 주파수 그래프</h2>
+          <span class="status-pill" id="peakStatus">최고 주파수 대역 대기</span>
+        </div>
+        <canvas id="spectrum" width="1100" height="360"></canvas>
+        <p class="muted" style="color:#9fc2c8;margin-top:10px">높은 피크 대역은 주황색으로 표시됩니다. 저장/삭제 버튼은 추적 데이터 로그에 반영됩니다.</p>
+      </section>
+      <section class="panel grid">
+        <h2>콤프레셔 제어</h2>
+        <div class="pressure-dial"><span><b>${Number(job.pressureLive || 0).toFixed(1)}</b>bar</span></div>
+        <div class="grid two">
+          ${field("pressureSet", "압력 세팅값(bar)", "number", job.pressureSet, "", "0.1")}
+          ${field("pressureLive", "실시간 압력값(bar)", "number", job.pressureLive, "", "0.1")}
+        </div>
+        <div class="toolbar">
+          <button class="btn ${job.compressorOn ? "warn" : "primary"}" data-action="toggle-compressor">${job.compressorOn ? "콤프레셔 끄기" : "콤프레셔 켜기"}</button>
+          <button class="btn ghost" data-action="save-tracker">자동저장</button>
+          <button class="btn ghost" data-action="clear-tracker">삭제</button>
+        </div>
+        <p class="muted">연결 장치: ${escapeHtml(job.bluetoothDevice || "미연결")}</p>
+      </section>
+    </div>
+  `;
+}
+
+function renderReport(job) {
+  return `
+    <div class="section-head">
+      <div>
+        <h1>AI 소견서</h1>
+        <p class="muted">오늘 저장된 현장 데이터와 점검결과를 조합해 누수상황·문제점 소견서 초안을 만듭니다.</p>
+      </div>
+      <div class="toolbar">
+        <button class="btn primary" data-action="generate-report">소견서 만들기</button>
+        <button class="btn ghost" data-action="clear-report">새로만들기</button>
+      </div>
+    </div>
+    <div class="grid two">
+      <section class="panel grid">
+        <h2>사진 · 동영상 업로드</h2>
+        ${fileBox("photos", "사진 추가")}
+        ${fileBox("videos", "동영상 추가")}
+        <div class="storage-row">
+          <label><input type="radio" name="storage" value="local" ${state.storageMode === "local" ? "checked" : ""} /> 로컬에 저장</label>
+          <label><input type="radio" name="storage" value="google" ${state.storageMode === "google" ? "checked" : ""} /> 구글클라우드 저장</label>
+        </div>
+      </section>
+      <section class="panel grid">
+        ${textarea("report", "소견서 내용", job.report, "소견서 자동생성 후 수정할 수 있습니다.")}
+        <div class="toolbar">
+          <button class="btn primary" data-action="save">수정 저장</button>
+          <button class="btn warn" data-action="delete-report">삭제</button>
+        </div>
+      </section>
+    </div>
+  `;
+}
+
+function renderBlog(job) {
+  return `
+    <div class="section-head">
+      <div>
+        <h1>블로그 글 작성</h1>
+        <p class="muted">소견서, 사진, 동영상 목록을 기반으로 고객 설명형 블로그 글을 생성합니다.</p>
+      </div>
+      <div class="toolbar">
+        <button class="btn primary" data-action="generate-blog">블로그 글 작성</button>
+        <button class="btn ghost" data-action="add-blog-photo">사진 올리기</button>
+        <button class="btn ghost" data-action="copy-blog">복사</button>
+      </div>
+    </div>
+    <div class="grid two">
+      <section class="panel grid">
+        ${fileBox("blogPhotos", "블로그 사진")}
+        ${textarea("blog", "블로그 원고", job.blog, "생성된 블로그 글을 수정합니다.")}
+        <input class="hidden-input" id="blogPhotoInput" data-file-type="blogPhotos" type="file" accept="image/*" multiple />
+        <button class="btn primary" data-action="save">저장</button>
+      </section>
+      <section class="panel">
+        <h2 style="margin-bottom:10px">견본 미리보기</h2>
+        <div class="preview">${escapeHtml(job.blog || "블로그 글을 작성하면 미리보기가 표시됩니다.")}</div>
+      </section>
+    </div>
+  `;
+}
+
+function renderEstimate(job) {
+  const items = job.estimateItems || [];
+  const supplyTotal = items.reduce((sum, item) => sum + estimateLineTotal(item), 0);
+  const tax = Math.round(supplyTotal * 0.1);
+  const total = supplyTotal + tax;
+  const estimateNo = job.estimateNo || `WL-${(job.date || "").replaceAll("-", "") || "00000000"}`;
+  return `
+    <div class="section-head">
+      <div>
+        <h1>견적서 작성</h1>
+        <p class="muted">날짜와 주소는 현장 기본정보에서 자동 입력됩니다. 내용과 비용은 직접 입력합니다.</p>
+      </div>
+      <div class="toolbar">
+        <button class="btn ghost" data-action="add-estimate">항목 추가</button>
+        <button class="btn primary" data-action="save">저장 및 수정</button>
+        <button class="btn ghost" data-action="print">PDF/출력 미리보기</button>
+      </div>
+    </div>
+    <section class="print-area estimate-form">
+      <h2 class="estimate-title">견 적 서</h2>
+      <div class="estimate-meta">
+        ${field("estimateNo", "견적번호", "text", estimateNo)}
+        ${field("date", "견적일자", "date", job.date)}
+        ${field("estimateValidUntil", "유효기간", "date", job.estimateValidUntil || "")}
+      </div>
+      <table class="table estimate-info">
+        <tbody>
+          <tr><th colspan="2">수신</th><th colspan="2">공급자</th></tr>
+          <tr>
+            <th>고객명</th><td>${inlineField("customerName", job.customerName || "", "고객명")}</td>
+            <th>상호</th><td>${inlineField("vendorName", job.vendorName || "누수진단 업체", "상호")}</td>
+          </tr>
+          <tr>
+            <th>주소</th><td>${inlineField("address", job.address || "", "주소")}</td>
+            <th>사업자번호</th><td>${inlineField("vendorBizNo", job.vendorBizNo || "", "000-00-00000")}</td>
+          </tr>
+          <tr>
+            <th>전화번호</th><td>${inlineField("phone", job.phone || "", "전화번호")}</td>
+            <th>대표/담당</th><td>${inlineField("vendorOwner", job.vendorOwner || "", "담당자")}</td>
+          </tr>
+          <tr>
+            <th>공사명</th><td colspan="3">${inlineField("workSummary", job.workSummary || "누수 진단 및 보수 공사", "공사명")}</td>
+          </tr>
+        </tbody>
+      </table>
+      <table class="table" style="margin-top:16px">
+        <thead><tr><th>품명</th><th>규격/내용</th><th style="width:80px">수량</th><th style="width:80px">단위</th><th style="width:140px">단가</th><th style="width:150px">공급가액</th><th class="no-print" style="width:80px">관리</th></tr></thead>
+        <tbody>
+          ${items.map((item, index) => `
+            <tr>
+              <td><input data-estimate="${index}" data-field="name" value="${escapeAttr(item.name)}" placeholder="예: 누수 진단" /></td>
+              <td><input data-estimate="${index}" data-field="spec" value="${escapeAttr(item.spec || "")}" placeholder="작업 내용" /></td>
+              <td><input data-estimate="${index}" data-field="qty" type="number" value="${escapeAttr(item.qty || 1)}" placeholder="1" /></td>
+              <td><input data-estimate="${index}" data-field="unit" value="${escapeAttr(item.unit || "식")}" placeholder="식" /></td>
+              <td><input data-estimate="${index}" data-field="unitPrice" type="number" value="${escapeAttr(item.unitPrice || item.cost || "")}" placeholder="0" /></td>
+              <td><input data-estimate="${index}" data-field="cost" type="number" value="${escapeAttr(estimateLineTotal(item) || "")}" placeholder="0" /></td>
+              <td class="no-print"><button class="btn warn" data-action="remove-estimate" data-index="${index}">삭제</button></td>
+            </tr>
+          `).join("")}
+          <tr><th colspan="5">공급가액</th><td colspan="2"><strong>${supplyTotal.toLocaleString()}원</strong></td></tr>
+          <tr><th colspan="5">부가세</th><td colspan="2"><strong>${tax.toLocaleString()}원</strong></td></tr>
+          <tr class="estimate-total"><th colspan="5">합계금액</th><td colspan="2"><strong>${total.toLocaleString()}원</strong></td></tr>
+        </tbody>
+      </table>
+      <div class="estimate-note">
+        ${textarea("estimateNote", "비고", job.estimateNote || "상기 견적은 현장 상황 및 추가 작업 범위에 따라 변경될 수 있습니다.", "비고")}
+      </div>
+      <div class="estimate-sign">공급자 확인: ____________________ (인)</div>
+    </section>
+  `;
+}
+
+function renderHistory() {
+  const query = document.querySelector("#historyQuery")?.value || "";
+  const jobs = state.jobs
+    .filter((job) => `${job.date} ${job.address} ${job.phone} ${job.situation}`.toLowerCase().includes(query.toLowerCase()))
+    .sort((a, b) => b.date.localeCompare(a.date));
+  return `
+    <div class="section-head">
+      <div>
+        <h1>전체 작업 상황 리스트</h1>
+        <p class="muted">날짜별 작업 목록을 찾고 출력할 수 있습니다.</p>
+      </div>
+      <div class="toolbar">
+        <input id="historyQuery" value="${escapeAttr(query)}" placeholder="주소, 전화번호, 내용 찾기" />
+        <button class="btn ghost" data-action="print">출력</button>
+      </div>
+    </div>
+    <section class="list">
+      ${jobs.map((job) => `
+        <div class="list-item">
+          <strong>${escapeHtml(job.date)}</strong>
+          <div>
+            <b>${escapeHtml(job.address || "주소 미입력")}</b>
+            <p class="muted">${escapeHtml(job.phone || "-")} · 기본 ${countDone(job.plumbingChecks)}/${job.plumbingChecks.length}, 방수 ${countDone(job.waterproofChecks)}/${job.waterproofChecks.length}</p>
+          </div>
+          <button class="btn ghost" data-action="select-job" data-id="${job.id}">열기</button>
+        </div>
+      `).join("") || `<div class="list-item">검색 결과가 없습니다.</div>`}
+    </section>
+  `;
+}
+
+function field(id, label, type, value, placeholder = "", step = "") {
+  return `
+    <div class="field">
+      <label for="${id}">${label}</label>
+      <input id="${id}" data-job-field="${id}" type="${type}" value="${escapeAttr(value ?? "")}" placeholder="${escapeAttr(placeholder)}" ${step ? `step="${step}"` : ""} />
+    </div>
+  `;
+}
+
+function inlineField(id, value, placeholder = "") {
+  return `<input class="inline-input" data-job-field="${id}" value="${escapeAttr(value || "")}" placeholder="${escapeAttr(placeholder)}" />`;
+}
+
+function textarea(id, label, value, placeholder = "") {
+  return `
+    <div class="field">
+      <label for="${id}">${label}</label>
+      <textarea id="${id}" data-job-field="${id}" placeholder="${escapeAttr(placeholder)}">${escapeHtml(value || "")}</textarea>
+    </div>
+  `;
+}
+
+function textareaWithVoice(id, label, value, placeholder = "") {
+  return `
+    <div class="field">
+      <div class="field-head">
+        <label for="${id}">${label}</label>
+        <div class="mini-actions">
+          <button class="btn ghost dictate-btn" data-action="dictate-field" data-field="${id}"><span class="voice-icon blue"></span>받아적기</button>
+          ${micStatusControl()}
+          <button class="btn ghost record-btn" data-action="record-field" data-field="${id}"><span class="voice-icon red"></span>녹음</button>
+          <button class="btn ghost clear-btn" data-action="clear-field" data-field="${id}">삭제</button>
+          <button class="btn ghost retry-btn" data-action="retry-field" data-field="${id}">새로다시</button>
+        </div>
+      </div>
+      <textarea id="${id}" data-job-field="${id}" placeholder="${escapeAttr(placeholder)}">${escapeHtml(value || "")}</textarea>
+    </div>
+  `;
+}
+
+function micStatusControl() {
+  const enabled = state.micEnabled !== false;
+  const listening = enabled && state.micListening;
+  return `
+    <button class="mic-toggle ${enabled ? "on" : "off"}" data-action="toggle-mic" title="마이크 ${enabled ? "끄기" : "켜기"}" aria-label="마이크 ${enabled ? "끄기" : "켜기"}">
+      <span class="mic-shape"></span>
+    </button>
+    <span class="mic-status ${listening ? "listening" : ""} ${enabled ? "on" : "off"}" title="마이크 상태: ${enabled ? (listening ? "입력 중" : "대기") : "꺼짐"}">
+      <span></span><span></span><span></span><span></span>
+      <b>${enabled ? (listening ? "입력" : "대기") : "꺼짐"}</b>
+    </span>
+  `;
+}
+
+function metric(label, value, helper) {
+  return `<div class="metric"><span class="muted">${label}</span><b>${value}</b><span class="muted">${helper}</span></div>`;
+}
+
+function fileBox(type, label) {
+  const job = currentJob();
+  const files = job[type] || [];
+  return `
+    <div class="file-box">
+      <span>${label}: ${files.length ? files.map(escapeHtml).join(", ") : "없음"}</span>
+      <input data-file-type="${type}" type="file" ${type === "photos" ? "accept=\"image/*\"" : "accept=\"video/*\""} multiple />
+    </div>
+  `;
+}
+
+function bindEvents() {
+  app.querySelectorAll("[data-view]").forEach((button) => {
+    button.addEventListener("click", () => setView(button.dataset.view));
+  });
+
+  app.querySelectorAll("[data-job-field]").forEach((input) => {
+    input.addEventListener("input", () => {
+      const value = input.type === "number" ? Number(input.value) : input.value;
+      const job = currentJob();
+      job[input.dataset.jobField] = value;
+      job.updatedAt = new Date().toISOString();
+      saveState();
+      if (input.dataset.jobField === "pressureLive") updatePressureDial(value);
+    });
+  });
+
+  app.querySelectorAll("[data-check]").forEach((input) => {
+    input.addEventListener("input", () => {
+      const fieldName = input.dataset.field;
+      const value = fieldName === "done" ? input.checked : input.value;
+      updateCheck(input.dataset.checkType, input.dataset.check, { [fieldName]: value });
+    });
+  });
+
+  app.querySelectorAll("[data-estimate]").forEach((input) => {
+    input.addEventListener("input", () => {
+      const job = currentJob();
+      job.estimateItems[Number(input.dataset.estimate)][input.dataset.field] = input.value;
+      job.updatedAt = new Date().toISOString();
+      saveState();
+    });
+  });
+
+  app.querySelectorAll("[data-file-type]").forEach((input) => {
+    input.addEventListener("change", () => {
+      const job = currentJob();
+      job[input.dataset.fileType] = Array.from(input.files).map((file) => file.name);
+      saveState();
+      render();
+    });
+  });
+
+  app.querySelectorAll("input[name='storage']").forEach((input) => {
+    input.addEventListener("change", () => {
+      state.storageMode = input.value;
+      saveState();
+    });
+  });
+
+  app.querySelectorAll("[data-action]").forEach((button) => {
+    button.addEventListener("click", () => handleAction(button.dataset.action, button.dataset));
+  });
+
+  const historyQuery = app.querySelector("#historyQuery");
+  if (historyQuery) historyQuery.addEventListener("input", render);
+}
+
+function handleAction(action, data) {
+  const job = currentJob();
+  if (action === "toggle-mic") toggleMicPower();
+  if (action === "save") {
+    saveState();
+    notify("저장되었습니다.");
+  }
+  if (action === "new-job") {
+    const next = createJob();
+    state.jobs.unshift(next);
+    state.currentJobId = next.id;
+    state.activeView = "dashboard";
+    saveState();
+    render();
+  }
+  if (action === "open-map") openMap(job.address);
+  if (action === "take-photo") document.querySelector("#jobPhotoInput")?.click();
+  if (action === "view-photos") notifyPhotoList(job.photos || []);
+  if (action === "dictate-field") startDictation({ kind: "field", field: data.field });
+  if (action === "record-field") toggleRecording({ kind: "field", field: data.field });
+  if (action === "clear-field") clearField(data.field);
+  if (action === "retry-field") {
+    clearField(data.field, false);
+    startDictation({ kind: "field", field: data.field });
+  }
+  if (action === "dictate-check") startDictation({ kind: "check", type: data.checkType, id: data.check });
+  if (action === "record-check") toggleRecording({ kind: "check", type: data.checkType, id: data.check });
+  if (action === "clear-check") clearCheckMemo(data.checkType, data.check);
+  if (action === "retry-check") {
+    clearCheckMemo(data.checkType, data.check, false);
+    startDictation({ kind: "check", type: data.checkType, id: data.check });
+  }
+  if (action === "reset-checks") {
+    job[data.type] = createChecks(data.type === "plumbingChecks" ? basePlumbingChecks : baseWaterproofChecks);
+    saveState();
+    render();
+  }
+  if (action === "bluetooth") connectBluetooth();
+  if (action === "start-spectrum") startSpectrum();
+  if (action === "stop-spectrum") stopSpectrum();
+  if (action === "toggle-compressor") updateJob({ compressorOn: !job.compressorOn });
+  if (action === "save-tracker") notify("추적 데이터가 현재 작업에 저장되었습니다.");
+  if (action === "clear-tracker") notify("화면 그래프 로그를 삭제했습니다.");
+  if (action === "generate-report") updateJob({ report: generateReport(job) });
+  if (action === "clear-report" || action === "delete-report") updateJob({ report: "" });
+  if (action === "generate-blog") updateJob({ blog: generateBlog(job) });
+  if (action === "add-blog-photo") document.querySelector("#blogPhotoInput")?.click();
+  if (action === "copy-blog") copyText(job.blog);
+  if (action === "add-estimate") {
+    job.estimateItems.push({ name: "", spec: "", qty: 1, unit: "식", unitPrice: "", cost: "" });
+    saveState();
+    render();
+  }
+  if (action === "remove-estimate") {
+    job.estimateItems.splice(Number(data.index), 1);
+    if (!job.estimateItems.length) job.estimateItems.push({ name: "", cost: "" });
+    saveState();
+    render();
+  }
+  if (action === "print") window.print();
+  if (action === "select-job") {
+    state.currentJobId = data.id;
+    state.activeView = "dashboard";
+    saveState();
+    render();
+  }
+}
+
+function openMap(address) {
+  if (!address) {
+    notify("주소를 먼저 입력하세요.");
+    return;
+  }
+  window.open(`https://map.kakao.com/link/search/${encodeURIComponent(address)}`, "_blank");
+}
+
+function startDictation(target = { kind: "situation" }) {
+  if (state.micEnabled === false) {
+    notify("마이크가 꺼져 있습니다. 마이크 아이콘을 눌러 켜세요.");
+    return;
+  }
+  const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!SpeechRecognition) {
+    notify("이 브라우저는 음성 받아쓰기를 지원하지 않습니다.");
+    return;
+  }
+  const recognition = new SpeechRecognition();
+  recognition.lang = "ko-KR";
+  recognition.interimResults = true;
+  recognition.onresult = (event) => {
+    const transcript = Array.from(event.results).map((result) => result[0].transcript).join("");
+    appendTargetText(target, transcript);
+    render();
+  };
+  recognition.onend = () => {
+    state.micListening = false;
+    saveState();
+    render();
+  };
+  recognition.onerror = () => {
+    state.micListening = false;
+    saveState();
+    render();
+  };
+  state.micListening = true;
+  saveState();
+  recognition.start();
+  render();
+  notify("받아쓰기를 시작했습니다.");
+}
+
+async function toggleRecording(target = { kind: "situation" }) {
+  if (state.micEnabled === false) {
+    notify("마이크가 꺼져 있습니다. 마이크 아이콘을 눌러 켜세요.");
+    return;
+  }
+  if (mediaRecorder && mediaRecorder.state === "recording") {
+    mediaRecorder.stop();
+    notify("녹음을 종료했습니다.");
+    return;
+  }
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    recordedChunks = [];
+    recordingTarget = target;
+    mediaRecorder = new MediaRecorder(stream);
+    mediaRecorder.ondataavailable = (event) => recordedChunks.push(event.data);
+    mediaRecorder.onstop = () => {
+      state.micListening = false;
+      appendTargetText(recordingTarget || { kind: "situation" }, `녹음파일: 현장녹음-${new Date().toLocaleTimeString("ko-KR")}.webm`);
+      recordingTarget = null;
+      stream.getTracks().forEach((track) => track.stop());
+      render();
+    };
+    mediaRecorder.start();
+    state.micListening = true;
+    saveState();
+    render();
+    notify("녹음 중입니다. 다시 누르면 종료합니다.");
+  } catch (error) {
+    notify("마이크 권한을 확인하세요.");
+  }
+}
+
+function toggleMicPower() {
+  state.micEnabled = state.micEnabled === false;
+  if (!state.micEnabled) state.micListening = false;
+  saveState();
+  render();
+}
+
+function appendTargetText(target, text) {
+  const job = currentJob();
+  const stamp = text.trim();
+  if (!stamp) return;
+  if (target.kind === "check") {
+    const checks = job[target.type] || [];
+    const check = checks.find((item) => item.id === target.id);
+    if (check) check.memo = `${check.memo ? `${check.memo}\n` : ""}${stamp}`;
+  } else if (target.kind === "field") {
+    const fieldName = target.field || "situation";
+    job[fieldName] = `${job[fieldName] ? `${job[fieldName]}\n` : ""}${stamp}`;
+  } else {
+    job.situation = `${job.situation ? `${job.situation}\n` : ""}${stamp}`;
+  }
+  job.updatedAt = new Date().toISOString();
+  saveState();
+}
+
+function notifyPhotoList(photos) {
+  if (!photos.length) {
+    notify("저장된 작업사진이 없습니다.");
+    return;
+  }
+  notify(`작업사진: ${photos.join(", ")}`);
+}
+
+function clearField(fieldName, shouldRender = true) {
+  const job = currentJob();
+  job[fieldName] = "";
+  job.updatedAt = new Date().toISOString();
+  saveState();
+  if (shouldRender) render();
+}
+
+function clearCheckMemo(type, id, shouldRender = true) {
+  const job = currentJob();
+  const check = (job[type] || []).find((item) => item.id === id);
+  if (check) check.memo = "";
+  job.updatedAt = new Date().toISOString();
+  saveState();
+  if (shouldRender) render();
+}
+
+function estimateLineTotal(item) {
+  const qty = Number(item.qty || 0);
+  const unitPrice = Number(item.unitPrice || 0);
+  if (qty && unitPrice) return qty * unitPrice;
+  return Number(item.cost || 0);
+}
+
+async function connectBluetooth() {
+  if (!navigator.bluetooth) {
+    notify("이 브라우저는 Web Bluetooth를 지원하지 않습니다.");
+    return;
+  }
+  try {
+    const device = await navigator.bluetooth.requestDevice({ acceptAllDevices: true });
+    updateJob({ bluetoothDevice: device.name || device.id || "Bluetooth 장치" });
+  } catch (error) {
+    notify("블루투스 연결이 취소되었습니다.");
+  }
+}
+
+async function startSpectrum() {
+  try {
+    micStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    audioContext = new AudioContext();
+    const source = audioContext.createMediaStreamSource(micStream);
+    analyser = audioContext.createAnalyser();
+    analyser.fftSize = 2048;
+    source.connect(analyser);
+    renderSpectrum();
+  } catch (error) {
+    notify("마이크 분석을 시작할 수 없습니다.");
+  }
+}
+
+function stopSpectrum() {
+  if (animationFrame) cancelAnimationFrame(animationFrame);
+  if (micStream) micStream.getTracks().forEach((track) => track.stop());
+  if (audioContext) audioContext.close();
+  animationFrame = null;
+  micStream = null;
+  audioContext = null;
+  analyser = null;
+  drawIdleSpectrum();
+}
+
+function renderSpectrum() {
+  const canvas = document.querySelector("#spectrum");
+  if (!canvas || !analyser) return;
+  const ctx = canvas.getContext("2d");
+  const data = new Uint8Array(analyser.frequencyBinCount);
+  analyser.getByteFrequencyData(data);
+  const width = canvas.width;
+  const height = canvas.height;
+  ctx.clearRect(0, 0, width, height);
+  ctx.fillStyle = "#071316";
+  ctx.fillRect(0, 0, width, height);
+  const barWidth = width / data.length;
+  let peakIndex = 0;
+  let peakValue = 0;
+  data.forEach((value, index) => {
+    if (value > peakValue) {
+      peakValue = value;
+      peakIndex = index;
+    }
+  });
+  data.forEach((value, index) => {
+    const barHeight = (value / 255) * height;
+    ctx.fillStyle = index === peakIndex || value > 190 ? "#e47c24" : "#28b5a8";
+    ctx.fillRect(index * barWidth, height - barHeight, Math.max(1, barWidth - 1), barHeight);
+  });
+  const status = document.querySelector("#peakStatus");
+  if (status) status.textContent = `최고 피크: ${peakIndex}번 대역 · ${peakValue}`;
+  animationFrame = requestAnimationFrame(renderSpectrum);
+}
+
+function drawIdleSpectrum() {
+  const canvas = document.querySelector("#spectrum");
+  if (!canvas) return;
+  const ctx = canvas.getContext("2d");
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  ctx.fillStyle = "#071316";
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  for (let i = 0; i < 72; i += 1) {
+    const h = 22 + Math.sin(i * 0.8) * 18 + (i % 9) * 4;
+    ctx.fillStyle = i % 17 === 0 ? "#e47c24" : "#214f58";
+    ctx.fillRect(i * 16, canvas.height - h - 18, 9, h);
+  }
+}
+
+function updatePressureDial(value) {
+  const dial = document.querySelector(".pressure-dial b");
+  if (dial) dial.textContent = Number(value || 0).toFixed(1);
+}
+
+function generateReport(job) {
+  const plumbingIssues = job.plumbingChecks.filter((check) => check.done && check.result !== "정상");
+  const waterproofIssues = job.waterproofChecks.filter((check) => check.done && check.result !== "정상");
+  return `[누수진단 소견서]
+
+진단일자: ${job.date}
+현장주소: ${job.address || "미입력"}
+연락처: ${job.phone || "미입력"}
+
+1. 현장 상황
+${job.situation || "현장 상황 기록이 필요합니다."}
+
+2. 환경 및 조건
+${job.environment || "건물 환경 기록이 필요합니다."}
+
+3. 배관 누수 점검 결과
+${summaryLines(job.plumbingChecks)}
+
+4. 방수 및 외부 요인 점검 결과
+${summaryLines(job.waterproofChecks)}
+
+5. 종합 의견
+${plumbingIssues.length ? "배관 계통 누수 가능성이 확인 또는 의심됩니다. 압력검사, 청음, 열화상/가스탐지 등 다각적 추적을 권장합니다." : "기본 배관 점검에서는 중대한 누수 징후가 제한적입니다."}
+${waterproofIssues.length ? "외부 요인 또는 방수층 문제 가능성도 함께 검토해야 합니다." : "방수 및 외부 요인은 현재 기록 기준 특이사항이 적습니다."}
+
+6. 첨부자료
+사진: ${(job.photos || []).join(", ") || "없음"}
+동영상: ${(job.videos || []).join(", ") || "없음"}`;
+}
+
+function generateBlog(job) {
+  const titleAddress = job.address ? `${job.address} 누수진단` : "누수진단 현장";
+  return `${titleAddress} 작업 기록
+
+오늘은 ${job.date}에 접수된 누수 의심 현장을 방문해 기본 배관 점검과 방수 관련 점검을 함께 진행했습니다.
+
+현장에서 확인한 주요 상황은 다음과 같습니다.
+${job.situation || "고객 진술과 피해 위치를 기준으로 누수 범위를 좁혀 확인했습니다."}
+
+먼저 변기부속, 온수라인, 각 밸브류를 순서대로 잠그고 열면서 계량기 반응을 확인했습니다. 이후 창틀, 우수관, 화장실 방수상태, 유가, 변기 주변 상태를 확인해 외부 유입과 방수 문제 가능성도 함께 검토했습니다.
+
+점검 요약
+${summaryLines([...job.plumbingChecks, ...job.waterproofChecks])}
+
+이번 현장은 단순히 한 지점만 보는 방식이 아니라 배관, 방수, 외부 요인을 나누어 확인하는 것이 중요했습니다. 누수는 원인이 여러 방향으로 겹칠 수 있기 때문에 기록을 남기고 순서대로 배제하는 과정이 필요합니다.
+
+첨부자료: 사진 ${(job.photos || []).length}개, 동영상 ${(job.videos || []).length}개`;
+}
+
+function summaryLines(checks) {
+  return checks.map((check) => `- ${check.title}: ${check.result}${check.memo ? ` (${check.memo})` : ""}`).join("\n");
+}
+
+function countDone(checks) {
+  return checks.filter((check) => check.done).length;
+}
+
+function copyText(text) {
+  if (!text) {
+    notify("복사할 블로그 글이 없습니다.");
+    return;
+  }
+  navigator.clipboard.writeText(text).then(() => notify("블로그 글을 복사했습니다."));
+}
+
+function notify(message) {
+  const status = document.querySelector("#recordingStatus") || document.querySelector("#peakStatus");
+  if (status) status.textContent = message;
+  else alert(message);
+}
+
+function escapeHtml(value) {
+  return String(value ?? "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#039;");
+}
+
+function escapeAttr(value) {
+  return escapeHtml(value);
+}
+
+render();
