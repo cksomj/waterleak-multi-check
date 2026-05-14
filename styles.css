@@ -754,8 +754,9 @@ canvas {
 
 .stamp-seal {
   height: 78px;
+  object-fit: contain;
   opacity: 0.9;
-  transform: rotate(-8deg);
+  transform: rotate(-5deg);
   width: 78px;
 }
 
