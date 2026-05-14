@@ -440,7 +440,7 @@ function renderEstimate(job) {
       <div class="estimate-note">
         ${textarea("estimateNote", "비고", job.estimateNote || "상기 견적은 현장 상황 및 추가 작업 범위에 따라 변경될 수 있습니다.", "비고")}
       </div>
-      <div class="estimate-sign">공급자 확인: ${escapeHtml(PROVIDER.owner)} ${stampSealSvg("stamp-seal")}</div>
+      <div class="estimate-sign">공급자 확인: ${escapeHtml(PROVIDER.owner)} ${stampSealImage("stamp-seal")}</div>
     </section>
   `;
 }
@@ -1015,7 +1015,7 @@ function openPdfPrintWindow(type) {
           .pre { white-space: pre-wrap; }
           .total th, .total td { background: #ecfdf5; font-size: 16px; font-weight: 700; }
           .stamp-wrap { align-items: center; display: inline-flex; gap: 12px; justify-content: flex-end; margin-top: 28px; width: 100%; }
-          .stamp-svg { height: 78px; opacity: .9; transform: rotate(-8deg); width: 78px; }
+          .stamp-svg { height: 78px; object-fit: contain; opacity: .95; transform: rotate(-5deg); width: 78px; }
           @media print { body { print-color-adjust: exact; -webkit-print-color-adjust: exact; } }
         </style>
       </head>
@@ -1046,7 +1046,7 @@ function buildReportPrintHtml(job) {
     <div class="pre">${escapeHtml(report)}</div>
     <div class="stamp-wrap">
       <span>공급자 확인: ${escapeHtml(PROVIDER.owner)}</span>
-      ${stampSealSvg("stamp-svg")}
+      ${stampSealImage("stamp-svg")}
     </div>
   `;
 }
@@ -1087,39 +1087,14 @@ function buildEstimatePrintHtml(job) {
     <p class="pre">${escapeHtml(job.estimateNote || "상기 견적은 현장 상황 및 추가 작업 범위에 따라 변경될 수 있습니다.")}</p>
     <div class="stamp-wrap">
       <span>공급자 확인: ${escapeHtml(PROVIDER.owner)}</span>
-      ${stampSealSvg("stamp-svg")}
+      ${stampSealImage("stamp-svg")}
     </div>
   `;
 }
 
-function stampSealSvg(className = "stamp-seal") {
-  return `
-    <svg class="${className}" viewBox="0 0 120 120" aria-label="최규석 도장" role="img">
-      <defs>
-        <filter id="stampRough">
-          <feTurbulence type="fractalNoise" baseFrequency="0.85" numOctaves="2" seed="7" result="noise" />
-          <feDisplacementMap in="SourceGraphic" in2="noise" scale="2.2" />
-        </filter>
-        <mask id="stampInkMask">
-          <rect width="120" height="120" fill="white" />
-          <circle cx="29" cy="24" r="4" fill="black" opacity=".45" />
-          <circle cx="88" cy="34" r="3" fill="black" opacity=".35" />
-          <circle cx="41" cy="87" r="5" fill="black" opacity=".28" />
-          <path d="M18 62 C42 56, 68 66, 102 58" stroke="black" stroke-width="3" opacity=".22" />
-        </mask>
-      </defs>
-      <g filter="url(#stampRough)" mask="url(#stampInkMask)" fill="none" stroke="#b91c1c" stroke-linecap="round" stroke-linejoin="round">
-        <rect x="13" y="13" width="94" height="94" rx="8" stroke-width="7" opacity=".9" />
-        <rect x="22" y="22" width="76" height="76" rx="4" stroke-width="2.4" opacity=".46" />
-        <line x1="60" y1="24" x2="60" y2="96" stroke-width="2.2" opacity=".5" />
-      </g>
-      <g fill="#b91c1c" filter="url(#stampRough)" mask="url(#stampInkMask)" font-family="serif" font-weight="900" text-anchor="middle">
-        <text x="42" y="54" font-size="28" transform="rotate(-3 42 54)">최</text>
-        <text x="78" y="54" font-size="28" transform="rotate(2 78 54)">규</text>
-        <text x="60" y="88" font-size="30" transform="rotate(-2 60 88)">석</text>
-      </g>
-    </svg>
-  `;
+function stampSealImage(className = "stamp-seal") {
+  const src = new URL("assets/stamp-choi.png", window.location.href).href;
+  return `<img class="${className}" src="${src}" alt="최규석 도장" />`;
 }
 
 async function connectBluetooth() {
