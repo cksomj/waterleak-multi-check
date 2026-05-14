@@ -384,7 +384,7 @@ function renderEstimate(job) {
         <p class="muted">날짜와 주소는 현장 기본정보에서 자동 입력됩니다. 내용과 비용은 직접 입력합니다.</p>
       </div>
       <div class="toolbar">
-        <button class="btn ghost" data-action="add-estimate">항목 추가</button>
+        <button class="btn ghost" data-action="add-estimate">품명 추가</button>
         <button class="btn primary" data-action="save">저장 및 수정</button>
         <button class="btn ghost" data-action="download-estimate-pdf">견적서 PDF 다운로드</button>
       </div>
