@@ -377,6 +377,7 @@ function renderEstimate(job) {
   const tax = Math.round(supplyTotal * 0.1);
   const total = supplyTotal + tax;
   const estimateNo = job.estimateNo || `WL-${(job.date || "").replaceAll("-", "") || "00000000"}`;
+  const docTitle = job.estimateDocTitle || "견 적 서";
   return `
     <div class="section-head">
       <div>
@@ -384,13 +385,14 @@ function renderEstimate(job) {
         <p class="muted">날짜와 주소는 현장 기본정보에서 자동 입력됩니다. 내용과 비용은 직접 입력합니다.</p>
       </div>
       <div class="toolbar">
+        <button class="btn ghost" data-action="toggle-estimate-title">제목 바꾸기</button>
         <button class="btn ghost" data-action="add-estimate">품명 추가</button>
         <button class="btn primary" data-action="save">저장 및 수정</button>
         <button class="btn ghost" data-action="download-estimate-pdf">견적서 PDF 다운로드</button>
       </div>
     </div>
     <section class="print-area estimate-form">
-      <h2 class="estimate-title">견 적 서</h2>
+      <h2 class="estimate-title">${escapeHtml(docTitle)}</h2>
       <div class="estimate-meta">
         ${field("estimateNo", "견적번호", "text", estimateNo)}
         ${field("date", "견적일자", "date", job.date)}
@@ -654,6 +656,7 @@ function handleAction(action, data) {
   if (action === "generate-blog") updateJob({ blog: generateBlog(job) });
   if (action === "add-blog-photo") document.querySelector("#blogPhotoInput")?.click();
   if (action === "copy-blog") copyText(job.blog);
+  if (action === "toggle-estimate-title") toggleEstimateTitle();
   if (action === "add-estimate") {
     job.estimateItems.push({ name: "", spec: "", qty: 1, unit: "식", unitPrice: "", cost: "" });
     saveState();
@@ -966,6 +969,14 @@ function maybeAddEstimateRow(input) {
   setTimeout(render, 0);
 }
 
+function toggleEstimateTitle() {
+  const job = currentJob();
+  job.estimateDocTitle = job.estimateDocTitle === "거래명세서" ? "견 적 서" : "거래명세서";
+  job.updatedAt = new Date().toISOString();
+  saveState();
+  render();
+}
+
 function estimateLineTotal(item) {
   const qty = Number(item.qty || 0);
   const unitPrice = Number(item.unitPrice || 0);
@@ -975,7 +986,7 @@ function estimateLineTotal(item) {
 
 function openPdfPrintWindow(type) {
   const job = currentJob();
-  const title = type === "report" ? "누수진단 소견서" : "누수공사 견적서";
+  const title = type === "report" ? "누수진단 소견서" : currentJob().estimateDocTitle || "견 적 서";
   const html = type === "report" ? buildReportPrintHtml(job) : buildEstimatePrintHtml(job);
   const popup = window.open("", "_blank", "width=920,height=1100");
   if (!popup) {
@@ -1046,7 +1057,7 @@ function buildEstimatePrintHtml(job) {
   const tax = Math.round(supplyTotal * 0.1);
   const total = supplyTotal + tax;
   return `
-    <h1>견 적 서</h1>
+    <h1>${escapeHtml(job.estimateDocTitle || "견 적 서")}</h1>
     <table>
       <tbody>
         <tr><th>견적일자</th><td>${escapeHtml(job.date || "")}</td><th>견적번호</th><td>${escapeHtml(job.estimateNo || `WL-${(job.date || "").replaceAll("-", "")}`)}</td></tr>
