@@ -735,9 +735,30 @@ canvas {
 }
 
 .estimate-sign {
+  align-items: center;
+  display: flex;
+  gap: 12px;
+  justify-content: flex-end;
   font-weight: 700;
   margin-top: 28px;
   text-align: right;
+}
+
+.stamp-seal {
+  align-items: center;
+  border: 3px solid #c1121f;
+  border-radius: 50%;
+  color: #c1121f;
+  display: inline-flex;
+  font-size: 17px;
+  font-weight: 800;
+  height: 68px;
+  justify-content: center;
+  letter-spacing: 2px;
+  line-height: 1.05;
+  opacity: 0.86;
+  transform: rotate(-8deg);
+  width: 68px;
 }
 
 @media print {
