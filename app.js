@@ -1,4 +1,5 @@
 const STORAGE_KEY = "waterleak_multi_check_v1";
+const KAKAO_JS_KEY = "7fc926e3eef2a8fefa95def2a59ff5ed";
 
 const basePlumbingChecks = [
   ["toilet_parts", "화장실 변기부속 누수검사", "밸브를 잠그고 열어 계량기 움직임을 확인합니다. 물이 없으면 보충 후 재검사합니다."],
@@ -31,6 +32,8 @@ let analyser = null;
 let animationFrame = null;
 let micStream = null;
 let recordingTarget = null;
+let kakaoMap = null;
+let kakaoMarker = null;
 
 const app = document.querySelector("#app");
 
@@ -140,6 +143,7 @@ function render() {
   `;
   bindEvents();
   if (state.activeView === "tracker") drawIdleSpectrum();
+  if (state.activeView === "dashboard") renderKakaoMap();
 }
 
 function renderNav() {
@@ -180,6 +184,8 @@ function renderDashboard(job) {
       </div>
       <div class="toolbar">
         <button class="btn ghost" data-action="open-map">지도</button>
+        <button class="btn ghost" data-action="show-app-map">앱지도 표시</button>
+        <button class="btn ghost" data-action="open-directions">길찾기</button>
         <button class="btn ghost" data-action="take-photo">작업사진 찍기</button>
         <button class="btn ghost" data-action="view-photos">작업사진 보기</button>
       </div>
@@ -193,6 +199,10 @@ function renderDashboard(job) {
       <div class="grid two">
         ${textareaWithVoice("situation", "상황 기록", job.situation, "누수 발생 위치, 시간, 피해상황, 고객 진술을 기록합니다.")}
         ${textareaWithVoice("environment", "주소 및 환경", job.environment, "건물 유형, 층수, 계량기 위치, 보일러/배관 환경 등")}
+      </div>
+      <div class="map-panel">
+        <div id="kakaoMap" class="map-canvas"></div>
+        <div id="mapStatus" class="muted">주소를 입력하고 앱지도 표시를 누르면 위치가 표시됩니다.</div>
       </div>
       <input class="hidden-input" id="jobPhotoInput" data-file-type="photos" type="file" accept="image/*" capture="environment" multiple />
       <div class="photo-strip">
@@ -239,7 +249,7 @@ function renderCheckRow(type, check) {
         <div class="mini-actions">
           <button class="btn ghost dictate-btn" data-action="dictate-check" data-check="${check.id}" data-check-type="${type}"><span class="voice-icon blue"></span>받아적기</button>
           ${micStatusControl()}
-          <button class="btn ghost record-btn" data-action="record-check" data-check="${check.id}" data-check-type="${type}"><span class="voice-icon red"></span>녹음</button>
+          <button class="btn ghost record-btn" data-action="record-check" data-check="${check.id}" data-check-type="${type}"><span class="voice-icon red"></span>녹음/저장</button>
           <button class="btn ghost clear-btn" data-action="clear-check" data-check="${check.id}" data-check-type="${type}">삭제</button>
           <button class="btn ghost retry-btn" data-action="retry-check" data-check="${check.id}" data-check-type="${type}">새로다시</button>
         </div>
@@ -488,7 +498,7 @@ function textareaWithVoice(id, label, value, placeholder = "") {
         <div class="mini-actions">
           <button class="btn ghost dictate-btn" data-action="dictate-field" data-field="${id}"><span class="voice-icon blue"></span>받아적기</button>
           ${micStatusControl()}
-          <button class="btn ghost record-btn" data-action="record-field" data-field="${id}"><span class="voice-icon red"></span>녹음</button>
+          <button class="btn ghost record-btn" data-action="record-field" data-field="${id}"><span class="voice-icon red"></span>녹음/저장</button>
           <button class="btn ghost clear-btn" data-action="clear-field" data-field="${id}">삭제</button>
           <button class="btn ghost retry-btn" data-action="retry-field" data-field="${id}">새로다시</button>
         </div>
@@ -600,6 +610,8 @@ function handleAction(action, data) {
     render();
   }
   if (action === "open-map") openMap(job.address);
+  if (action === "show-app-map") renderKakaoMap(true);
+  if (action === "open-directions") openDirections(job.address);
   if (action === "take-photo") document.querySelector("#jobPhotoInput")?.click();
   if (action === "view-photos") notifyPhotoList(job.photos || []);
   if (action === "dictate-field") startDictation({ kind: "field", field: data.field });
@@ -660,6 +672,71 @@ function openMap(address) {
   window.open(`https://map.kakao.com/link/search/${encodeURIComponent(address)}`, "_blank");
 }
 
+function openDirections(address) {
+  if (!address) {
+    notify("주소를 먼저 입력하세요.");
+    return;
+  }
+  window.open(`https://map.kakao.com/link/to/${encodeURIComponent(address)}`, "_blank");
+}
+
+function loadKakaoSdk() {
+  if (window.kakao?.maps?.services) return Promise.resolve();
+  return new Promise((resolve, reject) => {
+    const existing = document.querySelector("script[data-kakao-map-sdk]");
+    if (existing) {
+      existing.addEventListener("load", () => window.kakao.maps.load(resolve), { once: true });
+      existing.addEventListener("error", reject, { once: true });
+      return;
+    }
+    const script = document.createElement("script");
+    script.dataset.kakaoMapSdk = "true";
+    script.src = `https://dapi.kakao.com/v2/maps/sdk.js?appkey=${KAKAO_JS_KEY}&libraries=services&autoload=false`;
+    script.onload = () => window.kakao.maps.load(resolve);
+    script.onerror = reject;
+    document.head.appendChild(script);
+  });
+}
+
+async function renderKakaoMap(forceSearch = false) {
+  const container = document.querySelector("#kakaoMap");
+  const status = document.querySelector("#mapStatus");
+  if (!container) return;
+  const job = currentJob();
+  try {
+    await loadKakaoSdk();
+    const fallback = new kakao.maps.LatLng(37.566826, 126.9786567);
+    kakaoMap = new kakao.maps.Map(container, { center: fallback, level: 4 });
+    kakaoMarker = new kakao.maps.Marker({ position: fallback });
+    kakaoMarker.setMap(kakaoMap);
+    if (!job.address) {
+      if (status) status.textContent = "주소를 입력하면 지도에 현장 위치를 표시합니다.";
+      return;
+    }
+    if (forceSearch || job.address) searchAddressOnMap(job.address);
+  } catch (error) {
+    if (status) status.textContent = "카카오 지도 API를 불러오지 못했습니다. 도메인 등록과 JavaScript 키를 확인하세요.";
+  }
+}
+
+function searchAddressOnMap(address) {
+  const status = document.querySelector("#mapStatus");
+  if (!window.kakao?.maps?.services || !kakaoMap || !address) return;
+  const geocoder = new kakao.maps.services.Geocoder();
+  geocoder.addressSearch(address, (result, stateCode) => {
+    if (stateCode !== kakao.maps.services.Status.OK || !result.length) {
+      if (status) status.textContent = "주소를 찾지 못했습니다. 도로명/지번 주소를 더 정확히 입력하세요.";
+      return;
+    }
+    const coords = new kakao.maps.LatLng(Number(result[0].y), Number(result[0].x));
+    kakaoMap.setCenter(coords);
+    if (!kakaoMarker) kakaoMarker = new kakao.maps.Marker();
+    kakaoMarker.setPosition(coords);
+    kakaoMarker.setMap(kakaoMap);
+    if (status) status.textContent = `지도 위치 확인: ${address}`;
+  });
+}
+
 function startDictation(target = { kind: "situation" }) {
   if (state.micEnabled === false) {
     notify("마이크가 꺼져 있습니다. 마이크 아이콘을 눌러 켜세요.");
@@ -709,11 +786,13 @@ async function toggleRecording(target = { kind: "situation" }) {
     const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
     recordedChunks = [];
     recordingTarget = target;
-    mediaRecorder = new MediaRecorder(stream);
+    const options = getRecorderOptions();
+    mediaRecorder = new MediaRecorder(stream, options.mediaRecorderOptions);
     mediaRecorder.ondataavailable = (event) => recordedChunks.push(event.data);
     mediaRecorder.onstop = () => {
       state.micListening = false;
-      appendTargetText(recordingTarget || { kind: "situation" }, `녹음파일: 현장녹음-${new Date().toLocaleTimeString("ko-KR")}.webm`);
+      const savedName = saveRecordingFile(recordedChunks, options.mimeType, options.extension);
+      appendTargetText(recordingTarget || { kind: "situation" }, `녹음파일 저장: ${savedName}`);
       recordingTarget = null;
       stream.getTracks().forEach((track) => track.stop());
       render();
@@ -726,6 +805,39 @@ async function toggleRecording(target = { kind: "situation" }) {
   } catch (error) {
     notify("마이크 권한을 확인하세요.");
   }
+}
+
+function getRecorderOptions() {
+  const candidates = [
+    { mimeType: "audio/mpeg", extension: "mp3" },
+    { mimeType: "audio/mp3", extension: "mp3" },
+    { mimeType: "audio/webm;codecs=opus", extension: "webm" },
+    { mimeType: "audio/webm", extension: "webm" },
+    { mimeType: "audio/ogg;codecs=opus", extension: "ogg" },
+  ];
+  const supported = candidates.find((item) => window.MediaRecorder?.isTypeSupported?.(item.mimeType));
+  if (!supported) return { mimeType: "", extension: "webm", mediaRecorderOptions: undefined };
+  return { ...supported, mediaRecorderOptions: { mimeType: supported.mimeType } };
+}
+
+function saveRecordingFile(chunks, mimeType, extension) {
+  const blob = new Blob(chunks, { type: mimeType || "audio/webm" });
+  const date = new Date();
+  const stamp = `${date.getFullYear()}${pad2(date.getMonth() + 1)}${pad2(date.getDate())}-${pad2(date.getHours())}${pad2(date.getMinutes())}${pad2(date.getSeconds())}`;
+  const filename = `waterleak-recording-${stamp}.${extension}`;
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+  return filename;
+}
+
+function pad2(value) {
+  return String(value).padStart(2, "0");
 }
 
 function toggleMicPower() {
