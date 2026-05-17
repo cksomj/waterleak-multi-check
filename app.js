@@ -1,5 +1,4 @@
 const STORAGE_KEY = "waterleak_multi_check_v1";
-const KAKAO_JS_KEY = "7fc926e3eef2a8fefa95def2a59ff5ed";
 const PROVIDER = {
   name: "최씨누수탐지종합설비",
   bizNo: "381-26-00781",
@@ -21,12 +20,27 @@ const baseWaterproofChecks = [
   ["toilet_body", "변기상태", "변기 정심, 백시멘트, 배관 연결부 흔들림과 누수 흔적을 확인합니다."],
 ];
 
+const viewOrder = [
+  ["dashboard", "메인메뉴"],
+  ["basic", "기본점검"],
+  ["tracker", "누수추적기"],
+  ["blog", "블로그 작성"],
+  ["estimate", "견적서"],
+  ["report", "AI 소견서"],
+  ["history", "작업 리스트"],
+];
+
 const defaultState = {
   activeView: "dashboard",
   currentJobId: null,
   storageMode: "local",
-  micEnabled: true,
-  micListening: false,
+  googleDrive: {
+    apiKey: "",
+    clientId: "",
+    folderId: "",
+    folderName: "WaterLeak Multi Check",
+  },
+  googleSetupOpen: false,
   jobs: [],
 };
 
@@ -37,8 +51,8 @@ let analyser = null;
 let animationFrame = null;
 let micStream = null;
 let recordingTarget = null;
-let kakaoMap = null;
-let kakaoMarker = null;
+let googleTokenClient = null;
+let googleAccessToken = "";
 
 const app = document.querySelector("#app");
 
@@ -122,6 +136,13 @@ function setView(view) {
   render();
 }
 
+function moveView(direction) {
+  const ids = viewOrder.map(([id]) => id);
+  const currentIndex = Math.max(0, ids.indexOf(state.activeView));
+  const nextIndex = Math.min(ids.length - 1, Math.max(0, currentIndex + direction));
+  if (nextIndex !== currentIndex) setView(ids[nextIndex]);
+}
+
 function render() {
   const job = currentJob();
   app.innerHTML = `
@@ -148,29 +169,17 @@ function render() {
   `;
   bindEvents();
   if (state.activeView === "tracker") drawIdleSpectrum();
-  if (state.activeView === "dashboard") renderKakaoMap();
 }
 
 function renderNav() {
-  const nav = [
-    ["dashboard", "메인메뉴"],
-    ["basic", "기본점검"],
-    ["waterproof", "방수문제"],
-    ["tracker", "누수추적기"],
-    ["report", "AI 소견서"],
-    ["blog", "블로그 작성"],
-    ["estimate", "견적서"],
-    ["history", "작업 리스트"],
-  ];
-  return nav.map(([id, label]) => `<button class="nav-button ${state.activeView === id ? "active" : ""}" data-view="${id}">${label}</button>`).join("");
+  return viewOrder.map(([id, label]) => `<button class="nav-button ${state.activeView === id ? "active" : ""}" data-view="${id}">${label}</button>`).join("");
 }
 
 function renderView() {
   const job = currentJob();
   const views = {
     dashboard: renderDashboard,
-    basic: () => renderChecklist("기본점검목록", "plumbingChecks"),
-    waterproof: () => renderChecklist("방수문제목록", "waterproofChecks"),
+    basic: () => renderChecklist("기본점검 및 방수문제 목록"),
     tracker: renderTracker,
     report: renderReport,
     blog: renderBlog,
@@ -188,11 +197,12 @@ function renderDashboard(job) {
         <p class="muted">날짜, 주소, 연락처, 현장 상황을 저장하고 이후 서식에 자동 반영합니다.</p>
       </div>
       <div class="toolbar">
-        <button class="btn ghost" data-action="open-map">지도</button>
-        <button class="btn ghost" data-action="show-app-map">앱지도 표시</button>
-        <button class="btn ghost" data-action="open-directions">길찾기</button>
+        <button class="btn ghost" data-action="show-app-map">카카오지도</button>
+        <button class="btn ghost" data-action="open-naver-map">네이버지도</button>
+        <button class="btn ghost" data-action="open-directions">찾아가기</button>
         <button class="btn ghost" data-action="take-photo">작업사진 찍기</button>
         <button class="btn ghost" data-action="view-photos">작업사진 보기</button>
+        <button class="btn primary" data-action="google-drive-save">구글저장</button>
       </div>
     </div>
     <section class="panel grid">
@@ -201,32 +211,58 @@ function renderDashboard(job) {
         ${field("address", "소비자 주소", "text", job.address, "예: 서울시 강남구 ...")}
         ${field("phone", "전화번호", "tel", job.phone, "010-0000-0000")}
       </div>
-      <div class="grid two">
-        ${textareaWithVoice("situation", "상황 기록", job.situation, "누수 발생 위치, 시간, 피해상황, 고객 진술을 기록합니다.")}
-        ${textareaWithVoice("environment", "주소 및 환경", job.environment, "건물 유형, 층수, 계량기 위치, 보일러/배관 환경 등")}
-      </div>
+      ${textareaWithRecord("situation", "상황 기록", job.situation, "누수 발생 위치, 시간, 피해상황, 고객 진술을 기록합니다.")}
       <div class="map-panel">
-        <div id="kakaoMap" class="map-canvas"></div>
-        <div id="mapStatus" class="muted">주소를 입력하고 앱지도 표시를 누르면 위치가 표시됩니다.</div>
+        <div class="map-placeholder">
+          <strong>외부 지도 연결</strong>
+          <p>소비자 주소를 입력한 뒤 카카오지도, 네이버지도, 찾아가기를 누르면 지도 앱/웹으로 바로 연결됩니다.</p>
+        </div>
       </div>
-      <input class="hidden-input" id="jobPhotoInput" data-file-type="photos" type="file" accept="image/*" capture="environment" multiple />
+      <input class="hidden-input" id="jobCameraInput" data-file-type="photos" type="file" accept="image/*" capture="environment" multiple />
+      <input class="hidden-input" id="jobPhotoLibraryInput" data-file-type="photos" type="file" accept="image/*" multiple />
       <div class="photo-strip">
         ${(job.photos || []).length ? job.photos.map((name) => `<span>${escapeHtml(name)}</span>`).join("") : `<span>작업사진 없음</span>`}
       </div>
-      <div id="recordingStatus" class="muted">녹음/받아쓰기 상태: 대기</div>
+      <div id="recordingStatus" class="muted">녹음 상태: 대기</div>
+      <div id="driveStatus" class="drive-status">Google Drive: ${driveStatusText()}</div>
+      ${renderGoogleDriveInlineSetup()}
     </section>
     <section class="meter-cards" style="margin-top:14px">
-      ${metric("기본점검 완료", countDone(job.plumbingChecks), `${job.plumbingChecks.length}개 중`)}
-      ${metric("방수점검 완료", countDone(job.waterproofChecks), `${job.waterproofChecks.length}개 중`)}
+      ${metric("점검 완료", countDone([...job.plumbingChecks, ...job.waterproofChecks]), `${job.plumbingChecks.length + job.waterproofChecks.length}개 중`)}
       ${metric("소견서", job.report ? "작성됨" : "미작성", "AI 초안")}
       ${metric("저장방식", state.storageMode === "local" ? "로컬" : "구글", "선택 옵션")}
     </section>
   `;
 }
 
-function renderChecklist(title, type) {
+function renderGoogleDriveInlineSetup() {
+  const config = googleConfig();
+  if (!state.googleSetupOpen && config.apiKey && config.clientId) return "";
+  return `
+    <div class="drive-setup">
+      <h2>Google Drive 저장 설정</h2>
+      <div class="grid two">
+        <label>Google API Key
+          <input data-google-setting="apiKey" type="text" value="${escapeHtml(config.apiKey || "")}" placeholder="API 키를 붙여넣기" />
+        </label>
+        <label>OAuth Client ID
+          <input data-google-setting="clientId" type="text" value="${escapeHtml(config.clientId || "")}" placeholder="OAuth 클라이언트 ID를 붙여넣기" />
+        </label>
+      </div>
+      <div class="toolbar">
+        <button class="btn primary" data-action="save-google-settings">설정 저장 후 구글저장</button>
+      </div>
+      <p class="muted">처음 한 번만 입력하면 이후에는 구글저장 버튼으로 바로 저장합니다.</p>
+    </div>
+  `;
+}
+
+function renderChecklist(title) {
   const job = currentJob();
-  const checks = job[type];
+  const groups = [
+    ["plumbingChecks", "기본점검", job.plumbingChecks || []],
+    ["waterproofChecks", "방수문제", job.waterproofChecks || []],
+  ];
   return `
     <div class="section-head">
       <div>
@@ -234,12 +270,15 @@ function renderChecklist(title, type) {
         <p class="muted">개별 항목을 체크하고 결과와 메모를 저장합니다.</p>
       </div>
       <div class="toolbar">
-        <button class="btn ghost" data-action="reset-checks" data-type="${type}">초기화</button>
+        <button class="btn ghost" data-action="reset-checks" data-type="all">초기화</button>
         <button class="btn primary" data-action="save">점검목록 저장</button>
       </div>
     </div>
     <section class="panel check-list">
-      ${checks.map((check) => renderCheckRow(type, check)).join("")}
+      ${groups.map(([type, groupTitle, checks]) => `
+        <h2 class="check-group-title">${groupTitle}</h2>
+        ${checks.map((check) => renderCheckRow(type, check)).join("")}
+      `).join("")}
     </section>
   `;
 }
@@ -252,11 +291,8 @@ function renderCheckRow(type, check) {
         <strong>${escapeHtml(check.title)}</strong>
         <p class="muted">${escapeHtml(check.guide)}</p>
         <div class="mini-actions">
-          <button class="btn ghost dictate-btn" data-action="dictate-check" data-check="${check.id}" data-check-type="${type}"><span class="voice-icon blue"></span>받아적기</button>
-          ${micStatusControl()}
           <button class="btn ghost record-btn" data-action="record-check" data-check="${check.id}" data-check-type="${type}"><span class="voice-icon red"></span>녹음/저장</button>
           <button class="btn ghost clear-btn" data-action="clear-check" data-check="${check.id}" data-check-type="${type}">삭제</button>
-          <button class="btn ghost retry-btn" data-action="retry-check" data-check="${check.id}" data-check-type="${type}">새로다시</button>
         </div>
       </div>
       <div class="grid">
@@ -496,35 +532,18 @@ function textarea(id, label, value, placeholder = "") {
   `;
 }
 
-function textareaWithVoice(id, label, value, placeholder = "") {
+function textareaWithRecord(id, label, value, placeholder = "") {
   return `
     <div class="field">
       <div class="field-head">
         <label for="${id}">${label}</label>
         <div class="mini-actions">
-          <button class="btn ghost dictate-btn" data-action="dictate-field" data-field="${id}"><span class="voice-icon blue"></span>받아적기</button>
-          ${micStatusControl()}
           <button class="btn ghost record-btn" data-action="record-field" data-field="${id}"><span class="voice-icon red"></span>녹음/저장</button>
           <button class="btn ghost clear-btn" data-action="clear-field" data-field="${id}">삭제</button>
-          <button class="btn ghost retry-btn" data-action="retry-field" data-field="${id}">새로다시</button>
         </div>
       </div>
       <textarea id="${id}" data-job-field="${id}" placeholder="${escapeAttr(placeholder)}">${escapeHtml(value || "")}</textarea>
     </div>
-  `;
-}
-
-function micStatusControl() {
-  const enabled = state.micEnabled !== false;
-  const listening = enabled && state.micListening;
-  return `
-    <button class="mic-toggle ${enabled ? "on" : "off"}" data-action="toggle-mic" title="마이크 ${enabled ? "끄기" : "켜기"}" aria-label="마이크 ${enabled ? "끄기" : "켜기"}">
-      <span class="mic-shape"></span>
-    </button>
-    <span class="mic-status ${listening ? "listening" : ""} ${enabled ? "on" : "off"}" title="마이크 상태: ${enabled ? (listening ? "입력 중" : "대기") : "꺼짐"}">
-      <span></span><span></span><span></span><span></span>
-      <b>${enabled ? (listening ? "입력" : "대기") : "꺼짐"}</b>
-    </span>
   `;
 }
 
@@ -601,11 +620,58 @@ function bindEvents() {
 
   const historyQuery = app.querySelector("#historyQuery");
   if (historyQuery) historyQuery.addEventListener("input", render);
+
+  bindSwipeNavigation();
+}
+
+function saveGoogleSettingsFromForm() {
+  const config = googleConfig();
+  const apiKey = app.querySelector("[data-google-setting='apiKey']")?.value.trim() || "";
+  const clientId = app.querySelector("[data-google-setting='clientId']")?.value.trim() || "";
+  if (!apiKey || !clientId) {
+    notify("Google API Key와 OAuth Client ID를 모두 입력하세요.");
+    return false;
+  }
+  state.googleDrive = {
+    ...config,
+    apiKey,
+    clientId,
+    folderName: config.folderName || "WaterLeak Multi Check",
+  };
+  state.googleSetupOpen = false;
+  saveState();
+  return true;
+}
+
+function bindSwipeNavigation() {
+  const content = app.querySelector(".content");
+  if (!content) return;
+  let startX = 0;
+  let startY = 0;
+  let tracking = false;
+  const ignored = "button,input,textarea,select,option,label,a,canvas,.map-canvas,.estimate-name";
+
+  content.addEventListener("touchstart", (event) => {
+    if (event.touches.length !== 1 || event.target.closest(ignored)) return;
+    const touch = event.touches[0];
+    startX = touch.clientX;
+    startY = touch.clientY;
+    tracking = true;
+  }, { passive: true });
+
+  content.addEventListener("touchend", (event) => {
+    if (!tracking || event.changedTouches.length !== 1) return;
+    tracking = false;
+    const touch = event.changedTouches[0];
+    const deltaX = touch.clientX - startX;
+    const deltaY = touch.clientY - startY;
+    if (Math.abs(deltaX) < 70 || Math.abs(deltaX) < Math.abs(deltaY) * 1.35) return;
+    moveView(deltaX < 0 ? 1 : -1);
+  }, { passive: true });
 }
 
 function handleAction(action, data) {
   const job = currentJob();
-  if (action === "toggle-mic") toggleMicPower();
   if (action === "save") {
     saveState();
     notify("저장되었습니다.");
@@ -618,27 +684,24 @@ function handleAction(action, data) {
     saveState();
     render();
   }
-  if (action === "open-map") openMap(job.address);
-  if (action === "show-app-map") renderKakaoMap(true);
+  if (action === "show-app-map") openExternalMap(job.address, "kakao");
+  if (action === "open-naver-map") openExternalMap(job.address, "naver");
   if (action === "open-directions") openDirections(job.address);
-  if (action === "take-photo") document.querySelector("#jobPhotoInput")?.click();
-  if (action === "view-photos") notifyPhotoList(job.photos || []);
-  if (action === "dictate-field") startDictation({ kind: "field", field: data.field });
+  if (action === "google-drive-save") saveCurrentJobToGoogleDrive();
+  if (action === "save-google-settings" && saveGoogleSettingsFromForm()) saveCurrentJobToGoogleDrive();
+  if (action === "take-photo") openPhotoPicker("camera");
+  if (action === "view-photos") openPhotoPicker("library");
   if (action === "record-field") toggleRecording({ kind: "field", field: data.field });
   if (action === "clear-field") clearField(data.field);
-  if (action === "retry-field") {
-    clearField(data.field, false);
-    startDictation({ kind: "field", field: data.field });
-  }
-  if (action === "dictate-check") startDictation({ kind: "check", type: data.checkType, id: data.check });
   if (action === "record-check") toggleRecording({ kind: "check", type: data.checkType, id: data.check });
   if (action === "clear-check") clearCheckMemo(data.checkType, data.check);
-  if (action === "retry-check") {
-    clearCheckMemo(data.checkType, data.check, false);
-    startDictation({ kind: "check", type: data.checkType, id: data.check });
-  }
   if (action === "reset-checks") {
-    job[data.type] = createChecks(data.type === "plumbingChecks" ? basePlumbingChecks : baseWaterproofChecks);
+    if (data.type === "all") {
+      job.plumbingChecks = createChecks(basePlumbingChecks);
+      job.waterproofChecks = createChecks(baseWaterproofChecks);
+    } else {
+      job[data.type] = createChecks(data.type === "plumbingChecks" ? basePlumbingChecks : baseWaterproofChecks);
+    }
     saveState();
     render();
   }
@@ -676,12 +739,26 @@ function handleAction(action, data) {
   }
 }
 
-function openMap(address) {
+function openPhotoPicker(mode) {
+  const input = document.querySelector(mode === "camera" ? "#jobCameraInput" : "#jobPhotoLibraryInput");
+  if (!input) {
+    notify("사진 선택창을 찾지 못했습니다.");
+    return;
+  }
+  input.value = "";
+  input.click();
+}
+
+function openExternalMap(address, provider = "kakao") {
   if (!address) {
     notify("주소를 먼저 입력하세요.");
     return;
   }
-  window.open(`https://map.kakao.com/link/search/${encodeURIComponent(address)}`, "_blank");
+  const encoded = encodeURIComponent(address);
+  const url = provider === "naver"
+    ? `https://map.naver.com/p/search/${encoded}`
+    : `https://map.kakao.com/link/search/${encoded}`;
+  window.open(url, "_blank");
 }
 
 function openDirections(address) {
@@ -689,106 +766,160 @@ function openDirections(address) {
     notify("주소를 먼저 입력하세요.");
     return;
   }
-  window.open(`https://map.kakao.com/link/to/${encodeURIComponent(address)}`, "_blank");
+  window.open(`https://map.kakao.com/link/search/${encodeURIComponent(address)}`, "_blank");
 }
 
-function loadKakaoSdk() {
-  if (window.kakao?.maps?.services) return Promise.resolve();
+function googleConfig() {
+  state.googleDrive = {
+    apiKey: "",
+    clientId: "",
+    folderId: "",
+    folderName: "WaterLeak Multi Check",
+    ...(state.googleDrive || {}),
+  };
+  return state.googleDrive;
+}
+
+function driveStatusText() {
+  const config = googleConfig();
+  if (!config.clientId || !config.apiKey) return "처음 저장 때 설정";
+  if (!config.folderId) return `저장 시 폴더 자동 생성 · ${config.folderName || "WaterLeak Multi Check"}`;
+  return `연결됨 · ${config.folderName || "WaterLeak Multi Check"}`;
+}
+
+function loadGoogleIdentityScript() {
+  if (window.google?.accounts?.oauth2) return Promise.resolve();
   return new Promise((resolve, reject) => {
-    const existing = document.querySelector("script[data-kakao-map-sdk]");
+    const existing = document.querySelector("script[data-google-identity]");
     if (existing) {
-      existing.addEventListener("load", () => window.kakao.maps.load(resolve), { once: true });
+      existing.addEventListener("load", resolve, { once: true });
       existing.addEventListener("error", reject, { once: true });
       return;
     }
     const script = document.createElement("script");
-    script.dataset.kakaoMapSdk = "true";
-    script.src = `https://dapi.kakao.com/v2/maps/sdk.js?appkey=${KAKAO_JS_KEY}&libraries=services&autoload=false`;
-    script.onload = () => window.kakao.maps.load(resolve);
+    script.dataset.googleIdentity = "true";
+    script.src = "https://accounts.google.com/gsi/client";
+    script.onload = resolve;
     script.onerror = reject;
     document.head.appendChild(script);
   });
 }
 
-async function renderKakaoMap(forceSearch = false) {
-  const container = document.querySelector("#kakaoMap");
-  const status = document.querySelector("#mapStatus");
-  if (!container) return;
-  const job = currentJob();
-  try {
-    await loadKakaoSdk();
-    const fallback = new kakao.maps.LatLng(37.566826, 126.9786567);
-    kakaoMap = new kakao.maps.Map(container, { center: fallback, level: 4 });
-    kakaoMarker = new kakao.maps.Marker({ position: fallback });
-    kakaoMarker.setMap(kakaoMap);
-    if (!job.address) {
-      if (status) status.textContent = "주소를 입력하면 지도에 현장 위치를 표시합니다.";
-      return;
-    }
-    if (forceSearch || job.address) searchAddressOnMap(job.address);
-  } catch (error) {
-    if (status) status.textContent = "카카오 지도 API를 불러오지 못했습니다. 도메인 등록과 JavaScript 키를 확인하세요.";
+async function getGoogleAccessToken() {
+  const config = googleConfig();
+  if (!config.clientId || !config.apiKey) {
+    notify("처음 저장을 위해 Google API Key와 OAuth Client ID를 입력하세요.");
+    throw new Error("Missing Google Drive settings");
   }
-}
-
-function searchAddressOnMap(address) {
-  const status = document.querySelector("#mapStatus");
-  if (!window.kakao?.maps?.services || !kakaoMap || !address) return;
-  const geocoder = new kakao.maps.services.Geocoder();
-  geocoder.addressSearch(address, (result, stateCode) => {
-    if (stateCode !== kakao.maps.services.Status.OK || !result.length) {
-      if (status) status.textContent = "주소를 찾지 못했습니다. 도로명/지번 주소를 더 정확히 입력하세요.";
-      return;
-    }
-    const coords = new kakao.maps.LatLng(Number(result[0].y), Number(result[0].x));
-    kakaoMap.setCenter(coords);
-    if (!kakaoMarker) kakaoMarker = new kakao.maps.Marker();
-    kakaoMarker.setPosition(coords);
-    kakaoMarker.setMap(kakaoMap);
-    if (status) status.textContent = `지도 위치 확인: ${address}`;
+  if (googleAccessToken) return googleAccessToken;
+  await loadGoogleIdentityScript();
+  return new Promise((resolve, reject) => {
+    googleTokenClient = window.google.accounts.oauth2.initTokenClient({
+      client_id: config.clientId,
+      scope: "https://www.googleapis.com/auth/drive.file",
+      callback: (response) => {
+        if (response.error) {
+          reject(new Error(response.error));
+          return;
+        }
+        googleAccessToken = response.access_token;
+        resolve(googleAccessToken);
+      },
+    });
+    googleTokenClient.requestAccessToken({ prompt: "consent" });
   });
 }
 
-function startDictation(target = { kind: "situation" }) {
-  if (state.micEnabled === false) {
-    notify("마이크가 꺼져 있습니다. 마이크 아이콘을 눌러 켜세요.");
-    return;
-  }
-  const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-  if (!SpeechRecognition) {
-    notify("이 브라우저는 음성 받아쓰기를 지원하지 않습니다.");
-    return;
-  }
-  const recognition = new SpeechRecognition();
-  recognition.lang = "ko-KR";
-  recognition.interimResults = true;
-  recognition.onresult = (event) => {
-    const transcript = Array.from(event.results).map((result) => result[0].transcript).join("");
-    appendTargetText(target, transcript);
-    render();
-  };
-  recognition.onend = () => {
-    state.micListening = false;
-    saveState();
-    render();
-  };
-  recognition.onerror = () => {
-    state.micListening = false;
-    saveState();
-    render();
-  };
-  state.micListening = true;
+async function createGoogleDriveFolder() {
+  const config = googleConfig();
+  const token = await getGoogleAccessToken();
+  const response = await fetch("https://www.googleapis.com/drive/v3/files?fields=id,name,webViewLink", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      name: config.folderName || "WaterLeak Multi Check",
+      mimeType: "application/vnd.google-apps.folder",
+    }),
+  });
+  if (!response.ok) throw new Error(await response.text());
+  const folder = await response.json();
+  state.googleDrive = { ...config, folderId: folder.id, folderName: folder.name };
   saveState();
-  recognition.start();
   render();
-  notify("받아쓰기를 시작했습니다.");
+  notify(`Google Drive 폴더 자동 생성 완료: ${folder.name}`);
+  return folder;
+}
+
+async function saveCurrentJobToGoogleDrive() {
+  try {
+    const config = googleConfig();
+    if (!config.apiKey || !config.clientId) {
+      state.googleSetupOpen = true;
+      saveState();
+      render();
+      notify("화면 아래 Google Drive 저장 설정에 키를 붙여넣으세요.");
+      return;
+    }
+    if (!googleConfig().folderId) await createGoogleDriveFolder();
+    const token = await getGoogleAccessToken();
+    const refreshedConfig = googleConfig();
+    if (!refreshedConfig.folderId) throw new Error("Missing Drive folder");
+    const job = currentJob();
+    const stamp = new Date().toISOString().replaceAll(":", "-").slice(0, 19);
+    const filename = `waterleak-${job.date || stamp}-${safeFileName(job.address || "no-address")}.json`;
+    const payload = JSON.stringify(buildDriveBackup(job), null, 2);
+    await uploadMultipartToDrive(token, refreshedConfig.folderId, filename, payload, "application/json");
+    notify(`Google Drive 저장 완료: ${filename}`);
+  } catch (error) {
+    notify("Google Drive 저장에 실패했습니다. 설정과 권한을 확인하세요.");
+    console.error(error);
+  }
+}
+
+async function uploadMultipartToDrive(token, folderId, name, content, mimeType) {
+  const boundary = `waterleak_${Date.now()}`;
+  const metadata = { name, parents: [folderId], mimeType };
+  const body = [
+    `--${boundary}`,
+    "Content-Type: application/json; charset=UTF-8",
+    "",
+    JSON.stringify(metadata),
+    `--${boundary}`,
+    `Content-Type: ${mimeType}; charset=UTF-8`,
+    "",
+    content,
+    `--${boundary}--`,
+  ].join("\r\n");
+  const response = await fetch("https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,name,webViewLink", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": `multipart/related; boundary=${boundary}`,
+    },
+    body,
+  });
+  if (!response.ok) throw new Error(await response.text());
+  return response.json();
+}
+
+function buildDriveBackup(job) {
+  return {
+    app: "WaterLeak Multi Check",
+    exportedAt: new Date().toISOString(),
+    provider: PROVIDER,
+    currentJob: job,
+    allJobs: state.jobs,
+  };
+}
+
+function safeFileName(value) {
+  return String(value).replace(/[\\/:*?"<>|]/g, "_").replace(/\s+/g, "_").slice(0, 60);
 }
 
 async function toggleRecording(target = { kind: "situation" }) {
-  if (state.micEnabled === false) {
-    notify("마이크가 꺼져 있습니다. 마이크 아이콘을 눌러 켜세요.");
-    return;
-  }
   if (wavRecorder?.recording) {
     stopWavRecording();
     notify("녹음을 종료했습니다.");
@@ -798,10 +929,8 @@ async function toggleRecording(target = { kind: "situation" }) {
     const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
     recordingTarget = target;
     await startWavRecording(stream);
-    state.micListening = true;
-    saveState();
     render();
-    notify("녹음 중입니다. 다시 누르면 종료합니다.");
+    notify("녹음 중입니다. 다시 누르면 저장합니다.");
   } catch (error) {
     notify("마이크 권한을 확인하세요.");
   }
@@ -839,7 +968,6 @@ async function stopWavRecording() {
   await recorder.context.close();
   const blob = createWavBlob(recorder.samples, recorder.sampleRate);
   const savedName = saveBlobFile(blob, "wav");
-  state.micListening = false;
   appendTargetText(recordingTarget || { kind: "situation" }, `녹음파일 저장: ${savedName}`);
   recordingTarget = null;
   wavRecorder = null;
@@ -904,13 +1032,6 @@ function saveBlobFile(blob, extension) {
 
 function pad2(value) {
   return String(value).padStart(2, "0");
-}
-
-function toggleMicPower() {
-  state.micEnabled = state.micEnabled === false;
-  if (!state.micEnabled) state.micListening = false;
-  saveState();
-  render();
 }
 
 function appendTargetText(target, text) {
@@ -1198,20 +1319,17 @@ function generateReport(job) {
 1. 현장 상황
 ${job.situation || "현장 상황 기록이 필요합니다."}
 
-2. 환경 및 조건
-${job.environment || "건물 환경 기록이 필요합니다."}
-
-3. 배관 누수 점검 결과
+2. 배관 누수 점검 결과
 ${summaryLines(job.plumbingChecks)}
 
-4. 방수 및 외부 요인 점검 결과
+3. 방수 및 외부 요인 점검 결과
 ${summaryLines(job.waterproofChecks)}
 
-5. 종합 의견
+4. 종합 의견
 ${plumbingIssues.length ? "배관 계통 누수 가능성이 확인 또는 의심됩니다. 압력검사, 청음, 열화상/가스탐지 등 다각적 추적을 권장합니다." : "기본 배관 점검에서는 중대한 누수 징후가 제한적입니다."}
 ${waterproofIssues.length ? "외부 요인 또는 방수층 문제 가능성도 함께 검토해야 합니다." : "방수 및 외부 요인은 현재 기록 기준 특이사항이 적습니다."}
 
-6. 첨부자료
+5. 첨부자료
 사진: ${(job.photos || []).join(", ") || "없음"}
 동영상: ${(job.videos || []).join(", ") || "없음"}`;
 }
