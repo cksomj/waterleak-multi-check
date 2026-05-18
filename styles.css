@@ -519,31 +519,6 @@ canvas {
   font-size: 13px;
 }
 
-.map-panel {
-  display: grid;
-  gap: 8px;
-}
-
-.map-placeholder {
-  background: #eef7f5;
-  border: 1px dashed #9bb8b8;
-  border-radius: 8px;
-  color: #21444a;
-  min-height: 120px;
-  padding: 18px;
-}
-
-.map-placeholder strong {
-  display: block;
-  font-size: 17px;
-  margin-bottom: 8px;
-}
-
-.map-placeholder p {
-  color: var(--muted);
-  margin: 0;
-}
-
 .map-canvas {
   background: #e9f1f3;
   border: 1px solid var(--line);
