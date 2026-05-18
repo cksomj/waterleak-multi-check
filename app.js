@@ -65,6 +65,7 @@ const defaultState = {
   },
   googleSetupOpen: false,
   blogEditorOpen: false,
+  blogCustomOpen: false,
   jobs: [],
 };
 
@@ -102,6 +103,8 @@ function createJob() {
     bluetoothDevice: "",
     report: "",
     blog: "",
+    blogCategory: "",
+    blogKeyword: "",
     estimateItems: [{ name: "", cost: "" }],
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
@@ -541,11 +544,14 @@ function renderBlog(job) {
       </div>
       <div class="toolbar">
         <button class="btn primary" data-action="generate-blog">블로그 글 작성</button>
+        <button class="btn ghost" data-action="toggle-custom-blog">카테고리/키워드 지정</button>
         <button class="btn ghost" data-action="copy-blog-prompt">AI 프롬프트 복사</button>
+        <button class="btn ghost" data-action="open-chatgpt">ChatGPT 실행</button>
         <button class="btn ghost" data-action="open-blog-editor">수정하기</button>
         <button class="btn ghost" data-action="print-blog">PDF 인쇄</button>
       </div>
     </div>
+    ${state.blogCustomOpen ? renderCustomBlogPanel(job) : ""}
     <section class="panel blog-preview-panel">
       <div class="section-head compact">
         <div>
@@ -555,6 +561,28 @@ function renderBlog(job) {
         <button class="btn primary" data-action="save">앱에 저장</button>
       </div>
       <div class="preview blog-preview">${formatBlogContent(job.blog || "블로그 글을 작성하면 미리보기가 표시됩니다.")}</div>
+    </section>
+  `;
+}
+
+function renderCustomBlogPanel(job) {
+  return `
+    <section class="panel custom-blog-panel">
+      <div class="section-head compact">
+        <div>
+          <h2>카테고리/메인키워드 지정</h2>
+          <p class="muted">작업 내용과 별도로 원하는 주제의 애드센스용 블로그 글을 만듭니다.</p>
+        </div>
+      </div>
+      <div class="custom-blog-grid">
+        ${inlineInput("blogCategory", "카테고리: 예) 건강, 생활정보, 누수탐지", job.blogCategory || "")}
+        ${inlineInput("blogKeyword", "메인키워드: 예) 누수진단", job.blogKeyword || "")}
+      </div>
+      <div class="toolbar">
+        <button class="btn primary" data-action="generate-custom-blog">지정 글 작성</button>
+        <button class="btn ghost" data-action="copy-custom-blog-prompt">지정 프롬프트 복사</button>
+        <button class="btn ghost" data-action="open-chatgpt-custom">ChatGPT 실행</button>
+      </div>
     </section>
   `;
 }
@@ -930,6 +958,15 @@ function handleAction(action, data) {
   if (action === "clear-report" || action === "delete-report") updateJob({ report: "" });
   if (action === "generate-blog") updateJob({ blog: generateBlog(job) });
   if (action === "copy-blog-prompt") copyBlogPrompt(job);
+  if (action === "open-chatgpt") openChatGptWithPrompt(job);
+  if (action === "toggle-custom-blog") {
+    state.blogCustomOpen = !state.blogCustomOpen;
+    saveState();
+    render();
+  }
+  if (action === "generate-custom-blog") generateCustomBlog(job);
+  if (action === "copy-custom-blog-prompt") copyBlogPrompt(job, true);
+  if (action === "open-chatgpt-custom") openChatGptWithPrompt(job, true);
   if (action === "open-blog-editor") {
     state.blogEditorOpen = true;
     saveState();
@@ -1912,12 +1949,26 @@ ${waterproofIssues.length ? "외부 요인 또는 방수층 문제 가능성도 
 동영상: ${(job.videos || []).join(", ") || "없음"}`;
 }
 
-function generateBlog(job) {
-  const keyword = "누수진단";
+function generateBlog(job, custom = null) {
+  const keyword = custom?.keyword || "누수진단";
+  const category = custom?.category || "누수탐지 및 설비 점검";
   const title = `${keyword} 현장 점검 방법`;
-  const description = fitDescription(`${keyword}은 물이 새는 지점만 찾는 작업이 아니라 계량기 반응, 배관 밸브, 방수 상태, 외부 유입 흔적을 순서대로 확인해 원인을 좁혀가는 전문 점검 과정입니다.`);
+  const description = fitDescription(`${keyword}은 ${category}에서 중요한 기준이며 문제 상황, 점검 순서, 기록 내용을 차분히 확인해 원인을 좁히고 필요한 조치를 판단하는 과정입니다.`);
   const situation = job.situation || "고객 진술과 피해 위치를 기준으로 누수 범위를 좁혀 확인했습니다.";
   const checks = summaryLines([...job.plumbingChecks, ...job.waterproofChecks]);
+  if (custom) {
+    return `제목: ${title}
+디스크립션: ${description}
+본문:
+<h2>${keyword} 기본 개념을 먼저 정리했습니다</h2>
+${category} 분야에서 ${keyword}은 단순히 하나의 정보를 확인하는 일이 아니라 전체 상황을 차분히 살피는 과정입니다. 먼저 현재 문제가 왜 생겼는지, 어떤 기준으로 판단해야 하는지, 어떤 기록이 필요한지를 순서대로 확인해야 합니다. 특히 처음 접하는 분들은 눈에 보이는 결과만 보고 바로 결론을 내리기 쉽지만, 실제로는 원인과 결과가 다르게 나타나는 경우가 많습니다. 그래서 ${keyword}을 확인할 때는 현장의 조건, 사용 환경, 반복되는 증상, 이전 기록을 함께 보는 것이 중요합니다. 이런 방식으로 접근하면 불필요한 시행착오를 줄이고 필요한 조치를 더 정확하게 선택할 수 있습니다. [사진 삽입: ${keyword}과 관련된 현장 또는 준비 장면]
+
+<h2>${keyword} 확인 절차를 단계별로 살펴봤습니다</h2>
+${keyword}을 제대로 판단하려면 먼저 큰 범위에서 작은 범위로 좁혀 가는 순서가 필요합니다. 처음에는 전체 상황을 기록하고, 다음에는 의심되는 부분을 나누어 확인하며, 마지막에는 실제 조치가 필요한 지점을 정리하는 방식이 좋습니다. 이 과정에서 중요한 것은 한 번의 느낌으로 판단하지 않는 것입니다. 같은 증상처럼 보여도 원인은 다를 수 있기 때문에 확인한 내용과 확인하지 못한 내용을 구분해서 남겨야 합니다. 또한 사진, 메모, 날짜, 장소 같은 기본 정보가 함께 있으면 나중에 비교할 때 훨씬 도움이 됩니다. ${category} 주제로 글을 작성할 때도 이런 순서를 유지하면 독자가 내용을 쉽게 이해하고 실제 상황에 적용하기 좋습니다. [사진 삽입: 단계별 확인 과정 또는 체크리스트 장면]
+
+<h2>${keyword} 기록은 문제 해결의 기준이 됩니다</h2>
+${keyword}에서 마지막으로 중요한 부분은 기록을 남기는 일입니다. 기록이 있어야 같은 문제가 다시 생겼을 때 이전 상태와 현재 상태를 비교할 수 있고, 어떤 조치가 효과가 있었는지도 판단할 수 있습니다. 글을 작성할 때도 단순한 설명보다 왜 이 절차가 필요한지, 어떤 점을 주의해야 하는지, 실제로 어떤 순서로 확인하면 좋은지를 함께 적으면 정보의 신뢰도가 높아집니다. 특히 구글 애드센스 승인을 목표로 한다면 과장된 표현보다 차분하고 정확한 문장이 좋습니다. 제목에는 메인 키워드를 앞에 배치하고, 디스크립션에는 핵심 내용을 자연스럽게 포함하며, 본문은 H2 소제목을 중심으로 충분한 설명을 넣는 방식이 안정적입니다. 이렇게 정리하면 독자에게도 도움이 되고 검색에도 적합한 글이 됩니다.`;
+  }
   return `제목: ${title}
 디스크립션: ${description}
 본문:
@@ -1938,13 +1989,37 @@ function fitDescription(text) {
   return (compact + " 정확한 기록과 순차 점검이 필요합니다.").slice(0, 160);
 }
 
-function buildBlogPrompt(job) {
+function customBlogInfo(job) {
+  return {
+    category: (job.blogCategory || "").trim(),
+    keyword: (job.blogKeyword || "").trim(),
+  };
+}
+
+function validateCustomBlog(job) {
+  const info = customBlogInfo(job);
+  if (!info.category || !info.keyword) {
+    notify("카테고리와 메인키워드를 모두 입력하세요.");
+    return null;
+  }
+  return info;
+}
+
+function generateCustomBlog(job) {
+  const info = validateCustomBlog(job);
+  if (!info) return;
+  updateJob({ blog: generateBlog(job, info) });
+}
+
+function buildBlogPrompt(job, custom = null) {
+  const category = custom?.category || "누수탐지 및 설비 점검";
+  const keyword = custom?.keyword || "누수진단";
   return `당신은 구글 애드센스 승인을 목표로 하는 블로그 글 작성 전문가입니다.
 아래 조건에 맞춰 블로그 글을 작성해 주십시오.
 
 [조건]
-- 주제(카테고리): 누수탐지 및 설비 점검
-- 메인 키워드: 누수진단
+- 주제(카테고리): ${category}
+- 메인 키워드: ${keyword}
 - 제목: 메인 키워드를 맨 앞에 배치, 15~20자 내외
 - 디스크립션: 메인 키워드 포함, 공백 포함 150~160자
 - 문체: 합쇼체(~했습니다, ~합니다), 구어체 절대 금지
@@ -1964,8 +2039,19 @@ ${summaryLines([...job.plumbingChecks, ...job.waterproofChecks])}
 본문:`;
 }
 
-function copyBlogPrompt(job) {
-  navigator.clipboard.writeText(buildBlogPrompt(job)).then(() => notify("AI 블로그 프롬프트를 복사했습니다."));
+function copyBlogPrompt(job, useCustom = false) {
+  const custom = useCustom ? validateCustomBlog(job) : null;
+  if (useCustom && !custom) return;
+  navigator.clipboard.writeText(buildBlogPrompt(job, custom)).then(() => notify("AI 블로그 프롬프트를 복사했습니다."));
+}
+
+function openChatGptWithPrompt(job, useCustom = false) {
+  const custom = useCustom ? validateCustomBlog(job) : null;
+  if (useCustom && !custom) return;
+  navigator.clipboard.writeText(buildBlogPrompt(job, custom)).then(() => {
+    notify("프롬프트를 복사했습니다. ChatGPT 입력창에 붙여넣으세요.");
+    window.open("https://chatgpt.com/", "_blank", "noopener");
+  });
 }
 
 function summaryLines(checks) {

@@ -637,6 +637,22 @@ canvas {
   min-height: 430px;
 }
 
+.custom-blog-panel {
+  display: grid;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.custom-blog-grid {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.custom-blog-grid .inline-input {
+  min-height: 42px;
+}
+
 .blog-editor-screen {
   background: #f3f6f8;
   display: grid;
@@ -1102,6 +1118,10 @@ canvas {
     padding-left: 8px;
     padding-right: 8px;
     width: 100%;
+  }
+
+  .custom-blog-grid {
+    grid-template-columns: 1fr;
   }
 }
 
