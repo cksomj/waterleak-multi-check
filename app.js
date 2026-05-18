@@ -578,7 +578,7 @@ function renderCustomBlogPanel(job) {
         ${blogKeywordField("blogCategory", "카테고리:", job.blogCategory || "", "예) 건강, 생활정보, 누수탐지")}
         ${blogKeywordField("blogKeyword", "메인키워드:", job.blogKeyword || "", "예) 누수진단")}
       </div>
-      <div class="toolbar">
+      <div class="toolbar custom-blog-actions">
         <button class="btn primary" data-action="generate-custom-blog">지정 글 작성</button>
         <button class="btn ghost" data-action="copy-custom-blog-prompt">지정 프롬프트 복사</button>
         <button class="btn ghost" data-action="open-chatgpt-custom">ChatGPT 실행</button>

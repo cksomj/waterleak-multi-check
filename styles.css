@@ -697,6 +697,23 @@ canvas {
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
+.custom-blog-actions {
+  background: #f8fbfc;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  display: grid;
+  gap: 8px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  justify-content: stretch;
+  margin-top: 4px;
+  padding: 10px;
+}
+
+.custom-blog-actions .btn {
+  min-width: 0;
+  width: 100%;
+}
+
 .custom-blog-grid .inline-input {
   min-height: 42px;
 }
@@ -1200,6 +1217,10 @@ canvas {
     grid-template-columns: 1fr;
   }
 
+  .custom-blog-actions {
+    grid-template-columns: 1fr;
+  }
+
   .blog-main-toolbar {
     grid-template-columns: repeat(2, minmax(0, 1fr));
     max-width: none;
@@ -1209,6 +1230,10 @@ canvas {
 @media (max-width: 520px) {
   .blog-main-toolbar {
     grid-template-columns: 1fr 1fr;
+  }
+
+  .custom-blog-actions {
+    grid-template-columns: 1fr;
   }
 
   .blog-editor-bar {
