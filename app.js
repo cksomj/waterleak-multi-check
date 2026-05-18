@@ -201,8 +201,8 @@ function renderDashboard(job) {
         <button class="btn ghost" data-action="show-app-map">카카오지도</button>
         <button class="btn ghost" data-action="open-naver-map">네이버지도</button>
         <button class="btn ghost" data-action="open-directions">찾아가기</button>
-        <button class="btn ghost" data-action="take-photo">작업사진 찍기</button>
-        <button class="btn ghost" data-action="view-photos">작업사진 보기</button>
+        <button class="btn ghost" data-action="take-photo">카메라 촬영</button>
+        <button class="btn ghost" data-action="view-photos">갤러리 선택</button>
         <button class="btn primary" data-action="google-drive-save">구글저장</button>
       </div>
     </div>
@@ -219,7 +219,7 @@ function renderDashboard(job) {
           <p>소비자 주소를 입력한 뒤 카카오지도, 네이버지도, 찾아가기를 누르면 지도 앱/웹으로 바로 연결됩니다.</p>
         </div>
       </div>
-      <input class="hidden-input" id="jobCameraInput" data-file-type="photos" type="file" accept="image/*" capture="environment" multiple />
+      <input class="hidden-input" id="jobCameraInput" data-file-type="photos" type="file" accept="image/*" capture="environment" />
       <input class="hidden-input" id="jobPhotoLibraryInput" data-file-type="photos" type="file" accept="image/*" multiple />
       <div class="photo-strip">
         ${(job.photos || []).length ? job.photos.map((name) => `<span>${escapeHtml(name)}</span>`).join("") : `<span>작업사진 없음</span>`}
