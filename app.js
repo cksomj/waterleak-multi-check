@@ -886,13 +886,21 @@ async function saveCurrentJobToGoogleDrive() {
     }
     const wantPhotos = confirm("사진폴더를 만들고 사진을 업로드하시겠습니까? y/n");
     const wantRecordings = confirm("녹음폴더를 만들고 녹음파일을 업로드하시겠습니까? y/n");
+    const prepared = await prepareGoogleDriveSave(wantPhotos, wantRecordings);
     if (wantPhotos || wantRecordings) {
-      driveSaveDraft = { active: true, wantPhotos, wantRecordings, photoFiles: [], recordingFiles: [] };
+      driveSaveDraft = {
+        active: true,
+        wantPhotos,
+        wantRecordings,
+        photoFiles: [],
+        recordingFiles: [],
+        prepared,
+      };
       render();
-      notify("화면 아래 선택 업로드에서 파일을 직접 선택한 뒤 업로드를 계속하세요.");
+      notify("PDF와 폴더를 먼저 만들었습니다. 화면 아래에서 사진/녹음파일을 선택하세요.");
       return;
     }
-    await performGoogleDriveSave([], []);
+    notify(`Google Drive 저장 완료: ${prepared.dateFolder.name} 폴더 · PDF 2개`);
   } catch (error) {
     notify(`Google Drive 저장 실패: ${driveErrorMessage(error)}`);
     console.error(error);
@@ -905,43 +913,49 @@ async function continueGoogleDriveSave() {
   const recordingFiles = driveSaveDraft.recordingFiles || [];
   if (driveSaveDraft.wantPhotos && !photoFiles.length && !confirm("사진을 선택하지 않았습니다. 사진 없이 계속할까요?")) return;
   if (driveSaveDraft.wantRecordings && !recordingFiles.length && !confirm("녹음파일을 선택하지 않았습니다. 녹음 없이 계속할까요?")) return;
+  const prepared = driveSaveDraft.prepared;
   driveSaveDraft = null;
   render();
-  await performGoogleDriveSave(photoFiles, recordingFiles);
+  await uploadSelectedDriveMedia(prepared, photoFiles, recordingFiles);
 }
 
-async function performGoogleDriveSave(photoFiles, recordingFiles) {
+async function prepareGoogleDriveSave(wantPhotos, wantRecordings) {
+  if (!googleConfig().folderId) await createGoogleDriveFolder();
+  const token = await getGoogleAccessToken();
+  const refreshedConfig = googleConfig();
+  if (!refreshedConfig.folderId) throw new Error("Missing Drive folder");
+  const job = currentJob();
+  const dateFolder = await ensureDriveFolder(token, job.date || new Date().toISOString().slice(0, 10), refreshedConfig.folderId);
+  const baseName = safeFileName(job.address || "주소미입력");
+  const reportBlob = await createDocumentPdfBlob("report", job);
+  const estimateBlob = await createDocumentPdfBlob("estimate", job);
+  await uploadBlobToDrive(token, dateFolder.id, `${baseName}-소견서.pdf`, reportBlob, "application/pdf");
+  await uploadBlobToDrive(token, dateFolder.id, `${baseName}-견적서.pdf`, estimateBlob, "application/pdf");
+  const photoFolder = wantPhotos ? await ensureDriveFolder(token, "사진", dateFolder.id) : null;
+  const recordingFolder = wantRecordings ? await ensureDriveFolder(token, "녹음", dateFolder.id) : null;
+  return { token, dateFolder, baseName, photoFolder, recordingFolder };
+}
+
+async function uploadSelectedDriveMedia(prepared, photoFiles, recordingFiles) {
   try {
-    if (!googleConfig().folderId) await createGoogleDriveFolder();
-    const token = await getGoogleAccessToken();
-    const refreshedConfig = googleConfig();
-    if (!refreshedConfig.folderId) throw new Error("Missing Drive folder");
-    const job = currentJob();
-    const dateFolder = await ensureDriveFolder(token, job.date || new Date().toISOString().slice(0, 10), refreshedConfig.folderId);
-    const baseName = safeFileName(job.address || "주소미입력");
-    const reportBlob = await createDocumentPdfBlob("report", job);
-    const estimateBlob = await createDocumentPdfBlob("estimate", job);
-    await uploadBlobToDrive(token, dateFolder.id, `${baseName}-소견서.pdf`, reportBlob, "application/pdf");
-    await uploadBlobToDrive(token, dateFolder.id, `${baseName}-견적서.pdf`, estimateBlob, "application/pdf");
+    const token = prepared?.token || await getGoogleAccessToken();
     let photoCount = 0;
     let recordingCount = 0;
-    if (photoFiles.length) {
-      const photoFolder = await ensureDriveFolder(token, "사진", dateFolder.id);
+    if (photoFiles.length && prepared?.photoFolder) {
       for (const file of photoFiles) {
-        await uploadBlobToDrive(token, photoFolder.id, `${baseName}-${safeFileName(file.name || "photo")}`, file, file.type || "image/jpeg");
+        await uploadBlobToDrive(token, prepared.photoFolder.id, `${prepared.baseName}-${safeFileName(file.name || "photo")}`, file, file.type || "image/jpeg");
         photoCount += 1;
       }
     }
-    if (recordingFiles.length) {
-      const recordingFolder = await ensureDriveFolder(token, "녹음", dateFolder.id);
+    if (recordingFiles.length && prepared?.recordingFolder) {
       for (const file of recordingFiles) {
-        await uploadBlobToDrive(token, recordingFolder.id, `${baseName}-${safeFileName(file.name || "recording")}`, file, file.type || "audio/wav");
+        await uploadBlobToDrive(token, prepared.recordingFolder.id, `${prepared.baseName}-${safeFileName(file.name || "recording")}`, file, file.type || "audio/wav");
         recordingCount += 1;
       }
     }
-    notify(`Google Drive 저장 완료: ${dateFolder.name} 폴더 · PDF 2개 · 사진 ${photoCount}개 · 녹음 ${recordingCount}개`);
+    notify(`Google Drive 저장 완료: ${prepared.dateFolder.name} 폴더 · 사진 ${photoCount}개 · 녹음 ${recordingCount}개`);
   } catch (error) {
-    notify(`Google Drive 저장 실패: ${driveErrorMessage(error)}`);
+    notify(`Google Drive 업로드 실패: ${driveErrorMessage(error)}`);
     console.error(error);
   }
 }
