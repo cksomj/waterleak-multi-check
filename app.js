@@ -216,7 +216,6 @@ function render() {
         <div class="top-actions">
           <span class="status-pill">${escapeHtml(job.date || "-")} · ${escapeHtml(job.address || "주소 미입력")}</span>
           <button class="btn ghost" data-action="new-job">새 작업</button>
-          <button class="btn primary" data-action="save">저장</button>
         </div>
       </header>
       <div class="layout">
@@ -265,7 +264,7 @@ function renderDashboard(job) {
         ${field("address", "소비자 주소", "text", job.address, "예: 서울시 강남구 ...")}
         ${field("phone", "전화번호", "tel", job.phone, "010-0000-0000")}
       </div>
-      ${textarea("situation", "상황 기록", job.situation, "누수 발생 위치, 시간, 피해상황, 고객 진술을 직접 입력합니다.")}
+      ${textareaWithSituationRecording(job)}
       <div id="driveStatus" class="drive-status">Google Drive: ${driveStatusText()}</div>
       ${renderGoogleDriveInlineSetup()}
       ${renderDriveMediaPicker()}
@@ -275,6 +274,29 @@ function renderDashboard(job) {
       ${metric("소견서", job.report ? "작성됨" : "미작성", "AI 초안")}
       ${metric("저장방식", state.storageMode === "local" ? "로컬" : "구글", "선택 옵션")}
     </section>
+  `;
+}
+
+function textareaWithSituationRecording(job) {
+  const target = { kind: "field", field: "situation" };
+  const recording = getLastRecordingForTarget(target);
+  const active = wavRecorder?.recording && targetKey(recordingTarget) === targetKey(target);
+  const paused = active && wavRecorder?.paused;
+  return `
+    <div class="field">
+      <div class="field-head">
+        <label for="situation">상황 기록</label>
+        <div class="mini-actions record-actions">
+          <button class="btn ghost record-btn ${active ? "recording" : ""} ${recording ? "saved" : ""}" data-action="record-field" data-field="situation">
+            <span class="voice-icon ${active && !paused ? "blue pulse" : recording ? "blue" : "idle"}"></span>${active ? "녹음멈춤" : recording ? "저장완료" : "녹음"}
+          </button>
+          <button class="btn ghost pause-btn" data-action="pause-recording" data-field="situation" ${active ? "" : "disabled"}>${paused ? "이어녹음" : "일시정지"}</button>
+          <button class="btn ghost listen-btn" data-action="play-recording" data-recording-id="${escapeAttr(recording?.id || "")}" ${recording ? "" : "disabled"}>재생</button>
+          <button class="btn ghost clear-btn" data-action="delete-recording" data-recording-id="${escapeAttr(recording?.id || "")}" ${recording ? "" : "disabled"}>삭제</button>
+        </div>
+      </div>
+      <textarea id="situation" data-job-field="situation" placeholder="누수 발생 위치, 시간, 피해상황, 고객 진술을 직접 입력합니다.">${escapeHtml(job.situation || "")}</textarea>
+    </div>
   `;
 }
 
@@ -791,9 +813,13 @@ function handleAction(action, data) {
   }
   if (action === "clear-field") clearField(data.field);
   if (action === "clear-check") clearCheckMemo(data.checkType, data.check);
+  if (action === "record-field") toggleRecording({ kind: "field", field: data.field });
   if (action === "record-check") toggleRecording({ kind: "check", type: data.checkType, id: data.check });
   if (action === "record-tracker") toggleRecording({ kind: "tracker" });
-  if (action === "pause-recording") togglePauseRecording({ kind: "check", type: data.checkType, id: data.check });
+  if (action === "pause-recording") {
+    const target = data.field ? { kind: "field", field: data.field } : { kind: "check", type: data.checkType, id: data.check };
+    togglePauseRecording(target);
+  }
   if (action === "play-recording") playRecording(data.recordingId);
   if (action === "delete-recording") deleteRecording(data.recordingId);
   if (action === "reset-checks") {

@@ -140,9 +140,9 @@ button {
 }
 
 .view-stage {
-  animation-duration: 180ms;
+  animation-duration: 320ms;
   animation-fill-mode: both;
-  animation-timing-function: cubic-bezier(0.22, 0.8, 0.24, 1);
+  animation-timing-function: cubic-bezier(0.2, 0.78, 0.22, 1);
   min-height: calc(100vh - 106px);
   will-change: transform, opacity;
 }
@@ -165,8 +165,8 @@ button {
 
 @keyframes slideInFromRight {
   from {
-    opacity: 0.72;
-    transform: translateX(28px);
+    opacity: 0.68;
+    transform: translateX(46px);
   }
   to {
     opacity: 1;
@@ -176,8 +176,8 @@ button {
 
 @keyframes slideInFromLeft {
   from {
-    opacity: 0.72;
-    transform: translateX(-28px);
+    opacity: 0.68;
+    transform: translateX(-46px);
   }
   to {
     opacity: 1;
@@ -191,8 +191,8 @@ button {
     transform: translateX(0);
   }
   to {
-    opacity: 0.72;
-    transform: translateX(-28px);
+    opacity: 0.68;
+    transform: translateX(-46px);
   }
 }
 
@@ -202,8 +202,8 @@ button {
     transform: translateX(0);
   }
   to {
-    opacity: 0.72;
-    transform: translateX(28px);
+    opacity: 0.68;
+    transform: translateX(46px);
   }
 }
 
