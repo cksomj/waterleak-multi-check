@@ -548,6 +548,7 @@ function renderBlog(job) {
         <button class="btn ghost" data-action="open-chatgpt">ChatGPT 실행</button>
         <button class="btn ghost" data-action="open-blog-editor">원고 수정하기</button>
         <button class="btn ghost" data-action="print-blog">PDF 인쇄</button>
+        <button class="btn warn" data-action="clear-blog-data">자료 삭제</button>
       </div>
     </div>
     ${renderCustomBlogPanel(job)}
@@ -590,7 +591,6 @@ function renderBlogEditor(job) {
   return `
     <div class="blog-editor-screen">
       <header class="blog-editor-bar">
-        <strong>블로그 작성화면</strong>
         <div class="toolbar">
           <button class="btn primary" data-action="save-blog-editor">저장</button>
           <button class="btn ghost" data-action="print-blog">PDF 인쇄</button>
@@ -598,6 +598,7 @@ function renderBlogEditor(job) {
           <button class="btn warn" data-action="clear-blog-editor">화면 삭제</button>
           <button class="btn blog-link naver" data-action="open-external-link" data-url="https://blog.naver.com/cksomj">N</button>
           <button class="btn blog-link tistory" data-action="open-external-link" data-url="https://cksomj.tistory.com/manage">T</button>
+          <button class="btn blog-link daangn" data-action="open-external-link" data-url="https://bizprofile.daangn.com/biz_accounts/83300/manager/posts/new/?entry=business_profile.home.info_manage_ba_info">D</button>
           <button class="btn warn" data-action="close-blog-editor">나오기</button>
         </div>
       </header>
@@ -968,6 +969,7 @@ function handleAction(action, data) {
   if (action === "generate-blog") updateJob({ blog: buildBlogPrompt(job) });
   if (action === "copy-blog-prompt") copyBlogPrompt(job);
   if (action === "open-chatgpt") openChatGptWithPrompt(job);
+  if (action === "clear-blog-data") clearBlogData();
   if (action === "toggle-custom-blog") {
     state.blogCustomOpen = !state.blogCustomOpen;
     saveState();
@@ -2096,6 +2098,15 @@ function clearBlogEditor() {
   job.updatedAt = new Date().toISOString();
   saveState();
   notify("작성 화면과 저장된 블로그 원고를 삭제했습니다.");
+}
+
+function clearBlogData() {
+  const job = currentJob();
+  job.blog = "";
+  job.updatedAt = new Date().toISOString();
+  saveState();
+  render();
+  notify("블로그 자료를 삭제했습니다.");
 }
 
 function applyBlogFormat(command) {

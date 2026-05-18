@@ -767,19 +767,23 @@ canvas {
 }
 
 .blog-editor-bar {
-  flex-wrap: nowrap;
-  justify-content: space-between;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: thin;
+  white-space: nowrap;
 }
 
 .blog-editor-bar .toolbar {
   display: flex;
-  flex: 0 0 auto;
+  flex: 1 0 max-content;
   flex-wrap: nowrap;
-  justify-content: flex-end;
+  justify-content: flex-start;
+  min-width: max-content;
 }
 
 .blog-editor-bar .toolbar .btn {
   flex: 0 0 auto;
+  min-width: max-content;
   width: auto;
 }
 
@@ -801,9 +805,9 @@ canvas {
   border-color: #ef4444;
 }
 
-.blog-editor-bar strong {
-  flex: 1 1 auto;
-  min-width: 120px;
+.blog-link.daangn {
+  background: #f97316;
+  border-color: #f97316;
 }
 
 .blog-editor-tools {
@@ -1242,21 +1246,17 @@ canvas {
 
   .blog-editor-bar .toolbar {
     display: flex;
-    flex: 0 0 auto;
+    flex: 1 0 max-content;
     flex-wrap: nowrap;
+    min-width: max-content;
   }
 
   .blog-editor-bar .btn,
   .blog-editor-tools .btn {
     font-size: 12px;
     min-height: 29px;
-    padding: 5px 7px;
+    padding: 5px 8px;
     width: auto;
-  }
-
-  .blog-editor-bar strong {
-    font-size: 13px;
-    min-width: 74px;
   }
 
   .blog-editor-page {
