@@ -541,6 +541,7 @@ function renderBlog(job) {
       </div>
       <div class="toolbar">
         <button class="btn primary" data-action="generate-blog">블로그 글 작성</button>
+        <button class="btn ghost" data-action="copy-blog-prompt">AI 프롬프트 복사</button>
         <button class="btn ghost" data-action="open-blog-editor">수정하기</button>
         <button class="btn ghost" data-action="print-blog">PDF 인쇄</button>
       </div>
@@ -928,6 +929,7 @@ function handleAction(action, data) {
   if (action === "download-report-pdf") openPdfPrintWindow("report");
   if (action === "clear-report" || action === "delete-report") updateJob({ report: "" });
   if (action === "generate-blog") updateJob({ blog: generateBlog(job) });
+  if (action === "copy-blog-prompt") copyBlogPrompt(job);
   if (action === "open-blog-editor") {
     state.blogEditorOpen = true;
     saveState();
@@ -1911,22 +1913,59 @@ ${waterproofIssues.length ? "외부 요인 또는 방수층 문제 가능성도 
 }
 
 function generateBlog(job) {
-  const titleAddress = job.address ? `${job.address} 누수진단` : "누수진단 현장";
-  return `${titleAddress} 작업 기록
+  const keyword = "누수진단";
+  const title = `${keyword} 현장 점검 방법`;
+  const description = fitDescription(`${keyword}은 물이 새는 지점만 찾는 작업이 아니라 계량기 반응, 배관 밸브, 방수 상태, 외부 유입 흔적을 순서대로 확인해 원인을 좁혀가는 전문 점검 과정입니다.`);
+  const situation = job.situation || "고객 진술과 피해 위치를 기준으로 누수 범위를 좁혀 확인했습니다.";
+  const checks = summaryLines([...job.plumbingChecks, ...job.waterproofChecks]);
+  return `제목: ${title}
+디스크립션: ${description}
+본문:
+<h2>누수진단 현장 상황을 먼저 확인했습니다</h2>
+오늘은 ${job.date || "접수 당일"} 접수된 누수 의심 현장을 방문해 고객이 겪고 있는 피해 상황과 물이 번진 방향을 먼저 확인했습니다. ${job.address ? `${job.address} 현장은 ` : "이번 현장은 "}단순히 눈에 보이는 물자국만 보고 판단하기보다, 물이 시작된 위치와 이동한 방향을 나누어 살피는 것이 중요했습니다. 누수진단은 한 번에 답을 정하는 작업이 아니라 가능성이 높은 원인을 순서대로 배제해 가는 과정입니다. 현장에서 확인한 상황은 다음과 같습니다. ${situation} 이처럼 초기 상황을 자세히 기록하면 이후 배관 문제인지, 방수 문제인지, 외부 유입인지 판단하는 기준이 분명해집니다. 특히 아래층 천장 얼룩이나 벽면 젖음은 실제 누수 위치와 다르게 나타날 수 있으므로 계량기, 밸브, 사용 환경을 함께 확인해야 했습니다. [사진 삽입: 현장 누수 흔적과 점검 전 상태]
 
-오늘은 ${job.date}에 접수된 누수 의심 현장을 방문해 기본 배관 점검과 방수 관련 점검을 함께 진행했습니다.
+<h2>배관과 방수 항목을 순서대로 점검했습니다</h2>
+이번 점검에서는 먼저 배관누수 가능성을 확인하기 위해 밸브를 잠그고 열면서 계량기 반응을 확인했습니다. 이후 화장실 변기부속, 각 밸브류, 창틀, 우수관, 화장실 방수상태, 유가, 변기 주변 상태를 차례로 살폈습니다. 점검 결과는 다음과 같이 정리할 수 있습니다. ${checks} 배관누수검사는 단순히 물소리만 듣는 과정이 아니라 계량기 움직임, 밸브 차단 후 변화, 사용하지 않는 시간대의 압력 변화 등을 함께 보는 작업입니다. 반대로 방수 문제는 물을 사용했을 때만 증상이 나타나는 경우가 많아 배관 검사와 구분해서 판단해야 합니다. 이런 이유로 현장에서는 배관 계통과 방수 계통을 나누어 확인했고, 외부 요인까지 함께 검토했습니다. [사진 삽입: 계량기 확인 또는 배관 점검 장면]
 
-현장에서 확인한 주요 상황은 다음과 같습니다.
-${job.situation || "고객 진술과 피해 위치를 기준으로 누수 범위를 좁혀 확인했습니다."}
+<h2>누수 원인은 기록을 남기며 좁혀가야 합니다</h2>
+누수진단에서 가장 중요한 것은 추측보다 기록입니다. 어느 밸브를 잠갔을 때 변화가 있었는지, 물 사용 전후에 계량기가 어떻게 반응했는지, 피해 부위가 어느 방향으로 번졌는지를 남겨야 같은 문제가 반복될 때 빠르게 비교할 수 있습니다. 이번 현장도 배관, 방수, 외부 유입 가능성을 한꺼번에 단정하지 않고 순서대로 확인했습니다. 누수는 작은 틈에서 시작해 넓은 피해로 이어질 수 있기 때문에 초기에 정확히 판단하는 것이 공사 범위와 비용을 줄이는 데 도움이 됩니다. 앞으로 같은 증상이 반복된다면 오늘 기록한 점검 결과를 기준으로 추가 압력검사, 청음, 내시경, 열화상 확인 등을 이어가면 원인 파악이 훨씬 수월합니다. 최종적으로는 현장 상황과 점검 결과를 종합해 필요한 보수 범위를 결정하는 것이 바람직합니다.`;
+}
 
-먼저 변기부속, 배관누수, 각 밸브류를 순서대로 잠그고 열면서 계량기 반응을 확인했습니다. 이후 창틀, 우수관, 화장실 방수상태, 유가, 변기 주변 상태를 확인해 외부 유입과 방수 문제 가능성도 함께 검토했습니다.
+function fitDescription(text) {
+  const compact = String(text).replace(/\s+/g, " ").trim();
+  if (compact.length >= 150 && compact.length <= 160) return compact;
+  if (compact.length > 160) return compact.slice(0, 157) + "...";
+  return (compact + " 정확한 기록과 순차 점검이 필요합니다.").slice(0, 160);
+}
 
-점검 요약
+function buildBlogPrompt(job) {
+  return `당신은 구글 애드센스 승인을 목표로 하는 블로그 글 작성 전문가입니다.
+아래 조건에 맞춰 블로그 글을 작성해 주십시오.
+
+[조건]
+- 주제(카테고리): 누수탐지 및 설비 점검
+- 메인 키워드: 누수진단
+- 제목: 메인 키워드를 맨 앞에 배치, 15~20자 내외
+- 디스크립션: 메인 키워드 포함, 공백 포함 150~160자
+- 문체: 합쇼체(~했습니다, ~합니다), 구어체 절대 금지
+- 본문: H2 소제목 3개 이상, 소제목당 500자 내외, 총 1,500자 이상
+- 사진 설명: 본문 중 적절한 위치에 [사진 삽입: 설명] 형태로 표시
+
+[현장 정보]
+- 날짜: ${job.date || ""}
+- 주소: ${job.address || ""}
+- 상황 기록: ${job.situation || "현장 상황 기록을 바탕으로 작성"}
+- 점검 요약:
 ${summaryLines([...job.plumbingChecks, ...job.waterproofChecks])}
 
-이번 현장은 단순히 한 지점만 보는 방식이 아니라 배관, 방수, 외부 요인을 나누어 확인하는 것이 중요했습니다. 누수는 원인이 여러 방향으로 겹칠 수 있기 때문에 기록을 남기고 순서대로 배제하는 과정이 필요합니다.
+[출력 형식]
+제목:
+디스크립션:
+본문:`;
+}
 
-첨부자료: 사진 ${(job.photos || []).length}개, 동영상 ${(job.videos || []).length}개`;
+function copyBlogPrompt(job) {
+  navigator.clipboard.writeText(buildBlogPrompt(job)).then(() => notify("AI 블로그 프롬프트를 복사했습니다."));
 }
 
 function summaryLines(checks) {
