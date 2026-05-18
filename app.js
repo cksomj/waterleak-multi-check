@@ -839,19 +839,37 @@ async function getGoogleAccessToken() {
 async function createGoogleDriveFolder() {
   const config = googleConfig();
   const token = await getGoogleAccessToken();
-  const folder = await ensureDriveFolder(token, config.folderName || "WaterLeak Multi Check", null);
+  const folder = await ensureMainDriveFolder(token, config);
   state.googleDrive = { ...config, folderId: folder.id, folderName: folder.name };
   saveState();
   render();
-  notify(`Google Drive 폴더 자동 생성 완료: ${folder.name}`);
+  notify(`Google Drive 주 폴더 연결 완료: ${folder.name}`);
   return folder;
+}
+
+async function ensureMainDriveFolder(token, config) {
+  if (config.folderId) {
+    const existing = await getDriveFolderById(token, config.folderId);
+    if (existing) return existing;
+  }
+  return ensureDriveFolder(token, config.folderName || "WaterLeak Multi Check", null);
+}
+
+async function getDriveFolderById(token, folderId) {
+  const url = `https://www.googleapis.com/drive/v3/files/${encodeURIComponent(folderId)}?fields=id,name,mimeType,trashed`;
+  const response = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+  if (response.status === 403 || response.status === 404) return null;
+  if (!response.ok) throw new Error(await response.text());
+  const file = await response.json();
+  if (file.trashed || file.mimeType !== "application/vnd.google-apps.folder") return null;
+  return file;
 }
 
 async function ensureDriveFolder(token, name, parentId) {
   const escapedName = String(name).replaceAll("\\", "\\\\").replaceAll("'", "\\'");
   const parentQuery = parentId ? ` and '${parentId}' in parents` : "";
   const query = `name='${escapedName}' and mimeType='application/vnd.google-apps.folder' and trashed=false${parentQuery}`;
-  const searchUrl = `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(query)}&fields=files(id,name,webViewLink)&pageSize=1`;
+  const searchUrl = `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(query)}&fields=files(id,name,webViewLink,createdTime)&orderBy=createdTime&pageSize=10`;
   const searchResponse = await fetch(searchUrl, { headers: { Authorization: `Bearer ${token}` } });
   if (!searchResponse.ok) throw new Error(await searchResponse.text());
   const found = await searchResponse.json();
@@ -920,12 +938,12 @@ async function continueGoogleDriveSave() {
 }
 
 async function prepareGoogleDriveSave(wantPhotos, wantRecordings) {
-  if (!googleConfig().folderId) await createGoogleDriveFolder();
   const token = await getGoogleAccessToken();
-  const refreshedConfig = googleConfig();
-  if (!refreshedConfig.folderId) throw new Error("Missing Drive folder");
+  const mainFolder = await ensureMainDriveFolder(token, googleConfig());
+  state.googleDrive = { ...googleConfig(), folderId: mainFolder.id, folderName: mainFolder.name };
+  saveState();
   const job = currentJob();
-  const dateFolder = await ensureDriveFolder(token, job.date || new Date().toISOString().slice(0, 10), refreshedConfig.folderId);
+  const dateFolder = await ensureDriveFolder(token, job.date || new Date().toISOString().slice(0, 10), mainFolder.id);
   const baseName = safeFileName(job.address || "주소미입력");
   const reportBlob = await createDocumentPdfBlob("report", job);
   const estimateBlob = await createDocumentPdfBlob("estimate", job);
