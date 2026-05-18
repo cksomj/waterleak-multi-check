@@ -55,6 +55,7 @@ let recordingTarget = null;
 let driveSaveDraft = null;
 let googleTokenClient = null;
 let googleAccessToken = "";
+let pendingViewAnimation = "";
 
 const app = document.querySelector("#app");
 
@@ -164,8 +165,9 @@ function updateCheck(type, id, patch) {
   render();
 }
 
-function setView(view) {
+function setView(view, direction = 0) {
   state.activeView = view;
+  pendingViewAnimation = direction > 0 ? "slide-in-right" : direction < 0 ? "slide-in-left" : "";
   saveState();
   render();
 }
@@ -174,11 +176,17 @@ function moveView(direction) {
   const ids = viewOrder.map(([id]) => id);
   const currentIndex = Math.max(0, ids.indexOf(state.activeView));
   const nextIndex = Math.min(ids.length - 1, Math.max(0, currentIndex + direction));
-  if (nextIndex !== currentIndex) setView(ids[nextIndex]);
+  if (nextIndex !== currentIndex) animateViewChange(ids[nextIndex], direction);
+}
+
+function animateViewChange(view, direction) {
+  setView(view, direction);
 }
 
 function render() {
   const job = currentJob();
+  const animationClass = pendingViewAnimation;
+  pendingViewAnimation = "";
   app.innerHTML = `
     <div class="shell">
       <header class="topbar">
@@ -197,7 +205,7 @@ function render() {
       </header>
       <div class="layout">
         <aside class="sidebar">${renderNav()}</aside>
-        <main class="content">${renderView()}</main>
+        <main class="content"><div class="view-stage ${animationClass}">${renderView()}</div></main>
       </div>
     </div>
   `;
