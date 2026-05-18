@@ -43,6 +43,7 @@ const defaultState = {
     folderName: "WaterLeak Multi Check",
   },
   googleSetupOpen: false,
+  blogEditorOpen: false,
   jobs: [],
 };
 
@@ -229,6 +230,7 @@ function render() {
         <aside class="sidebar">${renderNav()}</aside>
         <main class="content"><div class="view-stage ${animationClass}">${renderView()}</div></main>
       </div>
+      ${state.blogEditorOpen ? renderBlogEditor(job) : ""}
     </div>
   `;
   bindEvents();
@@ -357,7 +359,7 @@ function renderGoogleDriveInlineSetup() {
 function renderChecklist(title) {
   const job = currentJob();
   const groups = [
-    ["plumbingChecks", "기본점검", job.plumbingChecks || []],
+    ["plumbingChecks", "기본점검", (job.plumbingChecks || []).filter((check) => check.id !== "hot_water")],
     ["waterproofChecks", "방수문제", job.waterproofChecks || []],
   ];
   return `
@@ -513,25 +515,53 @@ function renderBlog(job) {
     <div class="section-head">
       <div>
         <h1>블로그 글 작성</h1>
-        <p class="muted">소견서, 사진, 동영상 목록을 기반으로 고객 설명형 블로그 글을 생성합니다.</p>
+        <p class="muted">소견서 내용을 바탕으로 블로그 원고를 만들고 미리보기로 확인합니다.</p>
       </div>
       <div class="toolbar">
         <button class="btn primary" data-action="generate-blog">블로그 글 작성</button>
-        <button class="btn ghost" data-action="add-blog-photo">사진 올리기</button>
-        <button class="btn ghost" data-action="copy-blog">복사</button>
+        <button class="btn ghost" data-action="open-blog-editor">수정하기</button>
+        <button class="btn ghost" data-action="print-blog">PDF 인쇄</button>
       </div>
     </div>
-    <div class="grid two">
-      <section class="panel grid">
-        ${fileBox("blogPhotos", "블로그 사진")}
-        ${textarea("blog", "블로그 원고", job.blog, "생성된 블로그 글을 수정합니다.")}
-        <input class="hidden-input" id="blogPhotoInput" data-file-type="blogPhotos" type="file" accept="image/*" multiple />
-        <button class="btn primary" data-action="save">저장</button>
-      </section>
-      <section class="panel">
-        <h2 style="margin-bottom:10px">견본 미리보기</h2>
-        <div class="preview">${escapeHtml(job.blog || "블로그 글을 작성하면 미리보기가 표시됩니다.")}</div>
-      </section>
+    <section class="panel blog-preview-panel">
+      <div class="section-head compact">
+        <div>
+          <h2>견본 미리보기</h2>
+          <p class="muted">수정하기를 누르면 전체화면 작성기로 전환됩니다.</p>
+        </div>
+        <button class="btn primary" data-action="save">앱에 저장</button>
+      </div>
+      <div class="preview blog-preview">${formatBlogContent(job.blog || "블로그 글을 작성하면 미리보기가 표시됩니다.")}</div>
+    </section>
+  `;
+}
+
+function renderBlogEditor(job) {
+  return `
+    <div class="blog-editor-screen">
+      <header class="blog-editor-bar">
+        <strong>블로그 작성화면</strong>
+        <div class="toolbar">
+          <button class="btn primary" data-action="save-blog-editor">저장</button>
+          <button class="btn ghost" data-action="print-blog">PDF 인쇄</button>
+          <button class="btn warn" data-action="close-blog-editor">나오기</button>
+        </div>
+      </header>
+      <div class="blog-editor-tools">
+        <button class="btn ghost" data-format="undo">↶</button>
+        <button class="btn ghost" data-format="redo">↷</button>
+        <button class="btn ghost" data-format="bold"><b>B</b></button>
+        <button class="btn ghost" data-format="italic"><i>I</i></button>
+        <button class="btn ghost" data-format="underline"><u>U</u></button>
+        <button class="btn ghost" data-format-block="h2">제목</button>
+        <button class="btn ghost" data-format-block="p">본문</button>
+        <button class="btn ghost" data-format="justifyLeft">왼쪽</button>
+        <button class="btn ghost" data-format="justifyCenter">가운데</button>
+        <button class="btn ghost" data-format="justifyRight">오른쪽</button>
+        <button class="btn ghost" data-format="insertUnorderedList">목록</button>
+        <button class="btn ghost" data-format="insertOrderedList">번호</button>
+      </div>
+      <main id="blogEditor" class="blog-editor-page" contenteditable="true">${formatBlogEditorContent(job.blog || "")}</main>
     </div>
   `;
 }
@@ -742,6 +772,14 @@ function bindEvents() {
     button.addEventListener("click", () => handleAction(button.dataset.action, button.dataset));
   });
 
+  app.querySelectorAll("[data-format]").forEach((button) => {
+    button.addEventListener("click", () => applyBlogFormat(button.dataset.format));
+  });
+
+  app.querySelectorAll("[data-format-block]").forEach((button) => {
+    button.addEventListener("click", () => applyBlogBlock(button.dataset.formatBlock));
+  });
+
   const historyQuery = app.querySelector("#historyQuery");
   if (historyQuery) historyQuery.addEventListener("input", render);
 
@@ -849,8 +887,18 @@ function handleAction(action, data) {
   if (action === "download-report-pdf") openPdfPrintWindow("report");
   if (action === "clear-report" || action === "delete-report") updateJob({ report: "" });
   if (action === "generate-blog") updateJob({ blog: generateBlog(job) });
-  if (action === "add-blog-photo") document.querySelector("#blogPhotoInput")?.click();
-  if (action === "copy-blog") copyText(job.blog);
+  if (action === "open-blog-editor") {
+    state.blogEditorOpen = true;
+    saveState();
+    render();
+  }
+  if (action === "close-blog-editor") {
+    state.blogEditorOpen = false;
+    saveState();
+    render();
+  }
+  if (action === "save-blog-editor") saveBlogEditor();
+  if (action === "print-blog") printBlogPreview();
   if (action === "toggle-estimate-title") toggleEstimateTitle();
   if (action === "add-estimate") {
     job.estimateItems.push({ name: "", spec: "", qty: 1, unit: "식", unitPrice: "", cost: "" });
@@ -1851,6 +1899,70 @@ function copyText(text) {
     return;
   }
   navigator.clipboard.writeText(text).then(() => notify("블로그 글을 복사했습니다."));
+}
+
+function saveBlogEditor() {
+  const editor = document.querySelector("#blogEditor");
+  if (!editor) return;
+  updateJob({ blog: editor.innerHTML.trim() });
+  state.blogEditorOpen = false;
+  saveState();
+  render();
+  notify("블로그 글이 앱에 저장되었습니다.");
+}
+
+function applyBlogFormat(command) {
+  const editor = document.querySelector("#blogEditor");
+  if (!editor) return;
+  editor.focus();
+  document.execCommand(command, false, null);
+}
+
+function applyBlogBlock(block) {
+  const editor = document.querySelector("#blogEditor");
+  if (!editor) return;
+  editor.focus();
+  document.execCommand("formatBlock", false, block === "h2" ? "h2" : "p");
+}
+
+function printBlogPreview() {
+  const content = document.querySelector("#blogEditor")?.innerHTML || currentJob().blog || "";
+  const win = window.open("", "_blank");
+  if (!win) {
+    notify("팝업이 차단되었습니다. 브라우저 팝업 허용 후 다시 시도하세요.");
+    return;
+  }
+  win.document.write(`
+    <!doctype html>
+    <html lang="ko">
+      <head>
+        <meta charset="UTF-8" />
+        <title>블로그 원고</title>
+        <style>
+          body { color: #111827; font-family: "Malgun Gothic", Arial, sans-serif; line-height: 1.75; margin: 34px; }
+          h1, h2 { line-height: 1.35; }
+          img { max-width: 100%; }
+          .doc { max-width: 760px; margin: 0 auto; }
+          @media print { body { print-color-adjust: exact; -webkit-print-color-adjust: exact; } }
+        </style>
+      </head>
+      <body><main class="doc">${formatBlogContent(content || "블로그 글이 없습니다.")}</main></body>
+    </html>
+  `);
+  win.document.close();
+  win.addEventListener("load", () => setTimeout(() => win.print(), 250));
+}
+
+function formatBlogEditorContent(value) {
+  const text = String(value || "");
+  if (/<[a-z][\s\S]*>/i.test(text)) return text;
+  return escapeHtml(text).replace(/\n/g, "<br>");
+}
+
+function formatBlogContent(value) {
+  const text = String(value || "");
+  if (/<[a-z][\s\S]*>/i.test(text)) return text;
+  return escapeHtml(text).replace(/\n/g, "<br>");
 }
 
 function notify(message) {

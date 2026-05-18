@@ -140,7 +140,7 @@ button {
 }
 
 .view-stage {
-  animation-duration: 320ms;
+  animation-duration: 450ms;
   animation-fill-mode: both;
   animation-timing-function: cubic-bezier(0.2, 0.78, 0.22, 1);
   min-height: calc(100vh - 106px);
@@ -622,6 +622,65 @@ canvas {
   min-height: 260px;
   padding: 18px;
   white-space: pre-wrap;
+}
+
+.blog-preview-panel .section-head.compact {
+  align-items: center;
+  margin-bottom: 12px;
+}
+
+.blog-preview {
+  min-height: 430px;
+}
+
+.blog-editor-screen {
+  background: #f3f6f8;
+  display: grid;
+  grid-template-rows: auto auto 1fr;
+  inset: 0;
+  position: fixed;
+  z-index: 80;
+}
+
+.blog-editor-bar,
+.blog-editor-tools {
+  align-items: center;
+  background: #fff;
+  border-bottom: 1px solid var(--line);
+  display: flex;
+  gap: 8px;
+  justify-content: space-between;
+  padding: 10px 14px;
+}
+
+.blog-editor-tools {
+  flex-wrap: wrap;
+  justify-content: flex-start;
+}
+
+.blog-editor-tools .btn {
+  min-height: 32px;
+  padding: 6px 9px;
+}
+
+.blog-editor-page {
+  background: #fff;
+  border: 1px solid var(--line);
+  box-shadow: var(--shadow);
+  font-size: 17px;
+  line-height: 1.75;
+  margin: 14px auto;
+  max-width: 840px;
+  min-height: calc(100vh - 150px);
+  outline: none;
+  overflow: auto;
+  padding: 24px;
+  width: min(100% - 24px, 840px);
+}
+
+.blog-editor-page h2 {
+  font-size: 24px;
+  margin: 18px 0 8px;
 }
 
 .file-box {
