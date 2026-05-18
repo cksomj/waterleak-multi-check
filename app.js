@@ -199,8 +199,8 @@ function renderDashboard(job) {
       </div>
       <div class="toolbar">
         <button class="btn ghost" data-action="show-app-map">카카오지도</button>
-        <button class="btn ghost" data-action="open-naver-map">네이버지도</button>
-        <button class="btn ghost" data-action="open-directions">찾아가기</button>
+        <button class="btn ghost" data-action="open-audio-app">녹음 앱 열기</button>
+        <button class="btn ghost" data-action="open-photo-app">사진 앱 열기</button>
         <button class="btn primary" data-action="google-drive-save">구글저장</button>
       </div>
     </div>
@@ -210,7 +210,9 @@ function renderDashboard(job) {
         ${field("address", "소비자 주소", "text", job.address, "예: 서울시 강남구 ...")}
         ${field("phone", "전화번호", "tel", job.phone, "010-0000-0000")}
       </div>
-      ${textareaWithRecord("situation", "상황 기록", job.situation, "누수 발생 위치, 시간, 피해상황, 고객 진술을 기록합니다.")}
+      ${textarea("situation", "상황 기록", job.situation, "누수 발생 위치, 시간, 피해상황, 고객 진술을 직접 입력합니다.")}
+      <input class="hidden-input" id="externalAudioInput" type="file" accept="audio/*" capture />
+      <input class="hidden-input" id="externalPhotoInput" data-file-type="photos" type="file" accept="image/*" multiple />
       <div id="recordingStatus" class="muted">녹음 상태: 대기</div>
       <div id="driveStatus" class="drive-status">Google Drive: ${driveStatusText()}</div>
       ${renderGoogleDriveInlineSetup()}
@@ -595,6 +597,23 @@ function bindEvents() {
     });
   });
 
+  const audioInput = app.querySelector("#externalAudioInput");
+  if (audioInput) {
+    audioInput.addEventListener("change", () => {
+      const files = Array.from(audioInput.files || []);
+      if (!files.length) return;
+      const job = currentJob();
+      files.forEach((file) => {
+        driveRecordingFiles.push({ jobId: job.id, name: file.name || `situation-${Date.now()}.wav`, blob: file });
+        job.situation = `${job.situation ? `${job.situation}\n` : ""}녹음파일 선택: ${file.name || "녹음파일"}`;
+      });
+      job.updatedAt = new Date().toISOString();
+      saveState();
+      render();
+      notify(`녹음파일 ${files.length}개를 구글저장 대상에 추가했습니다.`);
+    });
+  }
+
   app.querySelectorAll("input[name='storage']").forEach((input) => {
     input.addEventListener("change", () => {
       state.storageMode = input.value;
@@ -673,8 +692,8 @@ function handleAction(action, data) {
     render();
   }
   if (action === "show-app-map") openExternalMap(job.address, "kakao");
-  if (action === "open-naver-map") openExternalMap(job.address, "naver");
-  if (action === "open-directions") openDirections(job.address);
+  if (action === "open-audio-app") openDeviceFilePicker("audio");
+  if (action === "open-photo-app") openDeviceFilePicker("photo");
   if (action === "google-drive-save") saveCurrentJobToGoogleDrive();
   if (action === "save-google-settings" && saveGoogleSettingsFromForm()) saveCurrentJobToGoogleDrive();
   if (action === "record-field") toggleRecording({ kind: "field", field: data.field });
@@ -731,17 +750,6 @@ function openExternalMap(address, provider = "kakao") {
     return;
   }
   const encoded = encodeURIComponent(address);
-  const url = provider === "naver"
-    ? `https://map.naver.com/p/search/${encoded}`
-    : `https://map.kakao.com/link/search/${encoded}`;
-  window.open(url, "_blank");
-}
-
-function openDirections(address) {
-  if (!address) {
-    notify("주소를 먼저 입력하세요.");
-    return;
-  }
   window.open(`https://map.kakao.com/link/search/${encodeURIComponent(address)}`, "_blank");
 }
 
@@ -871,8 +879,18 @@ async function saveCurrentJobToGoogleDrive() {
     }
     notify(`Google Drive 저장 완료: ${dateFolder.name} 폴더 · PDF 2개 · 녹음 ${relatedRecordings.length}개`);
   } catch (error) {
-    notify("Google Drive 저장에 실패했습니다. 설정과 권한을 확인하세요.");
+    notify(`Google Drive 저장 실패: ${driveErrorMessage(error)}`);
     console.error(error);
+  }
+}
+
+function driveErrorMessage(error) {
+  const message = String(error?.message || error || "알 수 없는 오류");
+  try {
+    const parsed = JSON.parse(message);
+    return parsed.error?.message || parsed.message || message;
+  } catch {
+    return message.slice(0, 180);
   }
 }
 
@@ -1208,6 +1226,16 @@ function clearCheckMemo(type, id, shouldRender = true) {
   job.updatedAt = new Date().toISOString();
   saveState();
   if (shouldRender) render();
+}
+
+function openDeviceFilePicker(type) {
+  const input = document.querySelector(type === "audio" ? "#externalAudioInput" : "#externalPhotoInput");
+  if (!input) {
+    notify(type === "audio" ? "녹음 파일 선택창을 찾지 못했습니다." : "사진 앱 선택창을 찾지 못했습니다.");
+    return;
+  }
+  input.value = "";
+  input.click();
 }
 
 function maybeAddEstimateRow(input) {
