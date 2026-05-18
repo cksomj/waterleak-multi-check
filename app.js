@@ -841,6 +841,16 @@ async function saveCurrentJobToGoogleDrive() {
       notify("화면 아래 Google Drive 저장 설정에 키를 붙여넣으세요.");
       return;
     }
+    let photoFiles = [];
+    let recordingFiles = [];
+    if (confirm("사진폴더를 만들고 사진을 업로드하시겠습니까? y/n")) {
+      notify("사진 파일을 선택하세요.");
+      photoFiles = await selectFilesForDrive("image/*", true);
+    }
+    if (confirm("녹음폴더를 만들고 녹음파일을 업로드하시겠습니까? y/n")) {
+      notify("녹음 파일을 선택하세요.");
+      recordingFiles = await selectFilesForDrive("audio/*", true);
+    }
     if (!googleConfig().folderId) await createGoogleDriveFolder();
     const token = await getGoogleAccessToken();
     const refreshedConfig = googleConfig();
@@ -854,24 +864,18 @@ async function saveCurrentJobToGoogleDrive() {
     await uploadBlobToDrive(token, dateFolder.id, `${baseName}-견적서.pdf`, estimateBlob, "application/pdf");
     let photoCount = 0;
     let recordingCount = 0;
-    if (confirm("사진폴더를 만들고 사진을 업로드하시겠습니까? y/n")) {
-      const photoFiles = await selectFilesForDrive("image/*", true);
-      if (photoFiles.length) {
-        const photoFolder = await ensureDriveFolder(token, "사진", dateFolder.id);
-        for (const file of photoFiles) {
-          await uploadBlobToDrive(token, photoFolder.id, `${baseName}-${safeFileName(file.name || "photo")}`, file, file.type || "image/jpeg");
-          photoCount += 1;
-        }
+    if (photoFiles.length) {
+      const photoFolder = await ensureDriveFolder(token, "사진", dateFolder.id);
+      for (const file of photoFiles) {
+        await uploadBlobToDrive(token, photoFolder.id, `${baseName}-${safeFileName(file.name || "photo")}`, file, file.type || "image/jpeg");
+        photoCount += 1;
       }
     }
-    if (confirm("녹음폴더를 만들고 녹음파일을 업로드하시겠습니까? y/n")) {
-      const recordingFiles = await selectFilesForDrive("audio/*", true);
-      if (recordingFiles.length) {
-        const recordingFolder = await ensureDriveFolder(token, "녹음", dateFolder.id);
-        for (const file of recordingFiles) {
-          await uploadBlobToDrive(token, recordingFolder.id, `${baseName}-${safeFileName(file.name || "recording")}`, file, file.type || "audio/wav");
-          recordingCount += 1;
-        }
+    if (recordingFiles.length) {
+      const recordingFolder = await ensureDriveFolder(token, "녹음", dateFolder.id);
+      for (const file of recordingFiles) {
+        await uploadBlobToDrive(token, recordingFolder.id, `${baseName}-${safeFileName(file.name || "recording")}`, file, file.type || "audio/wav");
+        recordingCount += 1;
       }
     }
     notify(`Google Drive 저장 완료: ${dateFolder.name} 폴더 · PDF 2개 · 사진 ${photoCount}개 · 녹음 ${recordingCount}개`);
