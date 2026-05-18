@@ -544,14 +544,13 @@ function renderBlog(job) {
       </div>
       <div class="toolbar">
         <button class="btn primary" data-action="generate-blog">블로그 글 작성</button>
-        <button class="btn ghost" data-action="toggle-custom-blog">카테고리/키워드 지정</button>
         <button class="btn ghost" data-action="copy-blog-prompt">AI 프롬프트 복사</button>
         <button class="btn ghost" data-action="open-chatgpt">ChatGPT 실행</button>
         <button class="btn ghost" data-action="open-blog-editor">수정하기</button>
         <button class="btn ghost" data-action="print-blog">PDF 인쇄</button>
       </div>
     </div>
-    ${state.blogCustomOpen ? renderCustomBlogPanel(job) : ""}
+    ${renderCustomBlogPanel(job)}
     <section class="panel blog-preview-panel">
       <div class="section-head compact">
         <div>
@@ -567,10 +566,11 @@ function renderBlog(job) {
 
 function renderCustomBlogPanel(job) {
   return `
-    <section class="panel custom-blog-panel">
+    <details class="panel custom-blog-panel" ${job.blogCategory || job.blogKeyword ? "open" : ""}>
+      <summary class="custom-blog-summary">카테고리/키워드 지정</summary>
       <div class="section-head compact">
         <div>
-          <h2>카테고리/메인키워드 지정</h2>
+          <h2>카테고리/메인키워드 직접 지정</h2>
           <p class="muted">작업 내용과 별도로 원하는 주제의 애드센스용 블로그 글을 만듭니다.</p>
         </div>
       </div>
@@ -583,7 +583,7 @@ function renderCustomBlogPanel(job) {
         <button class="btn ghost" data-action="copy-custom-blog-prompt">지정 프롬프트 복사</button>
         <button class="btn ghost" data-action="open-chatgpt-custom">ChatGPT 실행</button>
       </div>
-    </section>
+    </details>
   `;
 }
 

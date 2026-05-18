@@ -638,9 +638,39 @@ canvas {
 }
 
 .custom-blog-panel {
+  margin-bottom: 12px;
+}
+
+.custom-blog-panel[open] {
   display: grid;
   gap: 12px;
-  margin-bottom: 12px;
+}
+
+.custom-blog-summary {
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  color: var(--ink);
+  cursor: pointer;
+  font-weight: 700;
+  list-style: none;
+  padding: 11px 14px;
+}
+
+.custom-blog-summary::-webkit-details-marker {
+  display: none;
+}
+
+.custom-blog-summary::before {
+  content: "+";
+  color: var(--primary);
+  display: inline-block;
+  font-weight: 900;
+  margin-right: 8px;
+}
+
+.custom-blog-panel[open] .custom-blog-summary::before {
+  content: "-";
 }
 
 .custom-blog-grid {
