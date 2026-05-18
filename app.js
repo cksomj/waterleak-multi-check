@@ -51,7 +51,6 @@ let analyser = null;
 let animationFrame = null;
 let micStream = null;
 let recordingTarget = null;
-let driveRecordingFiles = [];
 let googleTokenClient = null;
 let googleAccessToken = "";
 
@@ -597,23 +596,6 @@ function bindEvents() {
     });
   });
 
-  const audioInput = app.querySelector("#externalAudioInput");
-  if (audioInput) {
-    audioInput.addEventListener("change", () => {
-      const files = Array.from(audioInput.files || []);
-      if (!files.length) return;
-      const job = currentJob();
-      files.forEach((file) => {
-        driveRecordingFiles.push({ jobId: job.id, name: file.name || `situation-${Date.now()}.wav`, blob: file });
-        job.situation = `${job.situation ? `${job.situation}\n` : ""}녹음파일 선택: ${file.name || "녹음파일"}`;
-      });
-      job.updatedAt = new Date().toISOString();
-      saveState();
-      render();
-      notify(`녹음파일 ${files.length}개를 구글저장 대상에 추가했습니다.`);
-    });
-  }
-
   app.querySelectorAll("input[name='storage']").forEach((input) => {
     input.addEventListener("change", () => {
       state.storageMode = input.value;
@@ -873,15 +855,63 @@ async function saveCurrentJobToGoogleDrive() {
     const estimateBlob = await createDocumentPdfBlob("estimate", job);
     await uploadBlobToDrive(token, dateFolder.id, `${baseName}-소견서.pdf`, reportBlob, "application/pdf");
     await uploadBlobToDrive(token, dateFolder.id, `${baseName}-견적서.pdf`, estimateBlob, "application/pdf");
-    const relatedRecordings = driveRecordingFiles.filter((file) => file.jobId === job.id);
-    for (const file of relatedRecordings) {
-      await uploadBlobToDrive(token, dateFolder.id, `${baseName}-${safeFileName(file.name)}`, file.blob, "audio/wav");
+    let photoCount = 0;
+    let recordingCount = 0;
+    if (confirm("사진폴더를 만들고 사진을 업로드하시겠습니까? y/n")) {
+      const photoFiles = await selectFilesForDrive("image/*", true);
+      if (photoFiles.length) {
+        const photoFolder = await ensureDriveFolder(token, "사진", dateFolder.id);
+        for (const file of photoFiles) {
+          await uploadBlobToDrive(token, photoFolder.id, `${baseName}-${safeFileName(file.name || "photo")}`, file, file.type || "image/jpeg");
+          photoCount += 1;
+        }
+      }
     }
-    notify(`Google Drive 저장 완료: ${dateFolder.name} 폴더 · PDF 2개 · 녹음 ${relatedRecordings.length}개`);
+    if (confirm("녹음폴더를 만들고 녹음파일을 업로드하시겠습니까? y/n")) {
+      const recordingFiles = await selectFilesForDrive("audio/*", true);
+      if (recordingFiles.length) {
+        const recordingFolder = await ensureDriveFolder(token, "녹음", dateFolder.id);
+        for (const file of recordingFiles) {
+          await uploadBlobToDrive(token, recordingFolder.id, `${baseName}-${safeFileName(file.name || "recording")}`, file, file.type || "audio/wav");
+          recordingCount += 1;
+        }
+      }
+    }
+    notify(`Google Drive 저장 완료: ${dateFolder.name} 폴더 · PDF 2개 · 사진 ${photoCount}개 · 녹음 ${recordingCount}개`);
   } catch (error) {
     notify(`Google Drive 저장 실패: ${driveErrorMessage(error)}`);
     console.error(error);
   }
+}
+
+function selectFilesForDrive(accept, multiple = true) {
+  return new Promise((resolve) => {
+    const input = document.createElement("input");
+    let settled = false;
+    const finish = (files) => {
+      if (settled) return;
+      settled = true;
+      window.removeEventListener("focus", onFocus);
+      input.remove();
+      resolve(files);
+    };
+    const onFocus = () => {
+      setTimeout(() => {
+        if (!settled && !(input.files || []).length) finish([]);
+      }, 700);
+    };
+    input.type = "file";
+    input.accept = accept;
+    input.multiple = multiple;
+    input.className = "hidden-input";
+    input.addEventListener("change", () => {
+      const files = Array.from(input.files || []);
+      finish(files);
+    }, { once: true });
+    window.addEventListener("focus", onFocus);
+    document.body.appendChild(input);
+    input.click();
+  });
 }
 
 function driveErrorMessage(error) {
@@ -1130,9 +1160,6 @@ async function stopWavRecording() {
   const blob = createWavBlob(recorder.samples, recorder.sampleRate);
   const savedName = saveBlobFile(blob, "wav");
   const target = recordingTarget || { kind: "situation" };
-  if (target.kind === "situation" || (target.kind === "field" && target.field === "situation")) {
-    driveRecordingFiles.push({ jobId: currentJob().id, name: savedName, blob });
-  }
   appendTargetText(target, `녹음파일 저장: ${savedName}`);
   recordingTarget = null;
   wavRecorder = null;
