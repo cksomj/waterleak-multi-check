@@ -211,12 +211,6 @@ function renderDashboard(job) {
         ${field("phone", "전화번호", "tel", job.phone, "010-0000-0000")}
       </div>
       ${textareaWithRecord("situation", "상황 기록", job.situation, "누수 발생 위치, 시간, 피해상황, 고객 진술을 기록합니다.")}
-      <div class="map-panel">
-        <div class="map-placeholder">
-          <strong>외부 지도 연결</strong>
-          <p>소비자 주소를 입력한 뒤 카카오지도, 네이버지도, 찾아가기를 누르면 지도 앱/웹으로 바로 연결됩니다.</p>
-        </div>
-      </div>
       <div id="recordingStatus" class="muted">녹음 상태: 대기</div>
       <div id="driveStatus" class="drive-status">Google Drive: ${driveStatusText()}</div>
       ${renderGoogleDriveInlineSetup()}
