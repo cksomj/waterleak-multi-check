@@ -481,18 +481,23 @@ textarea {
 
 .check-list {
   display: grid;
-  gap: 10px;
+  gap: 8px;
 }
 
 .check-row {
-  align-items: flex-start;
+  align-items: center;
   background: #fbfcfc;
   border: 1px solid var(--line);
   border-radius: 8px;
   display: grid;
-  gap: 10px;
-  grid-template-columns: auto 1fr minmax(160px, 0.5fr);
-  padding: 12px;
+  gap: 8px;
+  grid-template-columns: auto 1fr minmax(132px, 0.28fr);
+  padding: 10px 12px;
+}
+
+.check-row:first-of-type {
+  background: #effaf8;
+  border-color: #8fd2c7;
 }
 
 .check-row input[type="checkbox"] {
@@ -507,8 +512,9 @@ textarea {
   margin-bottom: 4px;
 }
 
-.check-row textarea {
-  min-height: 56px;
+.check-result select {
+  min-height: 36px;
+  padding: 7px 9px;
 }
 
 .meter-cards {

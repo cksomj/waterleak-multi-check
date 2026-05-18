@@ -9,8 +9,8 @@ const PROVIDER = {
 };
 
 const basePlumbingChecks = [
-  ["toilet_parts", "화장실 변기부속 누수검사", "밸브를 잠그고 열어 계량기 움직임을 확인합니다. 물이 없으면 보충 후 재검사합니다."],
   ["hot_water", "배관누수검사", "배관 밸브를 잠그고 열어 계량기 누수 변화를 확인합니다."],
+  ["toilet_parts", "화장실 변기부속 누수검사", "밸브를 잠그고 열어 계량기 움직임을 확인합니다. 물이 없으면 보충 후 재검사합니다."],
   ["all_valves", "모든 밸브류 검사", "화장실, 싱크대, 개수대, 외부수도, 밸브고장 여부를 순차 확인합니다."],
 ];
 
@@ -89,6 +89,21 @@ function createChecks(items) {
   return items.map(([id, title, guide]) => ({ id, title, guide, done: false, result: "대기", memo: "" }));
 }
 
+function normalizeChecks(savedChecks = [], baseItems = []) {
+  const savedById = new Map(savedChecks.map((check) => [check.id, check]));
+  return baseItems.map(([id, title, guide]) => ({
+    id,
+    title,
+    guide,
+    done: false,
+    result: "대기",
+    memo: "",
+    ...(savedById.get(id) || {}),
+    title,
+    guide,
+  }));
+}
+
 function loadState() {
   try {
     const saved = localStorage.getItem(STORAGE_KEY);
@@ -146,6 +161,8 @@ function currentJob() {
     if (!state.jobs.length) state.jobs.push(job);
     state.currentJobId = job.id;
   }
+  job.plumbingChecks = normalizeChecks(job.plumbingChecks, basePlumbingChecks);
+  job.waterproofChecks = normalizeChecks(job.waterproofChecks, baseWaterproofChecks);
   return job;
 }
 
@@ -318,7 +335,7 @@ function renderChecklist(title) {
     <div class="section-head">
       <div>
         <h1>${title}</h1>
-        <p class="muted">개별 항목을 체크하고 결과와 메모를 저장합니다.</p>
+        <p class="muted">중요 항목부터 빠르게 체크하고 결과를 저장합니다.</p>
       </div>
       <div class="toolbar">
         <button class="btn ghost" data-action="reset-checks" data-type="all">초기화</button>
@@ -354,11 +371,10 @@ function renderCheckRow(type, check) {
           </div>
         ` : ""}
       </div>
-      <div class="grid">
+      <div class="check-result">
         <select data-check="${check.id}" data-check-type="${type}" data-field="result">
           ${["대기", "정상", "의심", "누수확인", "재검필요"].map((item) => `<option ${check.result === item ? "selected" : ""}>${item}</option>`).join("")}
         </select>
-        <textarea data-check="${check.id}" data-check-type="${type}" data-field="memo" placeholder="점검 메모">${escapeHtml(check.memo)}</textarea>
       </div>
     </div>
   `;
