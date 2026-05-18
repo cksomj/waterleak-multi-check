@@ -637,6 +637,24 @@ canvas {
   min-height: 430px;
 }
 
+.blog-main-toolbar {
+  display: grid;
+  flex: 1 1 360px;
+  grid-template-columns: repeat(auto-fit, minmax(138px, 1fr));
+  justify-content: stretch;
+  max-width: 620px;
+  width: 100%;
+}
+
+.blog-main-toolbar .btn {
+  min-width: 0;
+  overflow: hidden;
+  padding-left: 8px;
+  padding-right: 8px;
+  text-overflow: ellipsis;
+  width: 100%;
+}
+
 .custom-blog-panel {
   margin-bottom: 12px;
 }
@@ -1153,9 +1171,18 @@ canvas {
   .custom-blog-grid {
     grid-template-columns: 1fr;
   }
+
+  .blog-main-toolbar {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    max-width: none;
+  }
 }
 
 @media (max-width: 520px) {
+  .blog-main-toolbar {
+    grid-template-columns: 1fr 1fr;
+  }
+
   .blog-editor-bar {
     gap: 6px;
   }

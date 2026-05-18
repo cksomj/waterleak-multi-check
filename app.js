@@ -542,7 +542,7 @@ function renderBlog(job) {
         <h1>블로그 글 작성</h1>
         <p class="muted">소견서 내용을 바탕으로 블로그 원고를 만들고 미리보기로 확인합니다.</p>
       </div>
-      <div class="toolbar">
+      <div class="toolbar blog-main-toolbar">
         <button class="btn primary" data-action="generate-blog">블로그 글 작성</button>
         <button class="btn ghost" data-action="copy-blog-prompt">AI 프롬프트 복사</button>
         <button class="btn ghost" data-action="open-chatgpt">ChatGPT 실행</button>
