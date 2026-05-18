@@ -83,9 +83,20 @@ button {
 .top-actions {
   align-items: center;
   display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
+  flex-wrap: nowrap;
+  gap: 6px;
   justify-content: flex-end;
+}
+
+.top-actions .status-pill {
+  max-width: min(42vw, 460px);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.top-actions .btn {
+  flex: 0 0 auto;
 }
 
 .layout {
@@ -176,6 +187,12 @@ p {
 
 .grid.three {
   grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.info-grid {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: minmax(140px, 0.8fr) minmax(260px, 2fr) minmax(160px, 1fr);
 }
 
 .panel,
@@ -704,9 +721,20 @@ canvas {
   .layout,
   .split,
   .grid.two,
-  .grid.three,
   .meter-cards {
     grid-template-columns: 1fr;
+  }
+
+  .grid.three {
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  }
+
+  .info-grid {
+    grid-template-columns: minmax(118px, 0.8fr) minmax(180px, 1.5fr);
+  }
+
+  .info-grid .field:nth-child(2) {
+    grid-column: span 2;
   }
 
   .sidebar {
@@ -727,8 +755,22 @@ canvas {
   }
 
   .topbar {
-    align-items: flex-start;
-    flex-direction: column;
+    align-items: center;
+    flex-direction: row;
+    flex-wrap: wrap;
+  }
+
+  .top-actions {
+    display: grid;
+    flex: 1 1 100%;
+    gap: 6px;
+    grid-template-columns: minmax(0, 1fr) auto auto;
+    width: 100%;
+  }
+
+  .top-actions .status-pill {
+    max-width: none;
+    min-width: 0;
   }
 
   .section-head {
@@ -754,5 +796,15 @@ canvas {
     padding-left: 8px;
     padding-right: 8px;
     width: 100%;
+  }
+}
+
+@media (max-width: 520px) {
+  .info-grid {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .info-grid .field:nth-child(2) {
+    grid-column: 1 / -1;
   }
 }
