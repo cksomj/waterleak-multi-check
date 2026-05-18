@@ -199,7 +199,6 @@ function renderDashboard(job) {
       <div class="toolbar">
         <button class="btn ghost" data-action="show-app-map">카카오지도</button>
         <button class="btn ghost" data-action="open-audio-app">녹음 앱 열기</button>
-        <button class="btn ghost" data-action="open-photo-app">사진 앱 열기</button>
         <button class="btn primary" data-action="google-drive-save">구글저장</button>
       </div>
     </div>
@@ -211,7 +210,6 @@ function renderDashboard(job) {
       </div>
       ${textarea("situation", "상황 기록", job.situation, "누수 발생 위치, 시간, 피해상황, 고객 진술을 직접 입력합니다.")}
       <input class="hidden-input" id="externalAudioInput" type="file" accept="audio/*" capture />
-      <input class="hidden-input" id="externalPhotoInput" data-file-type="photos" type="file" accept="image/*" multiple />
       <div id="recordingStatus" class="muted">녹음 상태: 대기</div>
       <div id="driveStatus" class="drive-status">Google Drive: ${driveStatusText()}</div>
       ${renderGoogleDriveInlineSetup()}
@@ -675,7 +673,6 @@ function handleAction(action, data) {
   }
   if (action === "show-app-map") openExternalMap(job.address, "kakao");
   if (action === "open-audio-app") openDeviceFilePicker("audio");
-  if (action === "open-photo-app") openPhotoGalleryApp();
   if (action === "google-drive-save") saveCurrentJobToGoogleDrive();
   if (action === "save-google-settings" && saveGoogleSettingsFromForm()) saveCurrentJobToGoogleDrive();
   if (action === "record-field") toggleRecording({ kind: "field", field: data.field });
@@ -1262,27 +1259,13 @@ function clearCheckMemo(type, id, shouldRender = true) {
 }
 
 function openDeviceFilePicker(type) {
-  const input = document.querySelector(type === "audio" ? "#externalAudioInput" : "#externalPhotoInput");
+  const input = document.querySelector("#externalAudioInput");
   if (!input) {
-    notify(type === "audio" ? "녹음 파일 선택창을 찾지 못했습니다." : "사진 앱 선택창을 찾지 못했습니다.");
+    notify("녹음 파일 선택창을 찾지 못했습니다.");
     return;
   }
   input.value = "";
   input.click();
-}
-
-function openPhotoGalleryApp() {
-  const isAndroid = /Android/i.test(navigator.userAgent);
-  if (!isAndroid) {
-    openDeviceFilePicker("photo");
-    return;
-  }
-  notify("사진 앱 실행을 시도합니다. 열리지 않으면 다시 눌러 갤러리 선택창을 사용하세요.");
-  const before = Date.now();
-  window.location.href = "intent://media/external/images/media#Intent;action=android.intent.action.VIEW;type=image/*;end";
-  setTimeout(() => {
-    if (Date.now() - before < 1600) openDeviceFilePicker("photo");
-  }, 900);
 }
 
 function maybeAddEstimateRow(input) {
