@@ -516,9 +516,8 @@ function renderReport(job) {
     </div>
     <div class="grid two">
       <section class="panel grid">
-        <h2>사진 · 동영상 업로드</h2>
-        ${fileBox("photos", "사진 추가")}
-        ${fileBox("videos", "동영상 추가")}
+        <h2>사진 업로드</h2>
+        ${fileBox("photos", "사진 앨범 열기")}
         <div class="storage-row">
           <label><input type="radio" name="storage" value="local" ${state.storageMode === "local" ? "checked" : ""} /> 로컬에 저장</label>
           <label><input type="radio" name="storage" value="google" ${state.storageMode === "google" ? "checked" : ""} /> 구글클라우드 저장</label>
@@ -766,10 +765,11 @@ function metric(label, value, helper) {
 function fileBox(type, label) {
   const job = currentJob();
   const files = job[type] || [];
+  const accept = type === "photos" ? ".jpg,.jpeg,.png,.webp,.heic,.heif" : "video/*";
   return `
     <div class="file-box">
       <span>${label}: ${files.length ? files.map(escapeHtml).join(", ") : "없음"}</span>
-      <input data-file-type="${type}" type="file" ${type === "photos" ? "accept=\"image/*\"" : "accept=\"video/*\""} multiple />
+      <input data-file-type="${type}" type="file" accept="${accept}" multiple />
     </div>
   `;
 }
