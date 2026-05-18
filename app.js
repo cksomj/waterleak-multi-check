@@ -195,6 +195,12 @@ function moveView(direction) {
   if (nextIndex !== currentIndex) animateViewChange(ids[nextIndex], direction);
 }
 
+function hardRefreshApp() {
+  const url = new URL(window.location.href);
+  url.searchParams.set("v", Date.now().toString());
+  window.location.replace(url.toString());
+}
+
 function animateViewChange(view, direction) {
   setView(view, direction);
 }
@@ -216,6 +222,7 @@ function render() {
         <div class="top-actions">
           <span class="status-pill">${escapeHtml(job.date || "-")} · ${escapeHtml(job.address || "주소 미입력")}</span>
           <button class="btn ghost" data-action="new-job">새 작업</button>
+          <button class="btn ghost" data-action="hard-refresh">새 버전 새로고침</button>
         </div>
       </header>
       <div class="layout">
@@ -802,6 +809,7 @@ function handleAction(action, data) {
     saveState();
     render();
   }
+  if (action === "hard-refresh") hardRefreshApp();
   if (action === "show-app-map") openExternalMap(job.address, "kakao");
   if (action === "google-drive-save") saveCurrentJobToGoogleDrive();
   if (action === "save-google-settings" && saveGoogleSettingsFromForm()) saveCurrentJobToGoogleDrive();
