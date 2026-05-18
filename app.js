@@ -203,7 +203,7 @@ function renderDashboard(job) {
       </div>
     </div>
     <section class="panel grid">
-      <div class="grid three">
+      <div class="info-grid">
         ${field("date", "날짜", "date", job.date)}
         ${field("address", "소비자 주소", "text", job.address, "예: 서울시 강남구 ...")}
         ${field("phone", "전화번호", "tel", job.phone, "010-0000-0000")}
