@@ -575,8 +575,8 @@ function renderCustomBlogPanel(job) {
         </div>
       </div>
       <div class="custom-blog-grid">
-        ${inlineInput("blogCategory", "카테고리: 예) 건강, 생활정보, 누수탐지", job.blogCategory || "")}
-        ${inlineInput("blogKeyword", "메인키워드: 예) 누수진단", job.blogKeyword || "")}
+        ${inlineField("blogCategory", job.blogCategory || "", "카테고리: 예) 건강, 생활정보, 누수탐지")}
+        ${inlineField("blogKeyword", job.blogKeyword || "", "메인키워드: 예) 누수진단")}
       </div>
       <div class="toolbar">
         <button class="btn primary" data-action="generate-custom-blog">지정 글 작성</button>
