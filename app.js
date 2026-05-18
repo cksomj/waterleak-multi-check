@@ -540,13 +540,13 @@ function renderBlog(job) {
     <div class="section-head">
       <div>
         <h1>블로그 글 작성</h1>
-        <p class="muted">소견서 내용을 바탕으로 블로그 원고를 만들고 미리보기로 확인합니다.</p>
+        <p class="muted">현장 자료를 정리해 ChatGPT에 붙여넣을 프롬프트를 만듭니다.</p>
       </div>
       <div class="toolbar blog-main-toolbar">
-        <button class="btn primary" data-action="generate-blog">블로그 글 작성</button>
-        <button class="btn ghost" data-action="copy-blog-prompt">AI 프롬프트 복사</button>
+        <button class="btn primary" data-action="generate-blog">관련자료 가져오기</button>
+        <button class="btn ghost" data-action="copy-blog-prompt">프롬프트 복사</button>
         <button class="btn ghost" data-action="open-chatgpt">ChatGPT 실행</button>
-        <button class="btn ghost" data-action="open-blog-editor">수정하기</button>
+        <button class="btn ghost" data-action="open-blog-editor">원고 수정하기</button>
         <button class="btn ghost" data-action="print-blog">PDF 인쇄</button>
       </div>
     </div>
@@ -554,12 +554,12 @@ function renderBlog(job) {
     <section class="panel blog-preview-panel">
       <div class="section-head compact">
         <div>
-          <h2>견본 미리보기</h2>
-          <p class="muted">수정하기를 누르면 전체화면 작성기로 전환됩니다.</p>
+          <h2>프롬프트/원고 미리보기</h2>
+          <p class="muted">ChatGPT에서 작성한 글은 원고 수정하기 화면에 붙여넣고 저장합니다.</p>
         </div>
         <button class="btn primary" data-action="save">앱에 저장</button>
       </div>
-      <div class="preview blog-preview">${formatBlogContent(job.blog || "블로그 글을 작성하면 미리보기가 표시됩니다.")}</div>
+      <div class="preview blog-preview">${formatBlogContent(job.blog || "관련자료 가져오기를 누르면 프롬프트가 표시됩니다.")}</div>
     </section>
   `;
 }
@@ -567,11 +567,11 @@ function renderBlog(job) {
 function renderCustomBlogPanel(job) {
   return `
     <details class="panel custom-blog-panel" ${job.blogCategory || job.blogKeyword ? "open" : ""}>
-      <summary class="custom-blog-summary">카테고리/키워드 지정</summary>
+      <summary class="custom-blog-summary">새 블로그</summary>
       <div class="section-head compact">
         <div>
-          <h2>카테고리/메인키워드 직접 지정</h2>
-          <p class="muted">작업 내용과 별도로 원하는 주제의 애드센스용 블로그 글을 만듭니다.</p>
+          <h2>새 블로그 주제 지정</h2>
+          <p class="muted">원하는 카테고리와 메인키워드로 ChatGPT용 프롬프트를 만듭니다.</p>
         </div>
       </div>
       <div class="custom-blog-grid">
@@ -579,8 +579,7 @@ function renderCustomBlogPanel(job) {
         ${blogKeywordField("blogKeyword", "메인키워드:", job.blogKeyword || "", "예) 누수진단")}
       </div>
       <div class="toolbar custom-blog-actions">
-        <button class="btn primary" data-action="generate-custom-blog">지정 글 작성</button>
-        <button class="btn ghost" data-action="copy-custom-blog-prompt">지정 프롬프트 복사</button>
+        <button class="btn primary" data-action="copy-custom-blog-prompt">프롬프트 복사</button>
         <button class="btn ghost" data-action="open-chatgpt-custom">ChatGPT 실행</button>
       </div>
     </details>
@@ -596,6 +595,7 @@ function renderBlogEditor(job) {
           <button class="btn primary" data-action="save-blog-editor">저장</button>
           <button class="btn ghost" data-action="print-blog">PDF 인쇄</button>
           <button class="btn ghost" data-action="copy-blog-editor">내용복사</button>
+          <button class="btn warn" data-action="clear-blog-editor">화면 삭제</button>
           <button class="btn blog-link naver" data-action="open-external-link" data-url="https://blog.naver.com/cksomj">N</button>
           <button class="btn blog-link tistory" data-action="open-external-link" data-url="https://cksomj.tistory.com/manage">T</button>
           <button class="btn warn" data-action="close-blog-editor">나오기</button>
@@ -619,7 +619,7 @@ function renderBlogEditor(job) {
       <div class="emoji-picker" hidden>
         ${blogEmojis.map((emoji) => `<button class="emoji-btn" data-emoji="${emoji}" type="button">${emoji}</button>`).join("")}
       </div>
-      <main id="blogEditor" class="blog-editor-page" contenteditable="true">${formatBlogEditorContent(job.blog || "")}</main>
+      <main id="blogEditor" class="blog-editor-page" contenteditable="true"></main>
     </div>
   `;
 }
@@ -965,7 +965,7 @@ function handleAction(action, data) {
   if (action === "generate-report") updateJob({ report: generateReport(job) });
   if (action === "download-report-pdf") openPdfPrintWindow("report");
   if (action === "clear-report" || action === "delete-report") updateJob({ report: "" });
-  if (action === "generate-blog") updateJob({ blog: generateBlog(job) });
+  if (action === "generate-blog") updateJob({ blog: buildBlogPrompt(job) });
   if (action === "copy-blog-prompt") copyBlogPrompt(job);
   if (action === "open-chatgpt") openChatGptWithPrompt(job);
   if (action === "toggle-custom-blog") {
@@ -973,7 +973,6 @@ function handleAction(action, data) {
     saveState();
     render();
   }
-  if (action === "generate-custom-blog") generateCustomBlog(job);
   if (action === "copy-custom-blog-prompt") copyBlogPrompt(job, true);
   if (action === "open-chatgpt-custom") openChatGptWithPrompt(job, true);
   if (action === "open-blog-editor") {
@@ -987,6 +986,7 @@ function handleAction(action, data) {
     render();
   }
   if (action === "save-blog-editor") saveBlogEditor();
+  if (action === "clear-blog-editor") clearBlogEditor();
   if (action === "print-blog") printBlogPreview();
   if (action === "copy-blog-editor") copyBlogEditor();
   if (action === "toggle-emoji-picker") toggleEmojiPicker();
@@ -2014,15 +2014,10 @@ function validateCustomBlog(job) {
   return info;
 }
 
-function generateCustomBlog(job) {
-  const info = validateCustomBlog(job);
-  if (!info) return;
-  updateJob({ blog: generateBlog(job, info) });
-}
-
 function buildBlogPrompt(job, custom = null) {
   const category = custom?.category || "누수탐지 및 설비 점검";
   const keyword = custom?.keyword || "누수진단";
+  const isCustom = Boolean(custom);
   return `당신은 구글 애드센스 승인을 목표로 하는 블로그 글 작성 전문가입니다.
 아래 조건에 맞춰 블로그 글을 작성해 주십시오.
 
@@ -2034,18 +2029,22 @@ function buildBlogPrompt(job, custom = null) {
 - 문체: 합쇼체(~했습니다, ~합니다), 구어체 절대 금지
 - 본문: H2 소제목 3개 이상, 소제목당 500자 내외, 총 1,500자 이상
 - 사진 설명: 본문 중 적절한 위치에 [사진 삽입: 설명] 형태로 표시
+- 글 맨 아래에 "연관 해시태그:" 항목을 만들고, 메인 키워드와 관련된 해시태그를 되도록 많이 넣어 주십시오.
 
-[현장 정보]
+[${isCustom ? "작성 기준" : "현장 자료"}]
 - 날짜: ${job.date || ""}
 - 주소: ${job.address || ""}
 - 상황 기록: ${job.situation || "현장 상황 기록을 바탕으로 작성"}
+- 환경 기록: ${job.environment || ""}
+- 소견서 요약: ${job.report || "소견서가 있으면 함께 반영"}
 - 점검 요약:
 ${summaryLines([...job.plumbingChecks, ...job.waterproofChecks])}
 
 [출력 형식]
 제목:
 디스크립션:
-본문:`;
+본문:
+연관 해시태그:`;
 }
 
 function copyBlogPrompt(job, useCustom = false) {
@@ -2087,6 +2086,16 @@ function saveBlogEditor() {
   saveState();
   render();
   notify("블로그 글이 앱에 저장되었습니다.");
+}
+
+function clearBlogEditor() {
+  const editor = document.querySelector("#blogEditor");
+  if (editor) editor.innerHTML = "";
+  const job = currentJob();
+  job.blog = "";
+  job.updatedAt = new Date().toISOString();
+  saveState();
+  notify("작성 화면과 저장된 블로그 원고를 삭제했습니다.");
 }
 
 function applyBlogFormat(command) {
