@@ -485,7 +485,7 @@ function renderReport(job) {
       </div>
       <div class="toolbar">
         <button class="btn primary" data-action="generate-report">소견서 만들기</button>
-        <button class="btn ghost" data-action="download-report-pdf">소견서 PDF 다운로드</button>
+        <button class="btn ghost" data-action="download-report-pdf">PDF 다운로드</button>
         <button class="btn ghost" data-action="clear-report">새로만들기</button>
       </div>
     </div>
@@ -583,7 +583,7 @@ function renderEstimate(job) {
         <button class="btn ghost" data-action="toggle-estimate-title">제목 바꾸기</button>
         <button class="btn ghost" data-action="add-estimate">품명 추가</button>
         <button class="btn primary" data-action="save">저장 및 수정</button>
-        <button class="btn ghost" data-action="download-estimate-pdf">견적서 PDF 다운로드</button>
+        <button class="btn ghost" data-action="download-estimate-pdf">PDF 다운로드</button>
       </div>
     </div>
     <section class="print-area estimate-form">

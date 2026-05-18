@@ -315,6 +315,10 @@ textarea {
   resize: vertical;
 }
 
+textarea[data-job-field="report"] {
+  min-height: min(64vh, 680px);
+}
+
 .toolbar {
   align-items: center;
   display: flex;
@@ -947,6 +951,10 @@ canvas {
 
   .info-grid .field:nth-child(2) {
     grid-column: span 2;
+  }
+
+  textarea[data-job-field="report"] {
+    min-height: calc(100vh - 300px);
   }
 
   .sidebar {
