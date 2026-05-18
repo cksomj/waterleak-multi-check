@@ -201,8 +201,6 @@ function renderDashboard(job) {
         <button class="btn ghost" data-action="show-app-map">카카오지도</button>
         <button class="btn ghost" data-action="open-naver-map">네이버지도</button>
         <button class="btn ghost" data-action="open-directions">찾아가기</button>
-        <button class="btn ghost" data-action="take-photo">카메라 촬영</button>
-        <button class="btn ghost" data-action="view-photos">갤러리 선택</button>
         <button class="btn primary" data-action="google-drive-save">구글저장</button>
       </div>
     </div>
@@ -218,11 +216,6 @@ function renderDashboard(job) {
           <strong>외부 지도 연결</strong>
           <p>소비자 주소를 입력한 뒤 카카오지도, 네이버지도, 찾아가기를 누르면 지도 앱/웹으로 바로 연결됩니다.</p>
         </div>
-      </div>
-      <input class="hidden-input" id="jobCameraInput" data-file-type="photos" type="file" accept="image/*" capture="environment" />
-      <input class="hidden-input" id="jobPhotoLibraryInput" data-file-type="photos" type="file" accept="image/*" multiple />
-      <div class="photo-strip">
-        ${(job.photos || []).length ? job.photos.map((name) => `<span>${escapeHtml(name)}</span>`).join("") : `<span>작업사진 없음</span>`}
       </div>
       <div id="recordingStatus" class="muted">녹음 상태: 대기</div>
       <div id="driveStatus" class="drive-status">Google Drive: ${driveStatusText()}</div>
@@ -690,8 +683,6 @@ function handleAction(action, data) {
   if (action === "open-directions") openDirections(job.address);
   if (action === "google-drive-save") saveCurrentJobToGoogleDrive();
   if (action === "save-google-settings" && saveGoogleSettingsFromForm()) saveCurrentJobToGoogleDrive();
-  if (action === "take-photo") openPhotoPicker("camera");
-  if (action === "view-photos") openPhotoPicker("library");
   if (action === "record-field") toggleRecording({ kind: "field", field: data.field });
   if (action === "clear-field") clearField(data.field);
   if (action === "record-check") toggleRecording({ kind: "check", type: data.checkType, id: data.check });
@@ -738,16 +729,6 @@ function handleAction(action, data) {
     saveState();
     render();
   }
-}
-
-function openPhotoPicker(mode) {
-  const input = document.querySelector(mode === "camera" ? "#jobCameraInput" : "#jobPhotoLibraryInput");
-  if (!input) {
-    notify("사진 선택창을 찾지 못했습니다.");
-    return;
-  }
-  input.value = "";
-  input.click();
 }
 
 function openExternalMap(address, provider = "kakao") {
@@ -1216,14 +1197,6 @@ function appendTargetText(target, text) {
   }
   job.updatedAt = new Date().toISOString();
   saveState();
-}
-
-function notifyPhotoList(photos) {
-  if (!photos.length) {
-    notify("저장된 작업사진이 없습니다.");
-    return;
-  }
-  notify(`작업사진: ${photos.join(", ")}`);
 }
 
 function clearField(fieldName, shouldRender = true) {
