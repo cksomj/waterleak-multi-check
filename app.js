@@ -51,6 +51,7 @@ let analyser = null;
 let animationFrame = null;
 let micStream = null;
 let recordingTarget = null;
+let driveRecordingFiles = [];
 let googleTokenClient = null;
 let googleAccessToken = "";
 
@@ -833,24 +834,39 @@ async function getGoogleAccessToken() {
 async function createGoogleDriveFolder() {
   const config = googleConfig();
   const token = await getGoogleAccessToken();
+  const folder = await ensureDriveFolder(token, config.folderName || "WaterLeak Multi Check", null);
+  state.googleDrive = { ...config, folderId: folder.id, folderName: folder.name };
+  saveState();
+  render();
+  notify(`Google Drive 폴더 자동 생성 완료: ${folder.name}`);
+  return folder;
+}
+
+async function ensureDriveFolder(token, name, parentId) {
+  const escapedName = String(name).replaceAll("\\", "\\\\").replaceAll("'", "\\'");
+  const parentQuery = parentId ? ` and '${parentId}' in parents` : "";
+  const query = `name='${escapedName}' and mimeType='application/vnd.google-apps.folder' and trashed=false${parentQuery}`;
+  const searchUrl = `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(query)}&fields=files(id,name,webViewLink)&pageSize=1`;
+  const searchResponse = await fetch(searchUrl, { headers: { Authorization: `Bearer ${token}` } });
+  if (!searchResponse.ok) throw new Error(await searchResponse.text());
+  const found = await searchResponse.json();
+  if (found.files?.length) return found.files[0];
+
+  const body = {
+    name,
+    mimeType: "application/vnd.google-apps.folder",
+  };
+  if (parentId) body.parents = [parentId];
   const response = await fetch("https://www.googleapis.com/drive/v3/files?fields=id,name,webViewLink", {
     method: "POST",
     headers: {
       Authorization: `Bearer ${token}`,
       "Content-Type": "application/json",
     },
-    body: JSON.stringify({
-      name: config.folderName || "WaterLeak Multi Check",
-      mimeType: "application/vnd.google-apps.folder",
-    }),
+    body: JSON.stringify(body),
   });
   if (!response.ok) throw new Error(await response.text());
-  const folder = await response.json();
-  state.googleDrive = { ...config, folderId: folder.id, folderName: folder.name };
-  saveState();
-  render();
-  notify(`Google Drive 폴더 자동 생성 완료: ${folder.name}`);
-  return folder;
+  return response.json();
 }
 
 async function saveCurrentJobToGoogleDrive() {
@@ -868,31 +884,38 @@ async function saveCurrentJobToGoogleDrive() {
     const refreshedConfig = googleConfig();
     if (!refreshedConfig.folderId) throw new Error("Missing Drive folder");
     const job = currentJob();
-    const stamp = new Date().toISOString().replaceAll(":", "-").slice(0, 19);
-    const filename = `waterleak-${job.date || stamp}-${safeFileName(job.address || "no-address")}.json`;
-    const payload = JSON.stringify(buildDriveBackup(job), null, 2);
-    await uploadMultipartToDrive(token, refreshedConfig.folderId, filename, payload, "application/json");
-    notify(`Google Drive 저장 완료: ${filename}`);
+    const dateFolder = await ensureDriveFolder(token, job.date || new Date().toISOString().slice(0, 10), refreshedConfig.folderId);
+    const baseName = safeFileName(job.address || "주소미입력");
+    const reportBlob = await createDocumentPdfBlob("report", job);
+    const estimateBlob = await createDocumentPdfBlob("estimate", job);
+    await uploadBlobToDrive(token, dateFolder.id, `${baseName}-소견서.pdf`, reportBlob, "application/pdf");
+    await uploadBlobToDrive(token, dateFolder.id, `${baseName}-견적서.pdf`, estimateBlob, "application/pdf");
+    const relatedRecordings = driveRecordingFiles.filter((file) => file.jobId === job.id);
+    for (const file of relatedRecordings) {
+      await uploadBlobToDrive(token, dateFolder.id, `${baseName}-${safeFileName(file.name)}`, file.blob, "audio/wav");
+    }
+    notify(`Google Drive 저장 완료: ${dateFolder.name} 폴더 · PDF 2개 · 녹음 ${relatedRecordings.length}개`);
   } catch (error) {
     notify("Google Drive 저장에 실패했습니다. 설정과 권한을 확인하세요.");
     console.error(error);
   }
 }
 
-async function uploadMultipartToDrive(token, folderId, name, content, mimeType) {
+async function uploadBlobToDrive(token, folderId, name, blob, mimeType) {
   const boundary = `waterleak_${Date.now()}`;
   const metadata = { name, parents: [folderId], mimeType };
-  const body = [
+  const body = new Blob([
     `--${boundary}`,
     "Content-Type: application/json; charset=UTF-8",
     "",
     JSON.stringify(metadata),
     `--${boundary}`,
-    `Content-Type: ${mimeType}; charset=UTF-8`,
+    `Content-Type: ${mimeType}`,
     "",
-    content,
+    blob,
+    "",
     `--${boundary}--`,
-  ].join("\r\n");
+  ].map((part) => part instanceof Blob ? part : `${part}\r\n`), { type: `multipart/related; boundary=${boundary}` });
   const response = await fetch("https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,name,webViewLink", {
     method: "POST",
     headers: {
@@ -905,14 +928,153 @@ async function uploadMultipartToDrive(token, folderId, name, content, mimeType) 
   return response.json();
 }
 
-function buildDriveBackup(job) {
-  return {
-    app: "WaterLeak Multi Check",
-    exportedAt: new Date().toISOString(),
-    provider: PROVIDER,
-    currentJob: job,
-    allJobs: state.jobs,
+async function createDocumentPdfBlob(type, job) {
+  const pages = type === "report" ? buildReportPdfPages(job) : buildEstimatePdfPages(job);
+  const images = [];
+  for (const lines of pages) {
+    images.push(await renderPdfPageImage(lines));
+  }
+  return buildImagePdf(images);
+}
+
+function buildReportPdfPages(job) {
+  const report = job.report || generateReport(job);
+  return paginatePdfLines([
+    { text: "누수진단 소견서", size: 32, bold: true, align: "center", gap: 18 },
+    { text: `진단일자: ${job.date || ""}`, size: 16 },
+    { text: `현장주소: ${job.address || ""}`, size: 16 },
+    { text: `연락처: ${job.phone || ""}`, size: 16 },
+    { text: `공급자: ${PROVIDER.name} / ${PROVIDER.bizNo}`, size: 16 },
+    { text: `공급자 주소: ${PROVIDER.address}`, size: 16, gap: 18 },
+    { text: "소견 내용", size: 20, bold: true, gap: 8 },
+    ...String(report).split("\n").map((text) => ({ text, size: 15 })),
+    { text: "", size: 10, gap: 20 },
+    { text: `공급자 확인: ${PROVIDER.owner} (인)`, size: 17, align: "right" },
+  ]);
+}
+
+function buildEstimatePdfPages(job) {
+  const items = job.estimateItems || [];
+  const supplyTotal = items.reduce((sum, item) => sum + estimateLineTotal(item), 0);
+  const tax = Math.round(supplyTotal * 0.1);
+  const total = supplyTotal + tax;
+  return paginatePdfLines([
+    { text: job.estimateDocTitle || "견 적 서", size: 32, bold: true, align: "center", gap: 18 },
+    { text: `견적일자: ${job.date || ""}`, size: 16 },
+    { text: `견적번호: ${job.estimateNo || `WL-${(job.date || "").replaceAll("-", "")}`}`, size: 16 },
+    { text: `수신 주소: ${job.address || ""}`, size: 16 },
+    { text: `전화번호: ${job.phone || ""}`, size: 16 },
+    { text: `공급자: ${PROVIDER.name} / ${PROVIDER.bizNo}`, size: 16 },
+    { text: `공급자 주소: ${PROVIDER.address}`, size: 16, gap: 18 },
+    { text: "품명 및 금액", size: 20, bold: true, gap: 8 },
+    ...items.map((item, index) => ({
+      text: `${index + 1}. ${[item.name, item.spec].filter(Boolean).join(" / ") || "품명 미입력"} - ${estimateLineTotal(item).toLocaleString()}원`,
+      size: 15,
+    })),
+    { text: "", size: 10, gap: 12 },
+    { text: `공급가액: ${supplyTotal.toLocaleString()}원`, size: 17, align: "right" },
+    { text: `부가세: ${tax.toLocaleString()}원`, size: 17, align: "right" },
+    { text: `합계금액: ${total.toLocaleString()}원`, size: 20, bold: true, align: "right", gap: 16 },
+    { text: `비고: ${job.estimateNote || "상기 견적은 현장 상황 및 추가 작업 범위에 따라 변경될 수 있습니다."}`, size: 15 },
+    { text: `공급자 확인: ${PROVIDER.owner} (인)`, size: 17, align: "right", gap: 18 },
+  ]);
+}
+
+function paginatePdfLines(lines) {
+  const pages = [[]];
+  let y = 0;
+  lines.forEach((line) => {
+    const height = (line.size || 15) * 1.6 + (line.gap || 3);
+    if (y + height > 1480 && pages[pages.length - 1].length) {
+      pages.push([]);
+      y = 0;
+    }
+    pages[pages.length - 1].push(line);
+    y += height;
+  });
+  return pages;
+}
+
+async function renderPdfPageImage(lines) {
+  const canvas = document.createElement("canvas");
+  canvas.width = 1240;
+  canvas.height = 1754;
+  const ctx = canvas.getContext("2d");
+  ctx.fillStyle = "#ffffff";
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  ctx.fillStyle = "#111827";
+  let y = 110;
+  lines.forEach((line) => {
+    const size = line.size || 15;
+    ctx.font = `${line.bold ? "700" : "400"} ${size * 2}px "Malgun Gothic", Arial, sans-serif`;
+    ctx.textAlign = line.align || "left";
+    const x = line.align === "center" ? canvas.width / 2 : line.align === "right" ? canvas.width - 90 : 90;
+    const maxWidth = line.align ? 1060 : 1060;
+    const wrapped = wrapCanvasText(ctx, line.text || " ", maxWidth);
+    wrapped.forEach((text) => {
+      ctx.fillText(text, x, y);
+      y += size * 2.7;
+    });
+    y += line.gap || 6;
+  });
+  const blob = await new Promise((resolve) => canvas.toBlob(resolve, "image/jpeg", 0.92));
+  return { bytes: await blob.arrayBuffer(), width: 595.28, height: 841.89 };
+}
+
+function wrapCanvasText(ctx, text, maxWidth) {
+  const words = String(text).split(/(\s+)/);
+  const lines = [];
+  let line = "";
+  words.forEach((word) => {
+    const test = line + word;
+    if (ctx.measureText(test).width > maxWidth && line) {
+      lines.push(line.trimEnd());
+      line = word.trimStart();
+    } else {
+      line = test;
+    }
+  });
+  lines.push(line || " ");
+  return lines;
+}
+
+function buildImagePdf(images) {
+  const parts = [];
+  const offsets = [];
+  let offset = 0;
+  const add = (part) => {
+    parts.push(part);
+    offset += typeof part === "string" ? part.length : part.byteLength;
   };
+  const addObject = (id, bodyParts) => {
+    offsets[id] = offset;
+    add(`${id} 0 obj\n`);
+    bodyParts.forEach(add);
+    add("\nendobj\n");
+  };
+  add("%PDF-1.4\n%\xFF\xFF\xFF\xFF\n");
+  const pageIds = images.map((_, index) => 3 + index * 3);
+  addObject(1, ["<< /Type /Catalog /Pages 2 0 R >>"]);
+  addObject(2, [`<< /Type /Pages /Kids [${pageIds.map((id) => `${id} 0 R`).join(" ")}] /Count ${images.length} >>`]);
+  images.forEach((image, index) => {
+    const pageId = 3 + index * 3;
+    const contentId = pageId + 1;
+    const imageId = pageId + 2;
+    const imageName = `Im${index + 1}`;
+    const command = `q\n595.28 0 0 841.89 0 0 cm\n/${imageName} Do\nQ`;
+    addObject(pageId, [`<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595.28 841.89] /Resources << /XObject << /${imageName} ${imageId} 0 R >> >> /Contents ${contentId} 0 R >>`]);
+    addObject(contentId, [`<< /Length ${command.length} >>\nstream\n${command}\nendstream`]);
+    addObject(imageId, [
+      `<< /Type /XObject /Subtype /Image /Width 1240 /Height 1754 /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length ${image.bytes.byteLength} >>\nstream\n`,
+      new Uint8Array(image.bytes),
+      "\nendstream",
+    ]);
+  });
+  const xref = offset;
+  add(`xref\n0 ${offsets.length}\n0000000000 65535 f \n`);
+  for (let i = 1; i < offsets.length; i += 1) add(`${String(offsets[i]).padStart(10, "0")} 00000 n \n`);
+  add(`trailer\n<< /Size ${offsets.length} /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF`);
+  return new Blob(parts, { type: "application/pdf" });
 }
 
 function safeFileName(value) {
@@ -968,7 +1130,11 @@ async function stopWavRecording() {
   await recorder.context.close();
   const blob = createWavBlob(recorder.samples, recorder.sampleRate);
   const savedName = saveBlobFile(blob, "wav");
-  appendTargetText(recordingTarget || { kind: "situation" }, `녹음파일 저장: ${savedName}`);
+  const target = recordingTarget || { kind: "situation" };
+  if (target.kind === "situation" || (target.kind === "field" && target.field === "situation")) {
+    driveRecordingFiles.push({ jobId: currentJob().id, name: savedName, blob });
+  }
+  appendTargetText(target, `녹음파일 저장: ${savedName}`);
   recordingTarget = null;
   wavRecorder = null;
   saveState();
