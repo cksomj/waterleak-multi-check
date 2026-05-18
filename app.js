@@ -1,4 +1,5 @@
 const STORAGE_KEY = "waterleak_multi_check_v1";
+const GOOGLE_CONFIG_KEY = "waterleak_google_drive_config_v1";
 const PROVIDER = {
   name: "최씨누수탐지종합설비",
   bizNo: "381-26-00781",
@@ -93,17 +94,49 @@ function loadState() {
     const saved = localStorage.getItem(STORAGE_KEY);
     if (saved) {
       const parsed = JSON.parse(saved);
-      return { ...defaultState, ...parsed };
+      const googleDrive = loadStoredGoogleConfig(parsed.googleDrive);
+      return { ...defaultState, ...parsed, googleDrive, googleSetupOpen: false };
     }
   } catch (error) {
     console.warn(error);
   }
   const firstJob = createJob();
-  return { ...defaultState, currentJobId: firstJob.id, jobs: [firstJob] };
+  return { ...defaultState, googleDrive: loadStoredGoogleConfig(), currentJobId: firstJob.id, jobs: [firstJob] };
 }
 
 function saveState() {
+  saveGoogleConfigOnly();
   localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+}
+
+function loadStoredGoogleConfig(fallback = {}) {
+  try {
+    const saved = localStorage.getItem(GOOGLE_CONFIG_KEY);
+    if (saved) {
+      return {
+        apiKey: "",
+        clientId: "",
+        folderId: "",
+        folderName: "WaterLeak Multi Check",
+        ...fallback,
+        ...JSON.parse(saved),
+      };
+    }
+  } catch (error) {
+    console.warn(error);
+  }
+  return {
+    apiKey: "",
+    clientId: "",
+    folderId: "",
+    folderName: "WaterLeak Multi Check",
+    ...fallback,
+  };
+}
+
+function saveGoogleConfigOnly() {
+  if (!state?.googleDrive) return;
+  localStorage.setItem(GOOGLE_CONFIG_KEY, JSON.stringify(googleConfig()));
 }
 
 function currentJob() {
@@ -251,7 +284,7 @@ function renderDriveMediaPicker() {
 
 function renderGoogleDriveInlineSetup() {
   const config = googleConfig();
-  if (!state.googleSetupOpen && config.apiKey && config.clientId) return "";
+  if (config.apiKey && config.clientId) return "";
   return `
     <div class="drive-setup">
       <h2>Google Drive 저장 설정</h2>
@@ -663,6 +696,7 @@ function saveGoogleSettingsFromForm() {
     folderName: config.folderName || "WaterLeak Multi Check",
   };
   state.googleSetupOpen = false;
+  saveGoogleConfigOnly();
   saveState();
   return true;
 }
@@ -902,6 +936,8 @@ async function saveCurrentJobToGoogleDrive() {
       notify("화면 아래 Google Drive 저장 설정에 키를 붙여넣으세요.");
       return;
     }
+    state.googleSetupOpen = false;
+    saveState();
     const wantPhotos = confirm("사진폴더를 만들고 사진을 업로드하시겠습니까? y/n");
     const wantRecordings = confirm("녹음폴더를 만들고 녹음파일을 업로드하시겠습니까? y/n");
     const prepared = await prepareGoogleDriveSave(wantPhotos, wantRecordings);
