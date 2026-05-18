@@ -347,9 +347,9 @@ function renderCheckRow(type, check) {
         ${isPipeLeakCheck ? `
           <div class="mini-actions record-actions">
             <button class="btn ghost record-btn ${pipeRecordingActive ? "recording" : ""} ${pipeRecording ? "saved" : ""}" data-action="record-check" data-check="${check.id}" data-check-type="${type}">
-              <span class="voice-icon ${pipeRecordingActive ? "red" : pipeRecording ? "blue" : "idle"}"></span>${pipeRecordingActive ? "녹음중" : pipeRecording ? "저장완료" : "녹음"}
+              <span class="voice-icon ${pipeRecordingActive ? "blue pulse" : pipeRecording ? "blue" : "idle"}"></span>${pipeRecordingActive ? "녹음멈춤" : pipeRecording ? "저장완료" : "녹음"}
             </button>
-            <button class="btn ghost listen-btn" data-action="play-recording" data-recording-id="${escapeAttr(pipeRecording?.id || "")}" ${pipeRecording ? "" : "disabled"}>들어보기</button>
+            <button class="btn ghost listen-btn" data-action="play-recording" data-recording-id="${escapeAttr(pipeRecording?.id || "")}" ${pipeRecording ? "" : "disabled"}>재생</button>
             <button class="btn ghost clear-btn" data-action="delete-recording" data-recording-id="${escapeAttr(pipeRecording?.id || "")}" ${pipeRecording ? "" : "disabled"}>삭제</button>
           </div>
         ` : ""}
@@ -377,7 +377,7 @@ function renderTracker(job) {
         <button class="btn ghost" data-action="bluetooth">블루투스 연결</button>
         <button class="btn primary" data-action="start-spectrum">소리 분석 시작</button>
         <button class="btn ghost record-btn ${trackerRecordingActive ? "recording" : ""} ${trackerRecording ? "saved" : ""}" data-action="record-tracker">
-          <span class="voice-icon ${trackerRecordingActive ? "red" : trackerRecording ? "blue" : "idle"}"></span>${trackerRecordingActive ? "녹음중" : trackerRecording ? "저장완료" : "녹음"}
+          <span class="voice-icon ${trackerRecordingActive ? "blue pulse" : trackerRecording ? "blue" : "idle"}"></span>${trackerRecordingActive ? "녹음멈춤" : trackerRecording ? "저장완료" : "녹음"}
         </button>
         <button class="btn ghost listen-btn" data-action="play-recording" data-recording-id="${escapeAttr(trackerRecording?.id || "")}" ${trackerRecording ? "" : "disabled"}>재생</button>
         <button class="btn warn" data-action="stop-spectrum">정지</button>
@@ -1258,7 +1258,6 @@ async function stopWavRecording() {
   await putRecordingBlob(recording.id, blob);
   const job = currentJob();
   job.recordings = [...(job.recordings || []).filter((item) => item.targetKey !== recording.targetKey), recording];
-  if (target.kind !== "tracker") appendTargetText(target, `녹음 저장완료: ${savedName}`);
   recordingTarget = null;
   wavRecorder = null;
   saveState();
@@ -1760,7 +1759,18 @@ function copyText(text) {
 function notify(message) {
   const status = document.querySelector("#recordingStatus") || document.querySelector("#peakStatus");
   if (status) status.textContent = message;
-  else alert(message);
+  let toast = document.querySelector(".app-toast");
+  if (!toast) {
+    toast = document.createElement("div");
+    toast.className = "app-toast";
+    document.body.appendChild(toast);
+  }
+  toast.textContent = message;
+  toast.classList.add("show");
+  clearTimeout(notify.timer);
+  notify.timer = setTimeout(() => {
+    toast.classList.remove("show");
+  }, 1800);
 }
 
 function escapeHtml(value) {
