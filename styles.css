@@ -134,8 +134,77 @@ button {
 }
 
 .content {
+  overflow: hidden;
   padding: 22px;
   touch-action: pan-y;
+}
+
+.view-stage {
+  animation-duration: 180ms;
+  animation-fill-mode: both;
+  animation-timing-function: cubic-bezier(0.22, 0.8, 0.24, 1);
+  min-height: calc(100vh - 106px);
+  will-change: transform, opacity;
+}
+
+.view-stage.slide-in-right {
+  animation-name: slideInFromRight;
+}
+
+.view-stage.slide-in-left {
+  animation-name: slideInFromLeft;
+}
+
+.view-stage.slide-out-left {
+  animation-name: slideOutToLeft;
+}
+
+.view-stage.slide-out-right {
+  animation-name: slideOutToRight;
+}
+
+@keyframes slideInFromRight {
+  from {
+    opacity: 0.72;
+    transform: translateX(28px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes slideInFromLeft {
+  from {
+    opacity: 0.72;
+    transform: translateX(-28px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes slideOutToLeft {
+  from {
+    opacity: 1;
+    transform: translateX(0);
+  }
+  to {
+    opacity: 0.72;
+    transform: translateX(-28px);
+  }
+}
+
+@keyframes slideOutToRight {
+  from {
+    opacity: 1;
+    transform: translateX(0);
+  }
+  to {
+    opacity: 0.72;
+    transform: translateX(28px);
+  }
 }
 
 .section-head {
