@@ -383,6 +383,7 @@ function renderCheckRow(type, check) {
 function renderTracker(job) {
   const trackerRecording = getLastRecordingForTarget({ kind: "tracker" });
   const trackerRecordingActive = wavRecorder?.recording && targetKey(recordingTarget) === "tracker";
+  const trackerRecordingPaused = trackerRecordingActive && wavRecorder?.paused;
   return `
     <div class="section-head">
       <div>
@@ -393,9 +394,10 @@ function renderTracker(job) {
         <button class="btn ghost" data-action="bluetooth">블루투스 연결</button>
         <button class="btn primary" data-action="start-spectrum">소리 분석 시작</button>
         <button class="btn ghost record-btn ${trackerRecordingActive ? "recording" : ""} ${trackerRecording ? "saved" : ""}" data-action="record-tracker">
-          <span class="voice-icon ${trackerRecordingActive ? "blue pulse" : trackerRecording ? "blue" : "idle"}"></span>${trackerRecordingActive ? "녹음멈춤" : trackerRecording ? "저장완료" : "녹음"}
+          <span class="voice-icon ${trackerRecordingActive && !trackerRecordingPaused ? "blue pulse" : trackerRecording ? "blue" : "idle"}"></span>${trackerRecordingActive ? "녹음멈춤" : trackerRecording ? "저장완료" : "녹음"}
         </button>
         <button class="btn ghost listen-btn" data-action="play-recording" data-recording-id="${escapeAttr(trackerRecording?.id || "")}" ${trackerRecording ? "" : "disabled"}>재생</button>
+        <button class="btn ghost clear-btn" data-action="delete-recording" data-recording-id="${escapeAttr(trackerRecording?.id || "")}" ${trackerRecording ? "" : "disabled"}>삭제</button>
         <button class="btn warn" data-action="stop-spectrum">정지</button>
       </div>
     </div>
@@ -406,6 +408,39 @@ function renderTracker(job) {
       </div>
       <canvas id="spectrum" width="1100" height="360"></canvas>
       <p class="muted" style="color:#9fc2c8;margin-top:10px">높은 피크 대역은 주황색으로 표시됩니다. 녹음은 WAV 파일로 저장됩니다.</p>
+    </section>
+    ${renderTrackerPipeCheck(job)}
+  `;
+}
+
+function renderTrackerPipeCheck(job) {
+  const check = (job.plumbingChecks || []).find((item) => item.id === "hot_water") || normalizeChecks([], basePlumbingChecks)[0];
+  const target = { kind: "check", type: "plumbingChecks", id: check.id };
+  const recording = getLastRecordingForTarget(target);
+  const active = wavRecorder?.recording && targetKey(recordingTarget) === targetKey(target);
+  const paused = active && wavRecorder?.paused;
+  return `
+    <section class="panel tracker-pipe-check">
+      <div class="check-row">
+        <input type="checkbox" ${check.done ? "checked" : ""} data-check="${check.id}" data-check-type="plumbingChecks" data-field="done" />
+        <div>
+          <strong>${escapeHtml(check.title)}</strong>
+          <p class="muted">${escapeHtml(check.guide)}</p>
+          <div class="mini-actions record-actions">
+            <button class="btn ghost record-btn ${active ? "recording" : ""} ${recording ? "saved" : ""}" data-action="record-check" data-check="${check.id}" data-check-type="plumbingChecks">
+              <span class="voice-icon ${active && !paused ? "blue pulse" : recording ? "blue" : "idle"}"></span>${active ? "녹음멈춤" : recording ? "저장완료" : "녹음"}
+            </button>
+            <button class="btn ghost pause-btn" data-action="pause-recording" data-check="${check.id}" data-check-type="plumbingChecks" ${active ? "" : "disabled"}>${paused ? "이어녹음" : "일시정지"}</button>
+            <button class="btn ghost listen-btn" data-action="play-recording" data-recording-id="${escapeAttr(recording?.id || "")}" ${recording ? "" : "disabled"}>재생</button>
+            <button class="btn ghost clear-btn" data-action="delete-recording" data-recording-id="${escapeAttr(recording?.id || "")}" ${recording ? "" : "disabled"}>삭제</button>
+          </div>
+        </div>
+        <div class="check-result">
+          <select data-check="${check.id}" data-check-type="plumbingChecks" data-field="result">
+            ${["대기", "정상", "의심", "누수확인", "재검필요"].map((item) => `<option ${check.result === item ? "selected" : ""}>${item}</option>`).join("")}
+          </select>
+        </div>
+      </div>
     </section>
   `;
 }
@@ -758,6 +793,7 @@ function handleAction(action, data) {
   if (action === "clear-check") clearCheckMemo(data.checkType, data.check);
   if (action === "record-check") toggleRecording({ kind: "check", type: data.checkType, id: data.check });
   if (action === "record-tracker") toggleRecording({ kind: "tracker" });
+  if (action === "pause-recording") togglePauseRecording({ kind: "check", type: data.checkType, id: data.check });
   if (action === "play-recording") playRecording(data.recordingId);
   if (action === "delete-recording") deleteRecording(data.recordingId);
   if (action === "reset-checks") {
@@ -1230,13 +1266,23 @@ async function toggleRecording(target = { kind: "situation" }) {
   }
 }
 
+function togglePauseRecording(target) {
+  if (!wavRecorder?.recording || targetKey(recordingTarget) !== targetKey(target)) {
+    notify("진행 중인 녹음이 없습니다.");
+    return;
+  }
+  wavRecorder.paused = !wavRecorder.paused;
+  render();
+  notify(wavRecorder.paused ? "녹음 일시정지." : "녹음 이어서 진행.");
+}
+
 async function startWavRecording(stream) {
   const context = new AudioContext();
   const source = context.createMediaStreamSource(stream);
   const processor = context.createScriptProcessor(4096, 1, 1);
   const samples = [];
   processor.onaudioprocess = (event) => {
-    if (!wavRecorder?.recording) return;
+    if (!wavRecorder?.recording || wavRecorder.paused) return;
     samples.push(new Float32Array(event.inputBuffer.getChannelData(0)));
   };
   source.connect(processor);
@@ -1249,6 +1295,7 @@ async function startWavRecording(stream) {
     sampleRate: context.sampleRate,
     stream,
     recording: true,
+    paused: false,
   };
 }
 

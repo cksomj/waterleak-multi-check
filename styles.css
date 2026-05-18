@@ -398,6 +398,11 @@ textarea {
   color: #1d4ed8;
 }
 
+.pause-btn {
+  border-color: #fde68a;
+  color: #92400e;
+}
+
 .clear-btn {
   border-color: #e5e7eb;
   color: #4b5563;
@@ -547,6 +552,10 @@ textarea {
   border-radius: 8px;
   color: #e8fbff;
   padding: 14px;
+}
+
+.tracker-pipe-check {
+  margin-top: 14px;
 }
 
 canvas {
