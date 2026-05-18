@@ -51,6 +51,7 @@ let analyser = null;
 let animationFrame = null;
 let micStream = null;
 let recordingTarget = null;
+let driveSaveDraft = null;
 let googleTokenClient = null;
 let googleAccessToken = "";
 
@@ -213,12 +214,38 @@ function renderDashboard(job) {
       <div id="recordingStatus" class="muted">녹음 상태: 대기</div>
       <div id="driveStatus" class="drive-status">Google Drive: ${driveStatusText()}</div>
       ${renderGoogleDriveInlineSetup()}
+      ${renderDriveMediaPicker()}
     </section>
     <section class="meter-cards" style="margin-top:14px">
       ${metric("점검 완료", countDone([...job.plumbingChecks, ...job.waterproofChecks]), `${job.plumbingChecks.length + job.waterproofChecks.length}개 중`)}
       ${metric("소견서", job.report ? "작성됨" : "미작성", "AI 초안")}
       ${metric("저장방식", state.storageMode === "local" ? "로컬" : "구글", "선택 옵션")}
     </section>
+  `;
+}
+
+function renderDriveMediaPicker() {
+  if (!driveSaveDraft?.active) return "";
+  return `
+    <div class="drive-setup">
+      <h2>Google Drive 선택 업로드</h2>
+      ${driveSaveDraft.wantPhotos ? `
+        <label>사진 파일 선택
+          <input data-drive-pick="photos" type="file" accept="image/*" multiple />
+        </label>
+        <p class="muted">선택됨: ${driveSaveDraft.photoFiles.length}개</p>
+      ` : ""}
+      ${driveSaveDraft.wantRecordings ? `
+        <label>녹음 파일 선택
+          <input data-drive-pick="recordings" type="file" accept="audio/*" multiple />
+        </label>
+        <p class="muted">선택됨: ${driveSaveDraft.recordingFiles.length}개</p>
+      ` : ""}
+      <div class="toolbar">
+        <button class="btn primary" data-action="continue-google-drive-save">선택 완료 후 업로드</button>
+        <button class="btn ghost" data-action="cancel-google-drive-save">취소</button>
+      </div>
+    </div>
   `;
 }
 
@@ -594,6 +621,16 @@ function bindEvents() {
     });
   });
 
+  app.querySelectorAll("[data-drive-pick]").forEach((input) => {
+    input.addEventListener("change", () => {
+      if (!driveSaveDraft) return;
+      const files = Array.from(input.files || []);
+      if (input.dataset.drivePick === "photos") driveSaveDraft.photoFiles = files;
+      if (input.dataset.drivePick === "recordings") driveSaveDraft.recordingFiles = files;
+      render();
+    });
+  });
+
   app.querySelectorAll("input[name='storage']").forEach((input) => {
     input.addEventListener("change", () => {
       state.storageMode = input.value;
@@ -675,6 +712,12 @@ function handleAction(action, data) {
   if (action === "open-audio-app") openDeviceFilePicker("audio");
   if (action === "google-drive-save") saveCurrentJobToGoogleDrive();
   if (action === "save-google-settings" && saveGoogleSettingsFromForm()) saveCurrentJobToGoogleDrive();
+  if (action === "continue-google-drive-save") continueGoogleDriveSave();
+  if (action === "cancel-google-drive-save") {
+    driveSaveDraft = null;
+    render();
+    notify("Google Drive 선택 업로드를 취소했습니다.");
+  }
   if (action === "record-field") toggleRecording({ kind: "field", field: data.field });
   if (action === "clear-field") clearField(data.field);
   if (action === "record-check") toggleRecording({ kind: "check", type: data.checkType, id: data.check });
@@ -841,16 +884,34 @@ async function saveCurrentJobToGoogleDrive() {
       notify("화면 아래 Google Drive 저장 설정에 키를 붙여넣으세요.");
       return;
     }
-    let photoFiles = [];
-    let recordingFiles = [];
-    if (confirm("사진폴더를 만들고 사진을 업로드하시겠습니까? y/n")) {
-      notify("사진 파일을 선택하세요.");
-      photoFiles = await selectFilesForDrive("image/*", true);
+    const wantPhotos = confirm("사진폴더를 만들고 사진을 업로드하시겠습니까? y/n");
+    const wantRecordings = confirm("녹음폴더를 만들고 녹음파일을 업로드하시겠습니까? y/n");
+    if (wantPhotos || wantRecordings) {
+      driveSaveDraft = { active: true, wantPhotos, wantRecordings, photoFiles: [], recordingFiles: [] };
+      render();
+      notify("화면 아래 선택 업로드에서 파일을 직접 선택한 뒤 업로드를 계속하세요.");
+      return;
     }
-    if (confirm("녹음폴더를 만들고 녹음파일을 업로드하시겠습니까? y/n")) {
-      notify("녹음 파일을 선택하세요.");
-      recordingFiles = await selectFilesForDrive("audio/*", true);
-    }
+    await performGoogleDriveSave([], []);
+  } catch (error) {
+    notify(`Google Drive 저장 실패: ${driveErrorMessage(error)}`);
+    console.error(error);
+  }
+}
+
+async function continueGoogleDriveSave() {
+  if (!driveSaveDraft?.active) return;
+  const photoFiles = driveSaveDraft.photoFiles || [];
+  const recordingFiles = driveSaveDraft.recordingFiles || [];
+  if (driveSaveDraft.wantPhotos && !photoFiles.length && !confirm("사진을 선택하지 않았습니다. 사진 없이 계속할까요?")) return;
+  if (driveSaveDraft.wantRecordings && !recordingFiles.length && !confirm("녹음파일을 선택하지 않았습니다. 녹음 없이 계속할까요?")) return;
+  driveSaveDraft = null;
+  render();
+  await performGoogleDriveSave(photoFiles, recordingFiles);
+}
+
+async function performGoogleDriveSave(photoFiles, recordingFiles) {
+  try {
     if (!googleConfig().folderId) await createGoogleDriveFolder();
     const token = await getGoogleAccessToken();
     const refreshedConfig = googleConfig();
@@ -883,36 +944,6 @@ async function saveCurrentJobToGoogleDrive() {
     notify(`Google Drive 저장 실패: ${driveErrorMessage(error)}`);
     console.error(error);
   }
-}
-
-function selectFilesForDrive(accept, multiple = true) {
-  return new Promise((resolve) => {
-    const input = document.createElement("input");
-    let settled = false;
-    const finish = (files) => {
-      if (settled) return;
-      settled = true;
-      window.removeEventListener("focus", onFocus);
-      input.remove();
-      resolve(files);
-    };
-    const onFocus = () => {
-      setTimeout(() => {
-        if (!settled && !(input.files || []).length) finish([]);
-      }, 700);
-    };
-    input.type = "file";
-    input.accept = accept;
-    input.multiple = multiple;
-    input.className = "hidden-input";
-    input.addEventListener("change", () => {
-      const files = Array.from(input.files || []);
-      finish(files);
-    }, { once: true });
-    window.addEventListener("focus", onFocus);
-    document.body.appendChild(input);
-    input.click();
-  });
 }
 
 function driveErrorMessage(error) {
