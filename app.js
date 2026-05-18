@@ -777,14 +777,14 @@ function loadGoogleIdentityScript() {
     const existing = document.querySelector("script[data-google-identity]");
     if (existing) {
       existing.addEventListener("load", resolve, { once: true });
-      existing.addEventListener("error", reject, { once: true });
+      existing.addEventListener("error", () => reject(new Error("Google 로그인 스크립트를 불러오지 못했습니다. 인터넷 연결, 광고차단, 승인된 JavaScript 원본을 확인하세요.")), { once: true });
       return;
     }
     const script = document.createElement("script");
     script.dataset.googleIdentity = "true";
     script.src = "https://accounts.google.com/gsi/client";
     script.onload = resolve;
-    script.onerror = reject;
+    script.onerror = () => reject(new Error("Google 로그인 스크립트를 불러오지 못했습니다. 인터넷 연결, 광고차단, 승인된 JavaScript 원본을 확인하세요."));
     document.head.appendChild(script);
   });
 }
@@ -885,7 +885,13 @@ async function saveCurrentJobToGoogleDrive() {
 }
 
 function driveErrorMessage(error) {
+  if (error instanceof Event) {
+    return "브라우저가 Google 요청을 차단했습니다. 팝업 허용, 광고차단 해제, OAuth 승인된 JavaScript 원본을 확인하세요.";
+  }
   const message = String(error?.message || error || "알 수 없는 오류");
+  if (message === "[object Event]") {
+    return "브라우저가 Google 요청을 차단했습니다. 팝업 허용, 광고차단 해제, OAuth 승인된 JavaScript 원본을 확인하세요.";
+  }
   try {
     const parsed = JSON.parse(message);
     return parsed.error?.message || parsed.message || message;
