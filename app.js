@@ -58,6 +58,7 @@ let driveSaveDraft = null;
 let googleTokenClient = null;
 let googleAccessToken = "";
 let pendingViewAnimation = "";
+let savedBlogSelection = null;
 
 const app = document.querySelector("#app");
 
@@ -544,6 +545,7 @@ function renderBlogEditor(job) {
         <div class="toolbar">
           <button class="btn primary" data-action="save-blog-editor">저장</button>
           <button class="btn ghost" data-action="print-blog">PDF 인쇄</button>
+          <button class="btn ghost" data-action="copy-blog-editor">내용복사</button>
           <button class="btn warn" data-action="close-blog-editor">나오기</button>
         </div>
       </header>
@@ -560,6 +562,10 @@ function renderBlogEditor(job) {
         <button class="btn ghost" data-format="justifyRight">오른쪽</button>
         <button class="btn ghost" data-format="insertUnorderedList">목록</button>
         <button class="btn ghost" data-format="insertOrderedList">번호</button>
+        <button class="btn ghost" data-action="toggle-emoji-picker">이모티콘</button>
+      </div>
+      <div class="emoji-picker" hidden>
+        ${["💧","🚰","🔧","🛠️","✅","☑️","⚠️","❗","📍","🏠","🏢","📸","🎥","📌","📝","🔍","📊","➡️","⬇️","⭐","👍","👌","💡","🔥","💦","🧱","🧰","📞","⏱️","🔴","🔵","🟢","🟡","1️⃣","2️⃣","3️⃣","4️⃣"].map((emoji) => `<button class="emoji-btn" data-emoji="${emoji}" type="button">${emoji}</button>`).join("")}
       </div>
       <main id="blogEditor" class="blog-editor-page" contenteditable="true">${formatBlogEditorContent(job.blog || "")}</main>
     </div>
@@ -780,6 +786,18 @@ function bindEvents() {
     button.addEventListener("click", () => applyBlogBlock(button.dataset.formatBlock));
   });
 
+  app.querySelectorAll("[data-emoji]").forEach((button) => {
+    button.addEventListener("mousedown", (event) => event.preventDefault());
+    button.addEventListener("click", () => insertBlogEmoji(button.dataset.emoji));
+  });
+
+  const blogEditor = app.querySelector("#blogEditor");
+  if (blogEditor) {
+    ["keyup", "mouseup", "touchend", "input"].forEach((eventName) => {
+      blogEditor.addEventListener(eventName, saveBlogSelection);
+    });
+  }
+
   const historyQuery = app.querySelector("#historyQuery");
   if (historyQuery) historyQuery.addEventListener("input", render);
 
@@ -899,6 +917,8 @@ function handleAction(action, data) {
   }
   if (action === "save-blog-editor") saveBlogEditor();
   if (action === "print-blog") printBlogPreview();
+  if (action === "copy-blog-editor") copyBlogEditor();
+  if (action === "toggle-emoji-picker") toggleEmojiPicker();
   if (action === "toggle-estimate-title") toggleEstimateTitle();
   if (action === "add-estimate") {
     job.estimateItems.push({ name: "", spec: "", qty: 1, unit: "식", unitPrice: "", cost: "" });
@@ -1923,6 +1943,48 @@ function applyBlogBlock(block) {
   if (!editor) return;
   editor.focus();
   document.execCommand("formatBlock", false, block === "h2" ? "h2" : "p");
+}
+
+function saveBlogSelection() {
+  const editor = document.querySelector("#blogEditor");
+  const selection = window.getSelection();
+  if (!editor || !selection?.rangeCount) return;
+  const range = selection.getRangeAt(0);
+  if (editor.contains(range.commonAncestorContainer)) savedBlogSelection = range.cloneRange();
+}
+
+function restoreBlogSelection() {
+  const editor = document.querySelector("#blogEditor");
+  if (!editor) return;
+  editor.focus();
+  if (!savedBlogSelection) return;
+  const selection = window.getSelection();
+  selection.removeAllRanges();
+  selection.addRange(savedBlogSelection);
+}
+
+function insertBlogEmoji(emoji) {
+  restoreBlogSelection();
+  document.execCommand("insertText", false, emoji);
+  saveBlogSelection();
+  const picker = document.querySelector(".emoji-picker");
+  if (picker) picker.hidden = true;
+}
+
+function toggleEmojiPicker() {
+  const picker = document.querySelector(".emoji-picker");
+  if (!picker) return;
+  picker.hidden = !picker.hidden;
+}
+
+function copyBlogEditor() {
+  const editor = document.querySelector("#blogEditor");
+  const text = editor?.innerText || currentJob().blog || "";
+  if (!text.trim()) {
+    notify("복사할 블로그 글이 없습니다.");
+    return;
+  }
+  navigator.clipboard.writeText(text).then(() => notify("블로그 내용을 복사했습니다."));
 }
 
 function printBlogPreview() {
