@@ -701,6 +701,34 @@ canvas {
   min-height: 42px;
 }
 
+.keyword-input {
+  align-items: center;
+  background: #fff;
+  border: 1px solid #cbd7dc;
+  border-radius: 7px;
+  display: grid;
+  gap: 8px;
+  grid-template-columns: auto minmax(0, 1fr);
+  min-height: 42px;
+  padding: 0 10px;
+}
+
+.keyword-input span {
+  color: #21353e;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.keyword-input input {
+  border: 0;
+  min-height: 40px;
+  padding: 8px 0;
+}
+
+.keyword-input input:focus {
+  outline: none;
+}
+
 .blog-editor-screen {
   background: #f3f6f8;
   display: grid;

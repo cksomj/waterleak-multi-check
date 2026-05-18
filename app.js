@@ -575,8 +575,8 @@ function renderCustomBlogPanel(job) {
         </div>
       </div>
       <div class="custom-blog-grid">
-        ${inlineField("blogCategory", job.blogCategory || "", "카테고리: 예) 건강, 생활정보, 누수탐지")}
-        ${inlineField("blogKeyword", job.blogKeyword || "", "메인키워드: 예) 누수진단")}
+        ${blogKeywordField("blogCategory", "카테고리:", job.blogCategory || "", "예) 건강, 생활정보, 누수탐지")}
+        ${blogKeywordField("blogKeyword", "메인키워드:", job.blogKeyword || "", "예) 누수진단")}
       </div>
       <div class="toolbar">
         <button class="btn primary" data-action="generate-custom-blog">지정 글 작성</button>
@@ -738,6 +738,15 @@ function field(id, label, type, value, placeholder = "", step = "") {
 
 function inlineField(id, value, placeholder = "") {
   return `<input class="inline-input" data-job-field="${id}" value="${escapeAttr(value || "")}" placeholder="${escapeAttr(placeholder)}" />`;
+}
+
+function blogKeywordField(id, label, value, placeholder = "") {
+  return `
+    <label class="keyword-input">
+      <span>${escapeHtml(label)}</span>
+      <input data-job-field="${id}" value="${escapeAttr(value || "")}" placeholder="${escapeAttr(placeholder)}" />
+    </label>
+  `;
 }
 
 function textarea(id, label, value, placeholder = "") {
