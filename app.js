@@ -1,5 +1,6 @@
 const STORAGE_KEY = "waterleak_multi_check_v1";
 const GOOGLE_CONFIG_KEY = "waterleak_google_drive_config_v1";
+const RECORDING_DB_NAME = "waterleak_recordings_v1";
 const PROVIDER = {
   name: "최씨누수탐지종합설비",
   bizNo: "381-26-00781",
@@ -9,7 +10,7 @@ const PROVIDER = {
 
 const basePlumbingChecks = [
   ["toilet_parts", "화장실 변기부속 누수검사", "밸브를 잠그고 열어 계량기 움직임을 확인합니다. 물이 없으면 보충 후 재검사합니다."],
-  ["hot_water", "온수 누수검사", "보일러 온수밸브를 잠그고 열어 계량기 누수 변화를 확인합니다."],
+  ["hot_water", "배관누수검사", "배관 밸브를 잠그고 열어 계량기 누수 변화를 확인합니다."],
   ["all_valves", "모든 밸브류 검사", "화장실, 싱크대, 개수대, 외부수도, 밸브고장 여부를 순차 확인합니다."],
 ];
 
@@ -74,9 +75,7 @@ function createJob() {
     photos: [],
     blogPhotos: [],
     videos: [],
-    pressureSet: 3.0,
-    pressureLive: 0,
-    compressorOn: false,
+    recordings: [],
     bluetoothDevice: "",
     report: "",
     blog: "",
@@ -240,7 +239,6 @@ function renderDashboard(job) {
       </div>
       <div class="toolbar">
         <button class="btn ghost" data-action="show-app-map">카카오지도</button>
-        <button class="btn ghost" data-action="open-audio-app">녹음 앱 열기</button>
         <button class="btn primary" data-action="google-drive-save">구글저장</button>
       </div>
     </div>
@@ -251,8 +249,6 @@ function renderDashboard(job) {
         ${field("phone", "전화번호", "tel", job.phone, "010-0000-0000")}
       </div>
       ${textarea("situation", "상황 기록", job.situation, "누수 발생 위치, 시간, 피해상황, 고객 진술을 직접 입력합니다.")}
-      <input class="hidden-input" id="externalAudioInput" type="file" accept="audio/*" capture />
-      <div id="recordingStatus" class="muted">녹음 상태: 대기</div>
       <div id="driveStatus" class="drive-status">Google Drive: ${driveStatusText()}</div>
       ${renderGoogleDriveInlineSetup()}
       ${renderDriveMediaPicker()}
@@ -345,10 +341,6 @@ function renderCheckRow(type, check) {
       <div>
         <strong>${escapeHtml(check.title)}</strong>
         <p class="muted">${escapeHtml(check.guide)}</p>
-        <div class="mini-actions">
-          <button class="btn ghost record-btn" data-action="record-check" data-check="${check.id}" data-check-type="${type}"><span class="voice-icon red"></span>녹음/저장</button>
-          <button class="btn ghost clear-btn" data-action="clear-check" data-check="${check.id}" data-check-type="${type}">삭제</button>
-        </div>
       </div>
       <div class="grid">
         <select data-check="${check.id}" data-check-type="${type}" data-field="result">
@@ -361,42 +353,32 @@ function renderCheckRow(type, check) {
 }
 
 function renderTracker(job) {
+  const trackerRecording = getLastRecordingForTarget({ kind: "tracker" });
+  const trackerRecordingActive = wavRecorder?.recording && targetKey(recordingTarget) === "tracker";
   return `
     <div class="section-head">
       <div>
         <h1>누수추적기</h1>
-        <p class="muted">마이크 입력을 실시간 주파수 그래프로 표시하고, 블루투스/콤프레셔 제어 패널을 준비합니다.</p>
+        <p class="muted">마이크 입력을 실시간 주파수 그래프로 표시하고 필요한 소리를 녹음합니다.</p>
       </div>
       <div class="toolbar">
         <button class="btn ghost" data-action="bluetooth">블루투스 연결</button>
         <button class="btn primary" data-action="start-spectrum">소리 분석 시작</button>
+        <button class="btn ghost record-btn ${trackerRecordingActive ? "recording" : ""} ${trackerRecording ? "saved" : ""}" data-action="record-tracker">
+          <span class="voice-icon ${trackerRecordingActive ? "red" : trackerRecording ? "blue" : "idle"}"></span>${trackerRecordingActive ? "녹음중" : trackerRecording ? "저장완료" : "녹음"}
+        </button>
+        <button class="btn ghost listen-btn" data-action="play-recording" data-recording-id="${escapeAttr(trackerRecording?.id || "")}" ${trackerRecording ? "" : "disabled"}>재생</button>
         <button class="btn warn" data-action="stop-spectrum">정지</button>
       </div>
     </div>
-    <div class="split">
-      <section class="audio-panel">
-        <div class="toolbar" style="justify-content:space-between;margin-bottom:10px">
-          <h2>실시간 주파수 그래프</h2>
-          <span class="status-pill" id="peakStatus">최고 주파수 대역 대기</span>
-        </div>
-        <canvas id="spectrum" width="1100" height="360"></canvas>
-        <p class="muted" style="color:#9fc2c8;margin-top:10px">높은 피크 대역은 주황색으로 표시됩니다. 저장/삭제 버튼은 추적 데이터 로그에 반영됩니다.</p>
-      </section>
-      <section class="panel grid">
-        <h2>콤프레셔 제어</h2>
-        <div class="pressure-dial"><span><b>${Number(job.pressureLive || 0).toFixed(1)}</b>bar</span></div>
-        <div class="grid two">
-          ${field("pressureSet", "압력 세팅값(bar)", "number", job.pressureSet, "", "0.1")}
-          ${field("pressureLive", "실시간 압력값(bar)", "number", job.pressureLive, "", "0.1")}
-        </div>
-        <div class="toolbar">
-          <button class="btn ${job.compressorOn ? "warn" : "primary"}" data-action="toggle-compressor">${job.compressorOn ? "콤프레셔 끄기" : "콤프레셔 켜기"}</button>
-          <button class="btn ghost" data-action="save-tracker">자동저장</button>
-          <button class="btn ghost" data-action="clear-tracker">삭제</button>
-        </div>
-        <p class="muted">연결 장치: ${escapeHtml(job.bluetoothDevice || "미연결")}</p>
-      </section>
-    </div>
+    <section class="audio-panel">
+      <div class="toolbar" style="justify-content:space-between;margin-bottom:10px">
+        <h2>실시간 주파수 그래프</h2>
+        <span class="status-pill" id="peakStatus">최고 주파수 대역 대기</span>
+      </div>
+      <canvas id="spectrum" width="1100" height="360"></canvas>
+      <p class="muted" style="color:#9fc2c8;margin-top:10px">높은 피크 대역은 주황색으로 표시됩니다. 녹음은 WAV 파일로 저장됩니다.</p>
+    </section>
   `;
 }
 
@@ -587,21 +569,6 @@ function textarea(id, label, value, placeholder = "") {
   `;
 }
 
-function textareaWithRecord(id, label, value, placeholder = "") {
-  return `
-    <div class="field">
-      <div class="field-head">
-        <label for="${id}">${label}</label>
-        <div class="mini-actions">
-          <button class="btn ghost record-btn" data-action="record-field" data-field="${id}"><span class="voice-icon red"></span>녹음/저장</button>
-          <button class="btn ghost clear-btn" data-action="clear-field" data-field="${id}">삭제</button>
-        </div>
-      </div>
-      <textarea id="${id}" data-job-field="${id}" placeholder="${escapeAttr(placeholder)}">${escapeHtml(value || "")}</textarea>
-    </div>
-  `;
-}
-
 function metric(label, value, helper) {
   return `<div class="metric"><span class="muted">${label}</span><b>${value}</b><span class="muted">${helper}</span></div>`;
 }
@@ -751,7 +718,6 @@ function handleAction(action, data) {
     render();
   }
   if (action === "show-app-map") openExternalMap(job.address, "kakao");
-  if (action === "open-audio-app") openDeviceFilePicker("audio");
   if (action === "google-drive-save") saveCurrentJobToGoogleDrive();
   if (action === "save-google-settings" && saveGoogleSettingsFromForm()) saveCurrentJobToGoogleDrive();
   if (action === "continue-google-drive-save") continueGoogleDriveSave();
@@ -760,10 +726,11 @@ function handleAction(action, data) {
     render();
     notify("Google Drive 선택 업로드를 취소했습니다.");
   }
-  if (action === "record-field") toggleRecording({ kind: "field", field: data.field });
   if (action === "clear-field") clearField(data.field);
-  if (action === "record-check") toggleRecording({ kind: "check", type: data.checkType, id: data.check });
   if (action === "clear-check") clearCheckMemo(data.checkType, data.check);
+  if (action === "record-tracker") toggleRecording({ kind: "tracker" });
+  if (action === "play-recording") playRecording(data.recordingId);
+  if (action === "delete-recording") deleteRecording(data.recordingId);
   if (action === "reset-checks") {
     if (data.type === "all") {
       job.plumbingChecks = createChecks(basePlumbingChecks);
@@ -777,7 +744,6 @@ function handleAction(action, data) {
   if (action === "bluetooth") connectBluetooth();
   if (action === "start-spectrum") startSpectrum();
   if (action === "stop-spectrum") stopSpectrum();
-  if (action === "toggle-compressor") updateJob({ compressorOn: !job.compressorOn });
   if (action === "save-tracker") notify("추적 데이터가 현재 작업에 저장되었습니다.");
   if (action === "clear-tracker") notify("화면 그래프 로그를 삭제했습니다.");
   if (action === "generate-report") updateJob({ report: generateReport(job) });
@@ -1220,8 +1186,8 @@ function safeFileName(value) {
 
 async function toggleRecording(target = { kind: "situation" }) {
   if (wavRecorder?.recording) {
-    stopWavRecording();
-    notify("녹음을 종료했습니다.");
+    await stopWavRecording();
+    notify("녹음 저장완료.");
     return;
   }
   try {
@@ -1229,7 +1195,7 @@ async function toggleRecording(target = { kind: "situation" }) {
     recordingTarget = target;
     await startWavRecording(stream);
     render();
-    notify("녹음 중입니다. 다시 누르면 저장합니다.");
+    notify("녹음 중입니다.");
   } catch (error) {
     notify("마이크 권한을 확인하세요.");
   }
@@ -1268,11 +1234,118 @@ async function stopWavRecording() {
   const blob = createWavBlob(recorder.samples, recorder.sampleRate);
   const savedName = saveBlobFile(blob, "wav");
   const target = recordingTarget || { kind: "situation" };
-  appendTargetText(target, `녹음파일 저장: ${savedName}`);
+  const recording = {
+    id: `rec-${Date.now()}`,
+    name: savedName,
+    targetKey: targetKey(target),
+    target,
+    type: "audio/wav",
+    createdAt: new Date().toISOString(),
+  };
+  await putRecordingBlob(recording.id, blob);
+  const job = currentJob();
+  job.recordings = [...(job.recordings || []).filter((item) => item.targetKey !== recording.targetKey), recording];
+  if (target.kind !== "tracker") appendTargetText(target, `녹음 저장완료: ${savedName}`);
   recordingTarget = null;
   wavRecorder = null;
   saveState();
   render();
+}
+
+function targetKey(target = {}) {
+  if (!target) return "";
+  if (target.kind === "tracker") return "tracker";
+  if (target.kind === "check") return `check:${target.type || ""}:${target.id || ""}`;
+  if (target.kind === "field") return `field:${target.field || "situation"}`;
+  return "field:situation";
+}
+
+function getLastRecordingForTarget(target) {
+  const key = targetKey(target);
+  const recordings = currentJob().recordings || [];
+  return [...recordings].reverse().find((item) => item.targetKey === key);
+}
+
+async function playRecording(id) {
+  if (!id) return;
+  try {
+    const blob = await getRecordingBlob(id);
+    if (!blob) {
+      notify("녹음 파일을 찾지 못했습니다.");
+      return;
+    }
+    const url = URL.createObjectURL(blob);
+    const audio = new Audio(url);
+    audio.addEventListener("ended", () => URL.revokeObjectURL(url), { once: true });
+    await audio.play();
+    notify("녹음 재생 중입니다.");
+  } catch (error) {
+    notify("녹음을 재생하지 못했습니다.");
+  }
+}
+
+async function deleteRecording(id) {
+  if (!id) return;
+  const job = currentJob();
+  job.recordings = (job.recordings || []).filter((item) => item.id !== id);
+  await deleteRecordingBlob(id);
+  saveState();
+  render();
+  notify("녹음이 삭제되었습니다.");
+}
+
+function openRecordingDb() {
+  return new Promise((resolve, reject) => {
+    const request = indexedDB.open(RECORDING_DB_NAME, 1);
+    request.onupgradeneeded = () => {
+      request.result.createObjectStore("recordings");
+    };
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error);
+  });
+}
+
+async function putRecordingBlob(id, blob) {
+  const db = await openRecordingDb();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction("recordings", "readwrite");
+    tx.objectStore("recordings").put(blob, id);
+    tx.oncomplete = () => {
+      db.close();
+      resolve();
+    };
+    tx.onerror = () => {
+      db.close();
+      reject(tx.error);
+    };
+  });
+}
+
+async function getRecordingBlob(id) {
+  const db = await openRecordingDb();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction("recordings", "readonly");
+    const request = tx.objectStore("recordings").get(id);
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error);
+    tx.oncomplete = () => db.close();
+  });
+}
+
+async function deleteRecordingBlob(id) {
+  const db = await openRecordingDb();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction("recordings", "readwrite");
+    tx.objectStore("recordings").delete(id);
+    tx.oncomplete = () => {
+      db.close();
+      resolve();
+    };
+    tx.onerror = () => {
+      db.close();
+      reject(tx.error);
+    };
+  });
 }
 
 function createWavBlob(buffers, sampleRate) {
@@ -1645,7 +1718,7 @@ function generateBlog(job) {
 현장에서 확인한 주요 상황은 다음과 같습니다.
 ${job.situation || "고객 진술과 피해 위치를 기준으로 누수 범위를 좁혀 확인했습니다."}
 
-먼저 변기부속, 온수라인, 각 밸브류를 순서대로 잠그고 열면서 계량기 반응을 확인했습니다. 이후 창틀, 우수관, 화장실 방수상태, 유가, 변기 주변 상태를 확인해 외부 유입과 방수 문제 가능성도 함께 검토했습니다.
+먼저 변기부속, 배관누수, 각 밸브류를 순서대로 잠그고 열면서 계량기 반응을 확인했습니다. 이후 창틀, 우수관, 화장실 방수상태, 유가, 변기 주변 상태를 확인해 외부 유입과 방수 문제 가능성도 함께 검토했습니다.
 
 점검 요약
 ${summaryLines([...job.plumbingChecks, ...job.waterproofChecks])}
