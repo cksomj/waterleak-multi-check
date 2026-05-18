@@ -335,12 +335,24 @@ function renderChecklist(title) {
 }
 
 function renderCheckRow(type, check) {
+  const isPipeLeakCheck = check.id === "hot_water";
+  const pipeRecording = isPipeLeakCheck ? getLastRecordingForTarget({ kind: "check", type, id: check.id }) : null;
+  const pipeRecordingActive = isPipeLeakCheck && wavRecorder?.recording && targetKey(recordingTarget) === targetKey({ kind: "check", type, id: check.id });
   return `
     <div class="check-row">
       <input type="checkbox" ${check.done ? "checked" : ""} data-check="${check.id}" data-check-type="${type}" data-field="done" />
       <div>
         <strong>${escapeHtml(check.title)}</strong>
         <p class="muted">${escapeHtml(check.guide)}</p>
+        ${isPipeLeakCheck ? `
+          <div class="mini-actions record-actions">
+            <button class="btn ghost record-btn ${pipeRecordingActive ? "recording" : ""} ${pipeRecording ? "saved" : ""}" data-action="record-check" data-check="${check.id}" data-check-type="${type}">
+              <span class="voice-icon ${pipeRecordingActive ? "red" : pipeRecording ? "blue" : "idle"}"></span>${pipeRecordingActive ? "녹음중" : pipeRecording ? "저장완료" : "녹음"}
+            </button>
+            <button class="btn ghost listen-btn" data-action="play-recording" data-recording-id="${escapeAttr(pipeRecording?.id || "")}" ${pipeRecording ? "" : "disabled"}>들어보기</button>
+            <button class="btn ghost clear-btn" data-action="delete-recording" data-recording-id="${escapeAttr(pipeRecording?.id || "")}" ${pipeRecording ? "" : "disabled"}>삭제</button>
+          </div>
+        ` : ""}
       </div>
       <div class="grid">
         <select data-check="${check.id}" data-check-type="${type}" data-field="result">
@@ -728,6 +740,7 @@ function handleAction(action, data) {
   }
   if (action === "clear-field") clearField(data.field);
   if (action === "clear-check") clearCheckMemo(data.checkType, data.check);
+  if (action === "record-check") toggleRecording({ kind: "check", type: data.checkType, id: data.check });
   if (action === "record-tracker") toggleRecording({ kind: "tracker" });
   if (action === "play-recording") playRecording(data.recordingId);
   if (action === "delete-recording") deleteRecording(data.recordingId);
