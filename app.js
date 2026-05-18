@@ -97,6 +97,7 @@ function createJob() {
     plumbingChecks: createChecks(basePlumbingChecks),
     waterproofChecks: createChecks(baseWaterproofChecks),
     photos: [],
+    photoFiles: [],
     blogPhotos: [],
     videos: [],
     recordings: [],
@@ -811,9 +812,13 @@ function bindEvents() {
   });
 
   app.querySelectorAll("[data-file-type]").forEach((input) => {
-    input.addEventListener("change", () => {
+    input.addEventListener("change", async () => {
       const job = currentJob();
-      job[input.dataset.fileType] = Array.from(input.files).map((file) => file.name);
+      const files = Array.from(input.files || []);
+      job[input.dataset.fileType] = files.map((file) => file.name);
+      if (input.dataset.fileType === "photos") {
+        job.photoFiles = await filesToPrintableImages(files);
+      }
       saveState();
       render();
     });
@@ -1714,6 +1719,54 @@ function maybeAddEstimateRow(input) {
   setTimeout(render, 0);
 }
 
+async function filesToPrintableImages(files) {
+  const images = [];
+  for (const file of files) {
+    if (!file.type.startsWith("image/")) continue;
+    try {
+      const dataUrl = await resizeImageFile(file, 1400, 0.82);
+      images.push({ name: file.name, dataUrl });
+    } catch (error) {
+      console.warn(error);
+      const dataUrl = await readFileAsDataUrl(file);
+      images.push({ name: file.name, dataUrl });
+    }
+  }
+  return images;
+}
+
+function readFileAsDataUrl(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result || ""));
+    reader.onerror = () => reject(reader.error || new Error("사진 파일을 읽지 못했습니다."));
+    reader.readAsDataURL(file);
+  });
+}
+
+async function resizeImageFile(file, maxSide = 1400, quality = 0.82) {
+  const dataUrl = await readFileAsDataUrl(file);
+  const image = await loadImage(dataUrl);
+  const scale = Math.min(1, maxSide / Math.max(image.naturalWidth || image.width, image.naturalHeight || image.height));
+  const width = Math.max(1, Math.round((image.naturalWidth || image.width) * scale));
+  const height = Math.max(1, Math.round((image.naturalHeight || image.height) * scale));
+  const canvas = document.createElement("canvas");
+  canvas.width = width;
+  canvas.height = height;
+  const ctx = canvas.getContext("2d");
+  ctx.drawImage(image, 0, 0, width, height);
+  return canvas.toDataURL("image/jpeg", quality);
+}
+
+function loadImage(src) {
+  return new Promise((resolve, reject) => {
+    const image = new Image();
+    image.onload = () => resolve(image);
+    image.onerror = () => reject(new Error("사진 미리보기 변환에 실패했습니다."));
+    image.src = src;
+  });
+}
+
 function toggleEstimateTitle() {
   const job = currentJob();
   job.estimateDocTitle = job.estimateDocTitle === "거래명세서" ? "견 적 서" : "거래명세서";
@@ -1761,6 +1814,11 @@ function openPdfPrintWindow(type) {
           .total th, .total td { background: #ecfdf5; font-size: 16px; font-weight: 700; }
           .stamp-wrap { align-items: center; display: inline-flex; gap: 12px; justify-content: flex-end; margin-top: 28px; width: 100%; }
           .stamp-svg { height: 78px; object-fit: contain; opacity: .95; transform: rotate(-5deg); width: 78px; }
+          .photo-page { break-before: page; page-break-before: always; }
+          .photo-grid-print { display: grid; gap: 7mm; grid-template-columns: repeat(2, 1fr); grid-template-rows: repeat(4, 1fr); min-height: 244mm; }
+          .photo-grid-print figure { border: 1px solid #222; display: grid; grid-template-rows: 1fr auto; margin: 0; min-height: 0; padding: 3mm; }
+          .photo-grid-print img { height: 100%; max-height: 51mm; object-fit: contain; width: 100%; }
+          .photo-grid-print figcaption { border-top: 1px solid #ddd; font-size: 11px; margin-top: 2mm; overflow: hidden; padding-top: 1mm; text-align: center; text-overflow: ellipsis; white-space: nowrap; }
           @media print { body { print-color-adjust: exact; -webkit-print-color-adjust: exact; } }
         </style>
       </head>
@@ -1793,7 +1851,28 @@ function buildReportPrintHtml(job) {
       <span>공급자 확인: ${escapeHtml(PROVIDER.owner)}</span>
       ${stampSealImage("stamp-svg")}
     </div>
+    ${buildReportPhotoPages(job)}
   `;
+}
+
+function buildReportPhotoPages(job) {
+  const photos = Array.isArray(job.photoFiles) ? job.photoFiles.filter((photo) => photo?.dataUrl) : [];
+  if (!photos.length) return "";
+  const chunks = [];
+  for (let i = 0; i < photos.length; i += 8) chunks.push(photos.slice(i, i + 8));
+  return chunks.map((chunk, pageIndex) => `
+    <section class="photo-page">
+      <h1>첨부 사진${chunks.length > 1 ? ` ${pageIndex + 1}` : ""}</h1>
+      <div class="photo-grid-print">
+        ${chunk.map((photo, index) => `
+          <figure>
+            <img src="${escapeAttr(photo.dataUrl)}" alt="${escapeAttr(photo.name || `첨부 사진 ${index + 1}`)}" />
+            <figcaption>${escapeHtml(photo.name || `사진 ${pageIndex * 8 + index + 1}`)}</figcaption>
+          </figure>
+        `).join("")}
+      </div>
+    </section>
+  `).join("");
 }
 
 function buildEstimatePrintHtml(job) {
