@@ -502,7 +502,13 @@ function renderTracker(job) {
         <h2>실시간 주파수 그래프</h2>
         <span class="status-pill" id="peakStatus">최고 주파수 대역 대기</span>
       </div>
-      <canvas id="spectrum" width="1100" height="360"></canvas>
+      <div class="spectrum-wrap">
+        <canvas id="spectrum" width="1100" height="360"></canvas>
+        <div class="leak-score-overlay">
+          <div class="leak-score-circle" id="leakScoreCircle" style="--score-deg:0deg"><span id="leakScoreValue">0</span><small>%</small></div>
+          <span class="leak-risk-badge risk-green" id="leakRiskBadge">정상 범위</span>
+        </div>
+      </div>
       <p class="muted" style="color:#9fc2c8;margin-top:10px">높은 피크 대역은 주황색으로 표시됩니다. 녹음은 WAV 파일로 저장됩니다.</p>
     </section>
     <section class="panel leak-ai-panel">
@@ -510,14 +516,6 @@ function renderTracker(job) {
         <div>
           <h2>AI 청음 누수 분석</h2>
           <p class="muted">청음기 이어폰 출력은 USB-C 오디오 캡처를 통해 입력하는 방식이 가장 안정적입니다.</p>
-        </div>
-        <span class="leak-risk-badge risk-green" id="leakRiskBadge">정상 범위</span>
-      </div>
-      <div class="leak-score-row">
-        <div class="leak-score-circle" id="leakScoreCircle" style="--score-deg:0deg"><span id="leakScoreValue">0</span><small>%</small></div>
-        <div class="leak-score-copy">
-          <strong>누수 의심도</strong>
-          <p>70% 이상은 주황색, 85% 이상은 빨강색으로 표시됩니다. 현장 보조 판단용으로 사용하세요.</p>
         </div>
       </div>
       <div class="leak-metrics-grid">

@@ -583,12 +583,31 @@ textarea[data-job-field="report"] {
   padding: 14px;
 }
 
+.spectrum-wrap {
+  position: relative;
+}
+
+.leak-score-overlay {
+  align-items: center;
+  background: rgba(15, 31, 37, 0.82);
+  border: 1px solid rgba(159, 194, 200, 0.45);
+  border-radius: 12px;
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.24);
+  display: grid;
+  gap: 6px;
+  justify-items: center;
+  padding: 9px;
+  position: absolute;
+  right: 12px;
+  top: 12px;
+  z-index: 2;
+}
+
 .leak-ai-panel {
   margin-top: 14px;
 }
 
 .leak-ai-head,
-.leak-score-row,
 .leak-point-item {
   align-items: center;
   display: flex;
@@ -635,14 +654,6 @@ textarea[data-job-field="report"] {
   color: #b91c1c;
 }
 
-.leak-score-row {
-  background: #f8fafc;
-  border-radius: 8px;
-  justify-content: flex-start;
-  margin-bottom: 12px;
-  padding: 14px;
-}
-
 .leak-score-circle {
   align-items: center;
   background: conic-gradient(#f97316 0deg, #f97316 var(--score-deg, 0deg), #e2e8f0 var(--score-deg, 0deg));
@@ -673,11 +684,6 @@ textarea[data-job-field="report"] {
 
 .leak-score-circle span {
   font-size: 30px;
-}
-
-.leak-score-copy p {
-  color: var(--muted);
-  margin: 6px 0 0;
 }
 
 .leak-metrics-grid {
@@ -1445,10 +1451,28 @@ canvas {
   }
 
   .leak-ai-head,
-  .leak-score-row,
   .leak-point-item {
     align-items: stretch;
     flex-direction: column;
+  }
+
+  .leak-score-overlay {
+    right: 8px;
+    top: 8px;
+  }
+
+  .leak-score-circle {
+    height: 76px;
+    width: 76px;
+  }
+
+  .leak-score-circle span {
+    font-size: 24px;
+  }
+
+  .leak-score-overlay .leak-risk-badge {
+    font-size: 11px;
+    padding: 6px 8px;
   }
 
   .leak-metrics-grid {
