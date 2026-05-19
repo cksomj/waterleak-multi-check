@@ -583,6 +583,166 @@ textarea[data-job-field="report"] {
   padding: 14px;
 }
 
+.leak-ai-panel {
+  margin-top: 14px;
+}
+
+.leak-ai-head,
+.leak-score-row,
+.leak-point-item {
+  align-items: center;
+  display: flex;
+  gap: 12px;
+  justify-content: space-between;
+}
+
+.leak-ai-head {
+  margin-bottom: 14px;
+}
+
+.leak-ai-head h2,
+.leak-point-list h3 {
+  margin: 0 0 4px;
+}
+
+.leak-risk-badge {
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 800;
+  padding: 8px 12px;
+  white-space: nowrap;
+}
+
+.risk-green {
+  background: #dcfce7;
+  color: #166534;
+}
+
+.risk-yellow {
+  background: #fef9c3;
+  color: #854d0e;
+}
+
+.risk-orange {
+  background: #ffedd5;
+  box-shadow: 0 0 0 4px rgba(249, 115, 22, 0.12);
+  color: #c2410c;
+}
+
+.risk-danger {
+  background: #fee2e2;
+  box-shadow: 0 0 0 4px rgba(239, 68, 68, 0.14);
+  color: #b91c1c;
+}
+
+.leak-score-row {
+  background: #f8fafc;
+  border-radius: 8px;
+  justify-content: flex-start;
+  margin-bottom: 12px;
+  padding: 14px;
+}
+
+.leak-score-circle {
+  align-items: center;
+  background: conic-gradient(#f97316 0deg, #f97316 var(--score-deg, 0deg), #e2e8f0 var(--score-deg, 0deg));
+  border-radius: 50%;
+  color: #0f172a;
+  display: flex;
+  flex: 0 0 auto;
+  height: 96px;
+  justify-content: center;
+  position: relative;
+  width: 96px;
+}
+
+.leak-score-circle::before {
+  background: #fff;
+  border-radius: 50%;
+  content: "";
+  inset: 9px;
+  position: absolute;
+}
+
+.leak-score-circle span,
+.leak-score-circle small {
+  font-weight: 900;
+  position: relative;
+  z-index: 1;
+}
+
+.leak-score-circle span {
+  font-size: 30px;
+}
+
+.leak-score-copy p {
+  color: var(--muted);
+  margin: 6px 0 0;
+}
+
+.leak-metrics-grid {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  margin-bottom: 12px;
+}
+
+.leak-metrics-grid div {
+  background: #f8fafc;
+  border-radius: 8px;
+  padding: 10px;
+}
+
+.leak-metrics-grid span,
+.leak-point-item span {
+  color: var(--muted);
+  display: block;
+  font-size: 12px;
+}
+
+.leak-save-row {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: minmax(160px, 1fr) auto;
+  margin-bottom: 14px;
+}
+
+.leak-save-row input {
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  min-height: 38px;
+  padding: 8px 10px;
+}
+
+.leak-point-list {
+  display: grid;
+  gap: 8px;
+}
+
+.leak-point-item {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 10px;
+}
+
+.leak-point-item.green {
+  background: #f0fdf4;
+}
+
+.leak-point-item.yellow {
+  background: #fefce8;
+}
+
+.leak-point-item.orange {
+  background: #fff7ed;
+  border-color: #fdba74;
+}
+
+.leak-point-item.red {
+  background: #fef2f2;
+  border-color: #fca5a5;
+}
+
 .tracker-pipe-check {
   margin-top: 14px;
 }
@@ -1232,6 +1392,21 @@ canvas {
     align-items: stretch;
     display: grid;
     gap: 10px;
+  }
+
+  .leak-ai-head,
+  .leak-score-row,
+  .leak-point-item {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .leak-metrics-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .leak-save-row {
+    grid-template-columns: 1fr;
   }
 
   .section-head > div:first-child {

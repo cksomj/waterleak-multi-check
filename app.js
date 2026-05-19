@@ -76,6 +76,8 @@ let audioContext = null;
 let analyser = null;
 let animationFrame = null;
 let micStream = null;
+let leakAudioHistory = [];
+let lastLeakAudioMetrics = null;
 let recordingTarget = null;
 let driveSaveDraft = null;
 let googleTokenClient = null;
@@ -109,6 +111,7 @@ function createJob() {
     blog: "",
     blogCategory: "",
     blogKeyword: "",
+    leakAudioPoints: [],
     vatMode: "exclusive",
     estimateItems: [{ name: "", cost: "" }],
     createdAt: new Date().toISOString(),
@@ -476,6 +479,7 @@ function renderTracker(job) {
   const trackerRecording = getLastRecordingForTarget({ kind: "tracker" });
   const trackerRecordingActive = wavRecorder?.recording && targetKey(recordingTarget) === "tracker";
   const trackerRecordingPaused = trackerRecordingActive && wavRecorder?.paused;
+  const leakPoints = job.leakAudioPoints || [];
   return `
     <div class="section-head">
       <div>
@@ -500,6 +504,45 @@ function renderTracker(job) {
       </div>
       <canvas id="spectrum" width="1100" height="360"></canvas>
       <p class="muted" style="color:#9fc2c8;margin-top:10px">높은 피크 대역은 주황색으로 표시됩니다. 녹음은 WAV 파일로 저장됩니다.</p>
+    </section>
+    <section class="panel leak-ai-panel">
+      <div class="leak-ai-head">
+        <div>
+          <h2>AI 청음 누수 분석</h2>
+          <p class="muted">청음기 이어폰 출력은 USB-C 오디오 캡처를 통해 입력하는 방식이 가장 안정적입니다.</p>
+        </div>
+        <span class="leak-risk-badge risk-green" id="leakRiskBadge">정상 범위</span>
+      </div>
+      <div class="leak-score-row">
+        <div class="leak-score-circle" id="leakScoreCircle" style="--score-deg:0deg"><span id="leakScoreValue">0</span><small>%</small></div>
+        <div class="leak-score-copy">
+          <strong>누수 의심도</strong>
+          <p>70% 이상은 주황색, 85% 이상은 빨강색으로 표시됩니다. 현장 보조 판단용으로 사용하세요.</p>
+        </div>
+      </div>
+      <div class="leak-metrics-grid">
+        <div><span>피크 주파수</span><strong id="leakPeakHz">- Hz</strong></div>
+        <div><span>저주파 평균</span><strong id="leakLowAvg">- dB</strong></div>
+        <div><span>중역 평균</span><strong id="leakMidAvg">- dB</strong></div>
+        <div><span>누수대역 평균</span><strong id="leakBandAvg">- dB</strong></div>
+      </div>
+      <div class="leak-save-row">
+        <input id="leakPointName" placeholder="예: 욕실 앞, 보일러실, 주방 싱크대" />
+        <button class="btn primary" data-action="save-leak-point">현재 지점 저장</button>
+      </div>
+      <div class="leak-point-list">
+        <h3>저장된 측정 지점</h3>
+        ${leakPoints.length ? leakPoints.map((point) => `
+          <div class="leak-point-item ${escapeAttr(point.color || "green")}">
+            <div>
+              <strong>${escapeHtml(point.name || "측정지점")}</strong>
+              <span>${escapeHtml(new Date(point.createdAt || Date.now()).toLocaleString())}</span>
+            </div>
+            <b>${Number(point.score || 0)}% · ${escapeHtml(point.risk || "정상 범위")}</b>
+            <button class="btn ghost" data-action="delete-leak-point" data-id="${escapeAttr(point.id)}">삭제</button>
+          </div>
+        `).join("") : `<p class="muted">아직 저장된 측정 지점이 없습니다.</p>`}
+      </div>
     </section>
     ${renderTrackerPipeCheck(job)}
   `;
@@ -1004,6 +1047,8 @@ function handleAction(action, data) {
   if (action === "bluetooth") connectBluetooth();
   if (action === "start-spectrum") startSpectrum();
   if (action === "stop-spectrum") stopSpectrum();
+  if (action === "save-leak-point") saveLeakAudioPoint();
+  if (action === "delete-leak-point") deleteLeakAudioPoint(data.id);
   if (action === "save-tracker") notify("추적 데이터가 현재 작업에 저장되었습니다.");
   if (action === "clear-tracker") notify("화면 그래프 로그를 삭제했습니다.");
   if (action === "generate-report") updateJob({ report: generateReport(job) });
@@ -2055,15 +2100,31 @@ async function connectBluetooth() {
 
 async function startSpectrum() {
   try {
-    micStream = await navigator.mediaDevices.getUserMedia({ audio: true });
-    audioContext = new AudioContext();
+    if (animationFrame) cancelAnimationFrame(animationFrame);
+    if (micStream) micStream.getTracks().forEach((track) => track.stop());
+    if (audioContext) await audioContext.close();
+    leakAudioHistory = [];
+    lastLeakAudioMetrics = null;
+    micStream = await navigator.mediaDevices.getUserMedia({
+      audio: {
+        echoCancellation: false,
+        noiseSuppression: false,
+        autoGainControl: false,
+        channelCount: 1,
+      },
+      video: false,
+    });
+    audioContext = new (window.AudioContext || window.webkitAudioContext)();
     const source = audioContext.createMediaStreamSource(micStream);
     analyser = audioContext.createAnalyser();
-    analyser.fftSize = 2048;
+    analyser.fftSize = 4096;
+    analyser.smoothingTimeConstant = 0.72;
+    analyser.minDecibels = -110;
+    analyser.maxDecibels = -20;
     source.connect(analyser);
     renderSpectrum();
   } catch (error) {
-    notify("마이크 분석을 시작할 수 없습니다.");
+    notify("마이크/오디오 입력 권한을 허용해야 합니다. USB-C 오디오 캡처를 연결한 뒤 다시 실행해보세요.");
   }
 }
 
@@ -2075,36 +2136,66 @@ function stopSpectrum() {
   micStream = null;
   audioContext = null;
   analyser = null;
+  lastLeakAudioMetrics = null;
   drawIdleSpectrum();
+  updateLeakAudioPanel(null);
 }
 
 function renderSpectrum() {
   const canvas = document.querySelector("#spectrum");
-  if (!canvas || !analyser) return;
+  if (!canvas || !analyser || !audioContext) return;
   const ctx = canvas.getContext("2d");
-  const data = new Uint8Array(analyser.frequencyBinCount);
-  analyser.getByteFrequencyData(data);
+  const data = new Float32Array(analyser.frequencyBinCount);
+  analyser.getFloatFrequencyData(data);
+  const currentMetrics = calculateLeakAudioScore({
+    frequencyData: data,
+    sampleRate: audioContext.sampleRate,
+    fftSize: analyser.fftSize,
+    history: leakAudioHistory,
+  });
+  leakAudioHistory.push(currentMetrics);
+  if (leakAudioHistory.length > 60) leakAudioHistory.shift();
+  const smoothedScore = Math.round(leakAudioHistory.reduce((sum, item) => sum + item.score, 0) / leakAudioHistory.length);
+  lastLeakAudioMetrics = { ...currentMetrics, score: smoothedScore };
   const width = canvas.width;
   const height = canvas.height;
   ctx.clearRect(0, 0, width, height);
-  ctx.fillStyle = "#071316";
+  ctx.fillStyle = "#0f172a";
   ctx.fillRect(0, 0, width, height);
-  const barWidth = width / data.length;
-  let peakIndex = 0;
-  let peakValue = 0;
-  data.forEach((value, index) => {
-    if (value > peakValue) {
-      peakValue = value;
-      peakIndex = index;
-    }
-  });
-  data.forEach((value, index) => {
-    const barHeight = (value / 255) * height;
-    ctx.fillStyle = index === peakIndex || value > 190 ? "#e47c24" : "#28b5a8";
-    ctx.fillRect(index * barWidth, height - barHeight, Math.max(1, barWidth - 1), barHeight);
-  });
+  ctx.strokeStyle = "rgba(255,255,255,0.12)";
+  ctx.lineWidth = 1;
+  for (let y = 40; y < height; y += 40) {
+    ctx.beginPath();
+    ctx.moveTo(0, y);
+    ctx.lineTo(width, y);
+    ctx.stroke();
+  }
+  const maxHz = 18000;
+  const maxBin = Math.min(binFromHz(maxHz, audioContext.sampleRate, analyser.fftSize), data.length - 1);
+  const leakStartBin = binFromHz(3500, audioContext.sampleRate, analyser.fftSize);
+  const leakX = (leakStartBin / maxBin) * width;
+  ctx.fillStyle = "rgba(249,115,22,0.12)";
+  ctx.fillRect(leakX, 0, width - leakX, height);
+  const barWidth = width / Math.max(1, maxBin);
+  for (let i = 0; i < maxBin; i += 1) {
+    const db = data[i];
+    const normalized = clamp((db + 110) / 90, 0, 1);
+    const barHeight = normalized * height;
+    const hz = (i * audioContext.sampleRate) / analyser.fftSize;
+    if (hz >= 3500 && smoothedScore >= 85) ctx.fillStyle = "#ef4444";
+    else if (hz >= 3500 && smoothedScore >= 70) ctx.fillStyle = "#f97316";
+    else if (hz >= 3500) ctx.fillStyle = "#38bdf8";
+    else ctx.fillStyle = "#64748b";
+    ctx.fillRect(i * barWidth, height - barHeight, Math.max(1, barWidth), barHeight);
+  }
+  ctx.fillStyle = "#ffffff";
+  ctx.font = "14px sans-serif";
+  ctx.fillText("저주파", 12, 24);
+  ctx.fillText("누수 의심 고주파 대역", leakX + 12, 24);
   const status = document.querySelector("#peakStatus");
-  if (status) status.textContent = `최고 피크: ${peakIndex}번 대역 · ${peakValue}`;
+  const risk = getLeakAudioRisk(smoothedScore);
+  if (status) status.textContent = `${risk.label} · 피크 ${lastLeakAudioMetrics.peakHz} Hz · ${smoothedScore}%`;
+  updateLeakAudioPanel(lastLeakAudioMetrics);
   animationFrame = requestAnimationFrame(renderSpectrum);
 }
 
@@ -2122,6 +2213,140 @@ function drawIdleSpectrum() {
   }
 }
 
+function clamp(value, min, max) {
+  return Math.min(max, Math.max(min, value));
+}
+
+function averageFrequencyRange(data, startBin, endBin) {
+  let sum = 0;
+  let count = 0;
+  const start = clamp(startBin, 0, data.length - 1);
+  const end = clamp(endBin, start, data.length - 1);
+  for (let i = start; i <= end; i += 1) {
+    sum += data[i];
+    count += 1;
+  }
+  return count ? sum / count : -110;
+}
+
+function maxFrequencyRange(data, startBin, endBin) {
+  let max = -Infinity;
+  const start = clamp(startBin, 0, data.length - 1);
+  const end = clamp(endBin, start, data.length - 1);
+  let index = start;
+  for (let i = start; i <= end; i += 1) {
+    if (data[i] > max) {
+      max = data[i];
+      index = i;
+    }
+  }
+  return { max, index };
+}
+
+function binFromHz(hz, sampleRate, fftSize) {
+  return Math.floor((hz * fftSize) / sampleRate);
+}
+
+function getLeakAudioRisk(score) {
+  if (score >= 85) return { label: "강한 누수 의심", className: "risk-danger", color: "red" };
+  if (score >= 70) return { label: "누수 의심", className: "risk-orange", color: "orange" };
+  if (score >= 40) return { label: "주의 관찰", className: "risk-yellow", color: "yellow" };
+  return { label: "정상 범위", className: "risk-green", color: "green" };
+}
+
+function calculateLeakAudioScore({ frequencyData, sampleRate, fftSize, history }) {
+  const lowStart = binFromHz(80, sampleRate, fftSize);
+  const lowEnd = binFromHz(900, sampleRate, fftSize);
+  const midStart = binFromHz(900, sampleRate, fftSize);
+  const midEnd = binFromHz(3500, sampleRate, fftSize);
+  const leakStart = binFromHz(3500, sampleRate, fftSize);
+  const leakEnd = binFromHz(12000, sampleRate, fftSize);
+  const ultraStart = binFromHz(12000, sampleRate, fftSize);
+  const ultraEnd = binFromHz(18000, sampleRate, fftSize);
+  const lowAvg = averageFrequencyRange(frequencyData, lowStart, lowEnd);
+  const midAvg = averageFrequencyRange(frequencyData, midStart, midEnd);
+  const leakAvg = averageFrequencyRange(frequencyData, leakStart, leakEnd);
+  const ultraAvg = averageFrequencyRange(frequencyData, ultraStart, ultraEnd);
+  const peak = maxFrequencyRange(frequencyData, leakStart, ultraEnd);
+  const highVsLow = leakAvg - lowAvg;
+  const highVsMid = leakAvg - midAvg;
+  const peakStrength = peak.max - Math.max(lowAvg, midAvg);
+  const highScore = clamp((highVsLow + 22) * 2.2, 0, 40);
+  const midCompareScore = clamp((highVsMid + 18) * 1.6, 0, 25);
+  const peakScore = clamp((peakStrength + 16) * 1.5, 0, 20);
+  const ultraScore = clamp((ultraAvg - lowAvg + 24) * 0.55, 0, 10);
+  const recent = history.slice(-24);
+  const stableCount = recent.filter((item) => item.rawScore >= 55).length;
+  const stableScore = clamp((stableCount / 24) * 12, 0, 12);
+  let rawScore = highScore + midCompareScore + peakScore + ultraScore + stableScore;
+  if (lowAvg > leakAvg + 12) rawScore -= 15;
+  const score = Math.round(clamp(rawScore, 0, 100));
+  const peakHz = Math.round((peak.index * sampleRate) / fftSize);
+  return {
+    score,
+    rawScore: score,
+    peakHz,
+    lowAvg: Math.round(lowAvg),
+    midAvg: Math.round(midAvg),
+    leakAvg: Math.round(leakAvg),
+    ultraAvg: Math.round(ultraAvg),
+  };
+}
+
+function updateLeakAudioPanel(metrics) {
+  const score = metrics?.score || 0;
+  const risk = getLeakAudioRisk(score);
+  const badge = document.querySelector("#leakRiskBadge");
+  if (badge) {
+    badge.className = `leak-risk-badge ${risk.className}`;
+    badge.textContent = risk.label;
+  }
+  const circle = document.querySelector("#leakScoreCircle");
+  if (circle) circle.style.setProperty("--score-deg", `${score * 3.6}deg`);
+  const scoreValue = document.querySelector("#leakScoreValue");
+  if (scoreValue) scoreValue.textContent = score;
+  const peakHz = document.querySelector("#leakPeakHz");
+  if (peakHz) peakHz.textContent = metrics ? `${metrics.peakHz} Hz` : "- Hz";
+  const lowAvg = document.querySelector("#leakLowAvg");
+  if (lowAvg) lowAvg.textContent = metrics ? `${metrics.lowAvg} dB` : "- dB";
+  const midAvg = document.querySelector("#leakMidAvg");
+  if (midAvg) midAvg.textContent = metrics ? `${metrics.midAvg} dB` : "- dB";
+  const bandAvg = document.querySelector("#leakBandAvg");
+  if (bandAvg) bandAvg.textContent = metrics ? `${metrics.leakAvg} dB` : "- dB";
+}
+
+function saveLeakAudioPoint() {
+  if (!lastLeakAudioMetrics) {
+    notify("소리 분석을 먼저 시작한 뒤 저장하세요.");
+    return;
+  }
+  const job = currentJob();
+  const risk = getLeakAudioRisk(lastLeakAudioMetrics.score);
+  const input = document.querySelector("#leakPointName");
+  const point = {
+    id: `leak-${Date.now()}`,
+    name: input?.value.trim() || `측정지점 ${(job.leakAudioPoints || []).length + 1}`,
+    score: lastLeakAudioMetrics.score,
+    risk: risk.label,
+    color: risk.color,
+    metrics: lastLeakAudioMetrics,
+    createdAt: new Date().toISOString(),
+  };
+  job.leakAudioPoints = [point, ...(job.leakAudioPoints || [])];
+  job.updatedAt = new Date().toISOString();
+  saveState();
+  render();
+  notify("현재 측정 지점을 저장했습니다.");
+}
+
+function deleteLeakAudioPoint(id) {
+  const job = currentJob();
+  job.leakAudioPoints = (job.leakAudioPoints || []).filter((point) => point.id !== id);
+  job.updatedAt = new Date().toISOString();
+  saveState();
+  render();
+}
+
 function updatePressureDial(value) {
   const dial = document.querySelector(".pressure-dial b");
   if (dial) dial.textContent = Number(value || 0).toFixed(1);
@@ -2130,6 +2355,9 @@ function updatePressureDial(value) {
 function generateReport(job) {
   const plumbingIssues = job.plumbingChecks.filter((check) => check.done && check.result !== "정상");
   const waterproofIssues = job.waterproofChecks.filter((check) => check.done && check.result !== "정상");
+  const leakAudioSummary = (job.leakAudioPoints || [])
+    .map((point) => `- ${point.name}: ${point.score}% / ${point.risk} / 피크 ${point.metrics?.peakHz || "-"} Hz`)
+    .join("\n") || "저장된 AI 청음 측정 지점이 없습니다.";
   return `[누수진단 소견서]
 
 진단일자: ${job.date}
@@ -2150,11 +2378,14 @@ ${summaryLines(job.plumbingChecks)}
 3. 방수 및 외부 요인 점검 결과
 ${summaryLines(job.waterproofChecks)}
 
-4. 종합 의견
+4. AI 청음 누수 분석
+${leakAudioSummary}
+
+5. 종합 의견
 ${plumbingIssues.length ? "배관 계통 누수 가능성이 확인 또는 의심됩니다. 압력검사, 청음, 열화상/가스탐지 등 다각적 추적을 권장합니다." : "기본 배관 점검에서는 중대한 누수 징후가 제한적입니다."}
 ${waterproofIssues.length ? "외부 요인 또는 방수층 문제 가능성도 함께 검토해야 합니다." : "방수 및 외부 요인은 현재 기록 기준 특이사항이 적습니다."}
 
-5. 첨부자료
+6. 첨부자료
 사진: ${(job.photos || []).length ? `${job.photos.length}장 (${job.photos.join(", ")})` : "없음"}`;
 }
 
