@@ -752,7 +752,7 @@ function renderEstimate(job) {
           </tr>
         </tbody>
       </table>
-      <table class="table" style="margin-top:16px">
+      <table class="table estimate-items-table" style="margin-top:16px">
         <thead><tr><th>품명</th><th style="width:90px">수량</th><th style="width:150px">공급가액</th><th class="no-print" style="width:80px">관리</th></tr></thead>
         <tbody>
           ${items.map((item, index) => `
@@ -884,6 +884,7 @@ function bindEvents() {
       const item = job.estimateItems[Number(input.dataset.estimate)];
       item[input.dataset.field] = input.value;
       if (input.dataset.field === "name") item.spec = "";
+      if (input.dataset.field === "name") resizeEstimateNameInput(input);
       maybeAddEstimateRow(input);
       job.updatedAt = new Date().toISOString();
       saveState();
@@ -1850,6 +1851,11 @@ function maybeAddEstimateRow(input) {
   if (!isLast || !isLong) return;
   job.estimateItems.push({ name: "", spec: "", qty: 1, unit: "식", unitPrice: "", cost: "" });
   setTimeout(render, 0);
+}
+
+function resizeEstimateNameInput(input) {
+  input.style.height = "auto";
+  input.style.height = `${Math.min(Math.max(input.scrollHeight, 110), 260)}px`;
 }
 
 async function filesToPrintableImages(files) {

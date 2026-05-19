@@ -1196,6 +1196,7 @@ canvas {
 
 .estimate-form {
   color: #111827;
+  overflow-x: auto;
 }
 
 .estimate-title {
@@ -1222,6 +1223,38 @@ canvas {
   border-radius: 0;
   min-height: 28px;
   padding: 2px 0;
+  width: 100%;
+}
+
+.estimate-form input,
+.estimate-form textarea {
+  box-sizing: border-box;
+  width: 100%;
+}
+
+.estimate-items-table {
+  min-width: 780px;
+  table-layout: fixed;
+}
+
+.estimate-items-table th:first-child,
+.estimate-items-table td:first-child {
+  width: auto;
+}
+
+.estimate-items-table th:nth-child(2),
+.estimate-items-table td:nth-child(2) {
+  width: 72px;
+}
+
+.estimate-items-table th:nth-child(3),
+.estimate-items-table td:nth-child(3) {
+  width: 138px;
+}
+
+.estimate-items-table th:nth-child(4),
+.estimate-items-table td:nth-child(4) {
+  width: 74px;
 }
 
 .estimate-total th,
@@ -1231,9 +1264,13 @@ canvas {
 }
 
 .estimate-item-name {
+  background: #fff;
+  border: 1px solid #d8e3e8;
+  border-radius: 6px;
   line-height: 1.45;
-  min-height: 70px;
-  overflow: hidden;
+  min-height: 110px;
+  overflow: auto;
+  padding: 8px;
   resize: vertical;
   white-space: pre-wrap;
 }
@@ -1291,6 +1328,7 @@ canvas {
 
   .estimate-form {
     border: 0;
+    overflow: visible;
     padding: 0;
   }
 
@@ -1310,6 +1348,18 @@ canvas {
   .table th,
   .table td {
     border: 1px solid #222;
+  }
+
+  .estimate-items-table {
+    min-width: 0;
+    table-layout: auto;
+  }
+
+  .estimate-item-name {
+    border: 0;
+    min-height: 80px;
+    overflow: visible;
+    padding: 0;
   }
 
   .estimate-meta {
