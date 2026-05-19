@@ -720,9 +720,9 @@ function renderEstimate(job) {
               <td class="no-print"><button class="btn warn" data-action="remove-estimate" data-index="${index}">삭제</button></td>
             </tr>
           `).join("")}
-          <tr><th colspan="2">공급가액</th><td colspan="2"><strong>${totals.supplyTotal.toLocaleString()}원</strong></td></tr>
-          <tr><th colspan="2">부가세</th><td colspan="2"><strong>${totals.tax.toLocaleString()}원</strong></td></tr>
-          <tr class="estimate-total"><th colspan="2">합계금액</th><td colspan="2"><strong>${totals.total.toLocaleString()}원</strong></td></tr>
+          <tr><th colspan="2">공급가액</th><td colspan="2"><strong data-estimate-total="supplyTotal">${totals.supplyTotal.toLocaleString()}원</strong></td></tr>
+          <tr><th colspan="2">부가세</th><td colspan="2"><strong data-estimate-total="tax">${totals.tax.toLocaleString()}원</strong></td></tr>
+          <tr class="estimate-total"><th colspan="2">합계금액</th><td colspan="2"><strong data-estimate-total="total">${totals.total.toLocaleString()}원</strong></td></tr>
         </tbody>
       </table>
       <div class="estimate-note">
@@ -844,6 +844,7 @@ function bindEvents() {
       maybeAddEstimateRow(input);
       job.updatedAt = new Date().toISOString();
       saveState();
+      updateEstimateTotalsInPlace();
     });
   });
 
@@ -1883,6 +1884,14 @@ function estimateTotals(job = currentJob()) {
   const supplyTotal = lineTotal;
   const tax = Math.round(supplyTotal * 0.1);
   return { supplyTotal, tax, total: supplyTotal + tax };
+}
+
+function updateEstimateTotalsInPlace(job = currentJob()) {
+  const totals = estimateTotals(job);
+  Object.entries(totals).forEach(([key, value]) => {
+    const target = document.querySelector(`[data-estimate-total="${key}"]`);
+    if (target) target.textContent = `${value.toLocaleString()}원`;
+  });
 }
 
 function setEstimateVatMode(mode) {
