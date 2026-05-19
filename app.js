@@ -278,11 +278,11 @@ function render() {
           </div>
         </div>
         <div class="top-actions">
-          <span class="status-pill">${escapeHtml(job.date || "-")} · ${escapeHtml(job.address || "주소 미입력")}</span>
+          <span class="status-pill top-status">${escapeHtml(job.date || "-")} · ${escapeHtml(job.address || "주소 미입력")}</span>
           <span class="status-pill storage-pill">${escapeHtml(storageEstimate.text)}</span>
-          <button class="btn ghost" data-action="new-job">새 작업</button>
-          <button class="btn ghost" data-action="hard-refresh">새 버전 새로고침</button>
-          <button class="btn warn" data-action="backup-reset-local">백업리셋</button>
+          <button class="btn ghost top-new-job" data-action="new-job">새 작업</button>
+          <button class="btn ghost top-refresh" data-action="hard-refresh">새 버전 새로고침</button>
+          <button class="btn warn top-backup-reset" data-action="backup-reset-local">백업리셋</button>
         </div>
       </header>
       <div class="layout">
@@ -328,11 +328,11 @@ function renderDashboard(job) {
       </div>
     </div>
     <section class="panel grid">
-      <div class="info-grid">
-        ${field("date", "날짜", "date", job.date)}
-        ${field("customerName", "소비자 이름", "text", job.customerName || "", "고객 이름")}
-        ${field("address", "소비자 주소", "text", job.address, "예: 서울시 강남구 ...")}
-        ${field("phone", "전화번호", "tel", job.phone, "010-0000-0000")}
+      <div class="info-grid dashboard-info-grid">
+        ${field("date", "날짜", "date", job.date, "", "", "info-date")}
+        ${field("customerName", "소비자 이름", "text", job.customerName || "", "고객 이름", "", "info-customer")}
+        ${field("address", "소비자 주소", "text", job.address, "예: 서울시 강남구 ...", "", "info-address")}
+        ${field("phone", "전화번호", "tel", job.phone, "010-0000-0000", "", "info-phone")}
       </div>
       ${textareaWithSituationRecording(job)}
       <div id="driveStatus" class="drive-status">Google Drive: ${driveStatusText()}</div>
@@ -764,9 +764,9 @@ function renderHistory() {
   `;
 }
 
-function field(id, label, type, value, placeholder = "", step = "") {
+function field(id, label, type, value, placeholder = "", step = "", className = "") {
   return `
-    <div class="field">
+    <div class="field ${escapeAttr(className)}">
       <label for="${id}">${label}</label>
       <input id="${id}" data-job-field="${id}" type="${type}" value="${escapeAttr(value ?? "")}" placeholder="${escapeAttr(placeholder)}" ${step ? `step="${step}"` : ""} />
     </div>
