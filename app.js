@@ -705,7 +705,7 @@ function renderEstimate(job) {
           </tr>
           <tr>
             <th>공사명</th><td>${inlineField("workSummary", job.workSummary || "누수 진단 및 보수 공사", "공사명")}</td>
-            <th>공급자 주소</th><td>${inlineField("vendorAddress", job.vendorAddress || PROVIDER.address, "공급자 주소")}</td>
+            <th>주소</th><td>${inlineField("vendorAddress", job.vendorAddress || PROVIDER.address, "공급자 주소")}</td>
           </tr>
         </tbody>
       </table>
@@ -2008,7 +2008,7 @@ function buildEstimatePrintHtml(job) {
         <tr><th>고객명</th><td>${escapeHtml(job.customerName || "")}</td><th>상호</th><td>${escapeHtml(PROVIDER.name)}</td></tr>
         <tr><th>주소</th><td>${escapeHtml(job.address || "")}</td><th>사업자번호</th><td>${escapeHtml(PROVIDER.bizNo)}</td></tr>
         <tr><th>전화번호</th><td>${escapeHtml(job.phone || "")}</td><th>대표/담당</th><td>${escapeHtml(PROVIDER.owner)}</td></tr>
-        <tr><th>공사명</th><td>${escapeHtml(job.workSummary || "누수 진단 및 보수 공사")}</td><th>공급자 주소</th><td>${escapeHtml(PROVIDER.address)}</td></tr>
+        <tr><th>공사명</th><td>${escapeHtml(job.workSummary || "누수 진단 및 보수 공사")}</td><th>주소</th><td>${escapeHtml(PROVIDER.address)}</td></tr>
       </tbody>
     </table>
     <table>
