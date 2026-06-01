@@ -148,6 +148,13 @@ button {
   justify-content: space-between;
 }
 
+.quick-list-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  justify-content: flex-end;
+}
+
 .quick-list-head h2 {
   margin: 0 0 4px;
 }
@@ -1614,6 +1621,11 @@ canvas {
   .quick-list-head {
     align-items: stretch;
     flex-direction: column;
+  }
+
+  .quick-list-actions {
+    display: grid;
+    grid-template-columns: 1fr;
   }
 
   .quick-list-grid {

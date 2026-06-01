@@ -813,7 +813,12 @@ function renderQuickJobList() {
             <h2>작업 리스트</h2>
             <p class="muted">저장된 작업을 날짜별, 주소별, 아파트별로 분류해서 봅니다.</p>
           </div>
-          <button class="btn ghost" data-action="close-quick-list">닫기</button>
+          <div class="quick-list-actions">
+            <button class="btn ghost" data-action="import-local-jobs">로컬에서 불러오기</button>
+            <button class="btn primary" data-action="import-google-jobs">구글에서 불러오기</button>
+            <button class="btn ghost" data-action="close-quick-list">닫기</button>
+          </div>
+          <input class="hidden-input" data-local-job-import type="file" accept=".json,application/json" multiple />
         </div>
         <div class="quick-list-grid">
           ${renderQuickListGroup("날짜별", groupJobsBy(jobs, (job) => job.date || "날짜 없음"))}
@@ -865,6 +870,102 @@ function extractApartmentGroup(address = "") {
   if (!text) return "아파트명 없음";
   const match = text.match(/[가-힣A-Za-z0-9·\-\s]+?(?:아파트|APT|apt|오피스텔|빌라|맨션|주공|자이|래미안|푸르지오|힐스테이트|더샵|롯데캐슬|아이파크)/);
   return match ? match[0].trim() : "아파트명 없음";
+}
+
+async function importJobsFromLocalFiles(files) {
+  try {
+    const jobs = [];
+    for (const file of files) {
+      const text = await file.text();
+      jobs.push(...extractJobsFromImportedData(JSON.parse(text)));
+    }
+    const count = mergeImportedJobs(jobs);
+    notify(`로컬 파일에서 작업 ${count}개를 불러왔습니다.`);
+  } catch (error) {
+    console.error(error);
+    notify("로컬 작업 파일을 읽지 못했습니다. 작업데이터.json 또는 로컬백업.json을 선택하세요.");
+  }
+}
+
+async function importJobsFromGoogleDrive() {
+  try {
+    const config = googleConfig();
+    if (!config.apiKey || !config.clientId) {
+      state.googleSetupOpen = true;
+      saveState();
+      render();
+      notify("먼저 Google Drive 저장 설정을 입력하세요.");
+      return;
+    }
+    const token = await getGoogleAccessToken();
+    const files = await listDriveJobDataFiles(token);
+    if (!files.length) {
+      notify("Google Drive에서 작업데이터.json 파일을 찾지 못했습니다.");
+      return;
+    }
+    const jobs = [];
+    for (const file of files) {
+      const response = await fetch(`https://www.googleapis.com/drive/v3/files/${encodeURIComponent(file.id)}?alt=media`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!response.ok) continue;
+      jobs.push(...extractJobsFromImportedData(await response.json()));
+    }
+    const count = mergeImportedJobs(jobs);
+    notify(`Google Drive에서 작업 ${count}개를 불러왔습니다.`);
+  } catch (error) {
+    console.error(error);
+    notify(`Google Drive 불러오기 실패: ${driveErrorMessage(error)}`);
+  }
+}
+
+async function listDriveJobDataFiles(token) {
+  const query = "name contains '작업데이터.json' and trashed=false";
+  const url = `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(query)}&fields=files(id,name,createdTime,modifiedTime)&orderBy=modifiedTime desc&pageSize=100`;
+  const response = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+  if (!response.ok) throw new Error(await response.text());
+  const data = await response.json();
+  return data.files || [];
+}
+
+function extractJobsFromImportedData(data) {
+  if (!data) return [];
+  if (Array.isArray(data.jobs)) return data.jobs;
+  if (Array.isArray(data.state?.jobs)) return data.state.jobs;
+  if (data.job) return [data.job];
+  if (data.id && (data.date || data.address || data.customerName)) return [data];
+  return [];
+}
+
+function mergeImportedJobs(importedJobs) {
+  const validJobs = importedJobs.filter((job) => job && (job.id || job.date || job.address || job.customerName));
+  let added = 0;
+  validJobs.forEach((job) => {
+    const normalizedJob = {
+      ...createJob(),
+      ...job,
+      id: job.id || `job-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+      plumbingChecks: normalizeChecks(job.plumbingChecks || [], basePlumbingChecks),
+      waterproofChecks: normalizeChecks(job.waterproofChecks || [], baseWaterproofChecks),
+      estimateItems: Array.isArray(job.estimateItems) && job.estimateItems.length ? job.estimateItems : [{ name: "", cost: "" }],
+      recordings: Array.isArray(job.recordings) ? job.recordings : [],
+      photos: Array.isArray(job.photos) ? job.photos : [],
+      photoFiles: Array.isArray(job.photoFiles) ? job.photoFiles : [],
+      leakAudioPoints: Array.isArray(job.leakAudioPoints) ? job.leakAudioPoints : [],
+    };
+    const existingIndex = state.jobs.findIndex((existing) => existing.id === normalizedJob.id);
+    if (existingIndex >= 0) {
+      state.jobs[existingIndex] = { ...state.jobs[existingIndex], ...normalizedJob };
+    } else {
+      state.jobs.unshift(normalizedJob);
+      added += 1;
+    }
+  });
+  if (!state.currentJobId && state.jobs.length) state.currentJobId = state.jobs[0].id;
+  state.quickListOpen = true;
+  saveState();
+  render();
+  return added;
 }
 
 function field(id, label, type, value, placeholder = "", step = "", className = "") {
@@ -975,6 +1076,15 @@ function bindEvents() {
     });
   });
 
+  app.querySelectorAll("[data-local-job-import]").forEach((input) => {
+    input.addEventListener("change", async () => {
+      const files = Array.from(input.files || []);
+      input.value = "";
+      if (!files.length) return;
+      await importJobsFromLocalFiles(files);
+    });
+  });
+
   app.querySelectorAll("input[name='storage']").forEach((input) => {
     input.addEventListener("change", () => {
       state.storageMode = input.value;
@@ -1076,6 +1186,11 @@ function handleAction(action, data) {
     saveState();
     render();
   }
+  if (action === "import-local-jobs") {
+    const input = app.querySelector("[data-local-job-import]");
+    if (input) input.click();
+  }
+  if (action === "import-google-jobs") importJobsFromGoogleDrive();
   if (action === "close-quick-list") {
     state.quickListOpen = false;
     saveState();
