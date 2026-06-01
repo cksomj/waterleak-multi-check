@@ -155,6 +155,20 @@ button {
   justify-content: flex-end;
 }
 
+.quick-list-search {
+  align-items: center;
+  display: grid;
+  gap: 8px;
+  grid-template-columns: minmax(180px, 1fr) auto auto;
+}
+
+.quick-list-search input {
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  min-height: 38px;
+  padding: 8px 10px;
+}
+
 .quick-list-head h2 {
   margin: 0 0 4px;
 }
@@ -1625,6 +1639,10 @@ canvas {
 
   .quick-list-actions {
     display: grid;
+    grid-template-columns: 1fr;
+  }
+
+  .quick-list-search {
     grid-template-columns: 1fr;
   }
 

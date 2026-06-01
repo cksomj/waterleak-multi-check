@@ -66,6 +66,7 @@ const defaultState = {
   blogEditorOpen: false,
   blogCustomOpen: false,
   quickListOpen: false,
+  quickListQuery: "",
   jobs: [],
 };
 
@@ -804,14 +805,17 @@ function renderEstimate(job) {
 }
 
 function renderQuickJobList() {
-  const jobs = [...state.jobs].sort((a, b) => `${b.date || ""}${b.createdAt || ""}`.localeCompare(`${a.date || ""}${a.createdAt || ""}`));
+  const query = state.quickListQuery || "";
+  const jobs = [...state.jobs]
+    .filter((job) => matchesQuickJobSearch(job, query))
+    .sort((a, b) => `${b.date || ""}${b.createdAt || ""}`.localeCompare(`${a.date || ""}${a.createdAt || ""}`));
   return `
     <div class="quick-list-backdrop">
       <section class="quick-list-box">
         <div class="quick-list-head">
           <div>
             <h2>작업 리스트</h2>
-            <p class="muted">저장된 작업을 날짜별, 주소별, 아파트별로 분류해서 봅니다.</p>
+            <p class="muted">저장된 작업을 날짜별, 주소별, 아파트별로 분류하고 현장 단어로 검색합니다.</p>
           </div>
           <div class="quick-list-actions">
             <button class="btn ghost" data-action="import-local-jobs">로컬에서 불러오기</button>
@@ -819,6 +823,11 @@ function renderQuickJobList() {
             <button class="btn ghost" data-action="close-quick-list">닫기</button>
           </div>
           <input class="hidden-input" data-local-job-import type="file" accept=".json,application/json" multiple />
+        </div>
+        <div class="quick-list-search">
+          <input data-quick-list-search value="${escapeAttr(query)}" placeholder="날짜, 주소, 아파트, 누수, 방수, 창틀방수, 옥상방수 등 검색" />
+          <button class="btn ghost" data-action="clear-quick-list-search" ${query ? "" : "disabled"}>검색 지우기</button>
+          <span class="muted">검색 결과 ${jobs.length}건</span>
         </div>
         <div class="quick-list-grid">
           ${renderQuickListGroup("날짜별", groupJobsBy(jobs, (job) => job.date || "날짜 없음"))}
@@ -870,6 +879,76 @@ function extractApartmentGroup(address = "") {
   if (!text) return "아파트명 없음";
   const match = text.match(/[가-힣A-Za-z0-9·\-\s]+?(?:아파트|APT|apt|오피스텔|빌라|맨션|주공|자이|래미안|푸르지오|힐스테이트|더샵|롯데캐슬|아이파크)/);
   return match ? match[0].trim() : "아파트명 없음";
+}
+
+function matchesQuickJobSearch(job, query = "") {
+  const normalizedQuery = normalizeSearchText(query);
+  if (!normalizedQuery) return true;
+  const searchText = buildQuickJobSearchText(job);
+  const addressText = normalizeLooseSearchText([job.address, extractApartmentGroup(job.address)].join(" "));
+  return expandSearchTerms(normalizedQuery).every((group) => group.some((term) => {
+    const normalizedTerm = normalizeSearchText(term);
+    const looseTerm = normalizeLooseSearchText(term);
+    return searchText.includes(normalizedTerm) || (looseTerm.length >= 2 && addressText.includes(looseTerm));
+  }));
+}
+
+function normalizeSearchText(value = "") {
+  return String(value).toLowerCase().replace(/\s+/g, " ").trim();
+}
+
+function expandSearchTerms(query) {
+  const rawTerms = normalizeSearchText(query).split(" ").filter(Boolean);
+  return rawTerms.map((term) => {
+    const related = QUICK_SEARCH_RELATED_TERMS.find((group) => group.some((item) => item.includes(term) || term.includes(item)));
+    return related ? [...new Set([term, ...related.map(normalizeSearchText)])] : expandAddressLikeTerm(term);
+  });
+}
+
+function expandAddressLikeTerm(term) {
+  const normalized = normalizeSearchText(term);
+  const loose = normalizeLooseSearchText(term);
+  const parts = normalized.split(/[,\s]+/).filter((part) => part.length >= 2);
+  const numericParts = normalized.match(/\d+/g) || [];
+  return [...new Set([normalized, loose, ...parts, ...numericParts].filter(Boolean))];
+}
+
+function normalizeLooseSearchText(value = "") {
+  return String(value).toLowerCase().replace(/[\s,.-]/g, "").trim();
+}
+
+const QUICK_SEARCH_RELATED_TERMS = [
+  ["누수", "배관누수", "물샘", "물새", "누수확인", "누수의심", "청음", "탐지", "수압", "계량기"],
+  ["방수", "화장실방수", "창틀방수", "옥상방수", "외벽방수", "우레탄", "실리콘", "코킹", "방수층", "유가"],
+  ["창틀", "샷시", "새시", "창문", "창틀방수", "실리콘", "코킹"],
+  ["옥상", "옥상방수", "우수관", "배수", "드레인", "루프드레인"],
+  ["화장실", "욕실", "변기", "유가", "타일", "방수"],
+  ["싱크대", "주방", "개수대", "수전", "배수관"],
+  ["보일러", "온수", "난방", "배관", "분배기"],
+  ["아파트", "apt", "주공", "자이", "래미안", "푸르지오", "힐스테이트", "더샵", "롯데캐슬", "아이파크"],
+];
+
+function buildQuickJobSearchText(job) {
+  const checkText = [...(job.plumbingChecks || []), ...(job.waterproofChecks || [])]
+    .map((check) => [check.title, check.guide, check.result, check.memo, check.done ? "점검완료" : ""].join(" "))
+    .join(" ");
+  const estimateText = (job.estimateItems || []).map((item) => [item.name, item.spec, item.cost].join(" ")).join(" ");
+  const leakText = (job.leakAudioPoints || []).map((point) => [point.name, point.score, point.risk, point.metrics?.peakHz].join(" ")).join(" ");
+  return normalizeSearchText([
+    job.date,
+    job.customerName,
+    job.address,
+    extractApartmentGroup(job.address),
+    job.phone,
+    job.situation,
+    job.environment,
+    job.report,
+    job.blog,
+    job.workSummary,
+    checkText,
+    estimateText,
+    leakText,
+  ].join(" "));
 }
 
 async function importJobsFromLocalFiles(files) {
@@ -1085,6 +1164,15 @@ function bindEvents() {
     });
   });
 
+  const quickSearch = app.querySelector("[data-quick-list-search]");
+  if (quickSearch) {
+    quickSearch.addEventListener("input", () => {
+      state.quickListQuery = quickSearch.value;
+      saveState();
+      render();
+    });
+  }
+
   app.querySelectorAll("input[name='storage']").forEach((input) => {
     input.addEventListener("change", () => {
       state.storageMode = input.value;
@@ -1191,6 +1279,11 @@ function handleAction(action, data) {
     if (input) input.click();
   }
   if (action === "import-google-jobs") importJobsFromGoogleDrive();
+  if (action === "clear-quick-list-search") {
+    state.quickListQuery = "";
+    saveState();
+    render();
+  }
   if (action === "close-quick-list") {
     state.quickListOpen = false;
     saveState();
