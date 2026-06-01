@@ -378,18 +378,14 @@ function renderDriveMediaPicker() {
   return `
     <div class="drive-setup">
       <h2>Google Drive 선택 업로드</h2>
-      ${driveSaveDraft.wantPhotos ? `
-        <label>사진갤러리에서 선택
-          <input data-drive-pick="photos" type="file" accept="image/*" multiple />
-        </label>
-        <p class="muted">선택됨: ${driveSaveDraft.photoFiles.length}개</p>
-      ` : ""}
-      ${driveSaveDraft.wantRecordings ? `
-        <label>녹음 파일에서 선택
-          <input data-drive-pick="recordings" type="file" accept="audio/*" multiple />
-        </label>
-        <p class="muted">선택됨: ${driveSaveDraft.recordingFiles.length}개</p>
-      ` : ""}
+      <label>사진갤러리에서 선택
+        <input data-drive-pick="photos" type="file" accept="image/*" multiple />
+      </label>
+      <p class="muted">선택됨: ${driveSaveDraft.photoFiles.length}개</p>
+      <label>녹음 파일에서 선택
+        <input data-drive-pick="recordings" type="file" accept="audio/*" multiple />
+      </label>
+      <p class="muted">선택됨: ${driveSaveDraft.recordingFiles.length}개</p>
       <div class="toolbar">
         <button class="btn primary" data-action="continue-google-drive-save">오늘작업저장</button>
         <button class="btn ghost" data-action="cancel-google-drive-save">취소</button>
@@ -1624,22 +1620,20 @@ async function saveCurrentJobToGoogleDrive(options = {}) {
     }
     state.googleSetupOpen = false;
     saveState();
-    const wantPhotos = askMedia ? confirm("사진폴더를 만들고 사진을 업로드하시겠습니까? y/n") : false;
-    const wantRecordings = askMedia ? confirm("녹음폴더를 만들고 녹음파일을 업로드하시겠습니까? y/n") : false;
-    const prepared = await prepareGoogleDriveSave(wantPhotos, wantRecordings);
-    if (wantPhotos || wantRecordings) {
+    if (askMedia) {
       driveSaveDraft = {
         active: true,
-        wantPhotos,
-        wantRecordings,
+        wantPhotos: true,
+        wantRecordings: true,
         photoFiles: [],
         recordingFiles: [],
-        prepared,
+        prepared: null,
       };
       render();
-      notify("PDF와 폴더를 먼저 만들었습니다. 화면 아래에서 사진/녹음파일을 선택하세요.");
+      notify("사진/녹음 파일을 선택하거나, 바로 오늘작업저장을 누르세요.");
       return;
     }
+    const prepared = await prepareGoogleDriveSave(false, false);
     notify(`Google Drive 저장 완료: ${prepared.yearFolder.name}/${prepared.monthFolder.name}/${prepared.dateFolder.name} · PDF 2개 · 작업데이터 1개`);
   } catch (error) {
     notify(`Google Drive 저장 실패: ${driveErrorMessage(error)}`);
@@ -1651,9 +1645,7 @@ async function continueGoogleDriveSave() {
   if (!driveSaveDraft?.active) return;
   const photoFiles = driveSaveDraft.photoFiles || [];
   const recordingFiles = driveSaveDraft.recordingFiles || [];
-  if (driveSaveDraft.wantPhotos && !photoFiles.length && !confirm("사진을 선택하지 않았습니다. 사진 없이 계속할까요?")) return;
-  if (driveSaveDraft.wantRecordings && !recordingFiles.length && !confirm("녹음파일을 선택하지 않았습니다. 녹음 없이 계속할까요?")) return;
-  const prepared = driveSaveDraft.prepared;
+  const prepared = await prepareGoogleDriveSave(photoFiles.length > 0, recordingFiles.length > 0);
   driveSaveDraft = null;
   render();
   await uploadSelectedDriveMedia(prepared, photoFiles, recordingFiles);
