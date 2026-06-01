@@ -320,9 +320,9 @@ function renderDashboard(job) {
     <section class="panel grid">
       <div class="info-grid dashboard-info-grid">
         ${field("date", "날짜", "date", job.date, "", "", "info-date")}
-        ${field("customerName", "소비자 이름", "text", job.customerName || "", "고객 이름", "", "info-customer")}
+        ${field("customerName", "고객 이름", "text", job.customerName || "", "고객 이름", "", "info-customer")}
         ${field("address", "소비자 주소", "text", job.address, "예: 서울시 강남구 ...", "", "info-address")}
-        ${field("phone", "전화번호", "tel", job.phone, "010-0000-0000", "", "info-phone")}
+        ${phoneField(job)}
       </div>
       ${textareaWithSituationRecording(job)}
       <div id="driveStatus" class="drive-status">Google Drive: ${driveStatusText()}</div>
@@ -360,25 +360,37 @@ function textareaWithSituationRecording(job) {
   `;
 }
 
+function phoneField(job) {
+  return `
+    <div class="field info-phone">
+      <label for="phone">전화번호</label>
+      <div class="phone-input-row">
+        <input id="phone" data-job-field="phone" type="tel" value="${escapeAttr(job.phone || "")}" placeholder="010-0000-0000" />
+        <button class="btn ghost" data-action="pick-contact-phone" type="button">연락처 선택</button>
+      </div>
+    </div>
+  `;
+}
+
 function renderDriveMediaPicker() {
   if (!driveSaveDraft?.active) return "";
   return `
     <div class="drive-setup">
       <h2>Google Drive 선택 업로드</h2>
       ${driveSaveDraft.wantPhotos ? `
-        <label>사진 파일 선택
+        <label>사진갤러리에서 선택
           <input data-drive-pick="photos" type="file" accept="image/*" multiple />
         </label>
         <p class="muted">선택됨: ${driveSaveDraft.photoFiles.length}개</p>
       ` : ""}
       ${driveSaveDraft.wantRecordings ? `
-        <label>녹음 파일 선택
+        <label>녹음 파일에서 선택
           <input data-drive-pick="recordings" type="file" accept="audio/*" multiple />
         </label>
         <p class="muted">선택됨: ${driveSaveDraft.recordingFiles.length}개</p>
       ` : ""}
       <div class="toolbar">
-        <button class="btn primary" data-action="continue-google-drive-save">선택 완료 후 업로드</button>
+        <button class="btn primary" data-action="continue-google-drive-save">오늘작업저장</button>
         <button class="btn ghost" data-action="cancel-google-drive-save">취소</button>
       </div>
     </div>
@@ -712,7 +724,27 @@ function renderEstimate(job) {
         ${field("date", "견적일자", "date", job.date)}
         ${field("estimateValidUntil", "유효기간", "date", job.estimateValidUntil || "")}
       </div>
-      <table class="table estimate-info">
+      <div class="estimate-party-edit">
+        <div class="estimate-party-card">
+          <h3>수신</h3>
+          <div class="estimate-party-grid">
+            <label>고객명${inlineField("customerName", job.customerName || "", "고객명")}</label>
+            <label>주소${inlineField("address", job.address || "", "주소")}</label>
+            <label>전화번호${inlineField("phone", job.phone || "", "전화번호")}</label>
+            <label>공사명${inlineField("workSummary", job.workSummary || "누수 진단 및 보수 공사", "공사명")}</label>
+          </div>
+        </div>
+        <div class="estimate-party-card">
+          <h3>공급자</h3>
+          <div class="estimate-party-grid">
+            <label>상호${inlineField("vendorName", job.vendorName || PROVIDER.name, "상호")}</label>
+            <label>사업자번호${inlineField("vendorBizNo", job.vendorBizNo || PROVIDER.bizNo, "000-00-00000")}</label>
+            <label>대표/담당${inlineField("vendorOwner", job.vendorOwner || PROVIDER.owner, "담당자")}</label>
+            <label>주소${inlineField("vendorAddress", job.vendorAddress || PROVIDER.address, "공급자 주소")}</label>
+          </div>
+        </div>
+      </div>
+      <table class="table estimate-info estimate-party-print print-only">
         <tbody>
           <tr><th colspan="2">수신</th><th colspan="2">공급자</th></tr>
           <tr>
@@ -809,6 +841,7 @@ function renderQuickJobList() {
         </div>
         <div class="quick-list-search">
           <input data-quick-list-search value="${escapeAttr(query)}" placeholder="주소, 아파트, 누수, 방수, 창틀방수, 옥상방수 등 검색" />
+          <button class="btn primary" data-action="apply-quick-list-search">검색</button>
           <button class="btn ghost" data-action="clear-quick-list-search" ${query ? "" : "disabled"}>검색 지우기</button>
           <span class="muted">검색 결과 ${jobs.length}건</span>
         </div>
@@ -1162,10 +1195,10 @@ function bindEvents() {
 
   const quickSearch = app.querySelector("[data-quick-list-search]");
   if (quickSearch) {
-    quickSearch.addEventListener("input", () => {
-      state.quickListQuery = quickSearch.value;
-      saveState();
-      render();
+    quickSearch.addEventListener("keydown", (event) => {
+      if (event.key !== "Enter") return;
+      event.preventDefault();
+      applyQuickListSearch();
     });
   }
 
@@ -1194,6 +1227,37 @@ function bindEvents() {
   }
 
   bindSwipeNavigation();
+}
+
+function applyQuickListSearch() {
+  const input = app.querySelector("[data-quick-list-search]");
+  state.quickListQuery = input?.value.trim() || "";
+  saveState();
+  render();
+}
+
+async function pickContactPhone() {
+  if (!navigator.contacts?.select) {
+    notify("이 브라우저는 연락처 선택을 지원하지 않습니다. 전화번호를 직접 입력하세요.");
+    return;
+  }
+  try {
+    const contacts = await navigator.contacts.select(["name", "tel"], { multiple: false });
+    const selected = contacts?.[0];
+    const tel = selected?.tel?.[0] || "";
+    if (!tel) {
+      notify("선택한 연락처에 전화번호가 없습니다.");
+      return;
+    }
+    const job = currentJob();
+    job.phone = tel;
+    if (!job.customerName && selected.name?.[0]) job.customerName = selected.name[0];
+    saveState();
+    render();
+    notify("연락처 전화번호를 입력했습니다.");
+  } catch (error) {
+    notify("연락처 선택을 취소했거나 브라우저가 차단했습니다.");
+  }
 }
 
 function saveGoogleSettingsFromForm() {
@@ -1264,6 +1328,7 @@ function handleAction(action, data) {
     render();
   }
   if (action === "import-google-jobs") importJobsFromGoogleDrive();
+  if (action === "apply-quick-list-search") applyQuickListSearch();
   if (action === "clear-quick-list-search") {
     state.quickListQuery = "";
     saveState();
@@ -1287,6 +1352,7 @@ function handleAction(action, data) {
   }
   if (action === "hard-refresh") hardRefreshApp();
   if (action === "show-app-map") openExternalMap(job.address, "kakao");
+  if (action === "pick-contact-phone") pickContactPhone();
   if (action === "google-drive-save") saveCurrentJobToGoogleDrive();
   if (action === "save-google-settings" && saveGoogleSettingsFromForm()) saveCurrentJobToGoogleDrive();
   if (action === "continue-google-drive-save") continueGoogleDriveSave();
@@ -1665,7 +1731,7 @@ function buildReportPdfPages(job) {
   return paginatePdfLines([
     { text: "누수진단 소견서", size: 32, bold: true, align: "center", gap: 18 },
     { text: `진단일자: ${job.date || ""}`, size: 16 },
-    { text: `소비자 이름: ${job.customerName || ""}`, size: 16 },
+    { text: `고객 이름: ${job.customerName || ""}`, size: 16 },
     { text: `현장주소: ${job.address || ""}`, size: 16 },
     { text: `연락처: ${job.phone || ""}`, size: 16 },
     { text: `공급자: ${PROVIDER.name} / ${PROVIDER.bizNo}`, size: 16 },
@@ -2251,7 +2317,7 @@ function buildReportPrintHtml(job) {
     <table>
       <tbody>
         <tr><th>진단일자</th><td>${escapeHtml(job.date || "")}</td><th>연락처</th><td>${escapeHtml(job.phone || "")}</td></tr>
-        <tr><th>소비자 이름</th><td colspan="3">${escapeHtml(job.customerName || "")}</td></tr>
+        <tr><th>고객 이름</th><td colspan="3">${escapeHtml(job.customerName || "")}</td></tr>
         <tr><th>현장주소</th><td colspan="3">${escapeHtml(job.address || "")}</td></tr>
         <tr><th>작성자</th><td>${escapeHtml(PROVIDER.name)}</td><th>사업자번호</th><td>${escapeHtml(PROVIDER.bizNo)}</td></tr>
         <tr><th>공급자 주소</th><td colspan="3">${escapeHtml(PROVIDER.address)}</td></tr>
@@ -2607,7 +2673,7 @@ function generateReport(job) {
   return `[누수진단 소견서]
 
 진단일자: ${job.date}
-소비자 이름: ${job.customerName || "미입력"}
+고객 이름: ${job.customerName || "미입력"}
 현장주소: ${job.address || "미입력"}
 연락처: ${job.phone || "미입력"}
 작성자: ${PROVIDER.name}

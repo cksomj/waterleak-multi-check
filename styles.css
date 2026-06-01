@@ -155,7 +155,7 @@ button {
   align-items: center;
   display: grid;
   gap: 8px;
-  grid-template-columns: minmax(180px, 1fr) auto auto;
+  grid-template-columns: minmax(180px, 1fr) auto auto auto;
 }
 
 .quick-list-search input {
@@ -163,6 +163,12 @@ button {
   border-radius: 6px;
   min-height: 38px;
   padding: 8px 10px;
+}
+
+.phone-input-row {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: minmax(0, 1fr) auto;
 }
 
 .quick-list-head h2 {
@@ -1382,6 +1388,39 @@ canvas {
   width: 120px;
 }
 
+.estimate-party-edit {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin-bottom: 14px;
+}
+
+.estimate-party-card {
+  background: #f8fbfc;
+  border: 1px solid #d8e3e8;
+  border-radius: 8px;
+  padding: 12px;
+}
+
+.estimate-party-card h3 {
+  color: #1f3d46;
+  font-size: 15px;
+  margin: 0 0 10px;
+}
+
+.estimate-party-grid {
+  display: grid;
+  gap: 10px;
+}
+
+.estimate-party-grid label {
+  color: #344952;
+  display: grid;
+  font-size: 13px;
+  font-weight: 700;
+  gap: 4px;
+}
+
 .inline-input {
   border: 0;
   border-radius: 0;
@@ -1514,6 +1553,7 @@ canvas {
   .toolbar,
   .no-print,
   .estimate-edit-list,
+  .estimate-party-edit,
   .mini-actions {
     display: none !important;
   }
@@ -1662,6 +1702,11 @@ canvas {
   }
 
   .quick-list-search {
+    grid-template-columns: 1fr;
+  }
+
+  .phone-input-row,
+  .estimate-party-edit {
     grid-template-columns: 1fr;
   }
 
