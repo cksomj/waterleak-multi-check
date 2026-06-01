@@ -55,7 +55,7 @@ const viewOrder = [
 const defaultState = {
   activeView: "dashboard",
   currentJobId: null,
-  storageMode: "local",
+  storageMode: "google",
   googleDrive: {
     apiKey: "",
     clientId: "",
@@ -67,6 +67,8 @@ const defaultState = {
   blogCustomOpen: false,
   quickListOpen: false,
   quickListQuery: "",
+  quickListMonth: new Date().toISOString().slice(0, 7),
+  quickListSelectedDate: "",
   jobs: [],
 };
 
@@ -85,7 +87,7 @@ let googleTokenClient = null;
 let googleAccessToken = "";
 let pendingViewAnimation = "";
 let savedBlogSelection = null;
-let storageEstimate = { percent: null, text: "저장공간 확인중" };
+let storageEstimate = { percent: null, text: "Google 저장 전용" };
 
 const app = document.querySelector("#app");
 
@@ -160,23 +162,7 @@ function saveState() {
 }
 
 async function updateStorageEstimate() {
-  if (!navigator.storage?.estimate) {
-    setStorageEstimate({ percent: null, text: "저장공간 확인불가" });
-    return;
-  }
-  try {
-    const estimate = await navigator.storage.estimate();
-    const usage = estimate.usage || 0;
-    const quota = estimate.quota || 0;
-    if (!quota) {
-      setStorageEstimate({ percent: null, text: "저장공간 확인불가" });
-      return;
-    }
-    const percent = Math.min(100, Math.round((usage / quota) * 100));
-    setStorageEstimate({ percent, text: `로컬 ${percent}% 사용` });
-  } catch {
-    setStorageEstimate({ percent: null, text: "저장공간 확인불가" });
-  }
+  setStorageEstimate({ percent: null, text: "Google 저장 전용" });
 }
 
 function setStorageEstimate(next) {
@@ -287,7 +273,6 @@ function render() {
           <button class="btn ghost top-new-job" data-action="new-job">새 작업</button>
           <button class="btn ghost top-job-list" data-action="toggle-quick-list">리스트</button>
           <button class="btn ghost top-refresh" data-action="hard-refresh">새 버전 새로고침</button>
-          <button class="btn warn top-backup-reset" data-action="backup-reset-local">백업리셋</button>
         </div>
       </header>
       <div class="layout">
@@ -347,7 +332,7 @@ function renderDashboard(job) {
     <section class="meter-cards" style="margin-top:14px">
       ${metric("점검 완료", countDone([...job.plumbingChecks, ...job.waterproofChecks]), `${job.plumbingChecks.length + job.waterproofChecks.length}개 중`)}
       ${metric("소견서", job.report ? "작성됨" : "미작성", "AI 초안")}
-      ${metric("저장방식", state.storageMode === "local" ? "로컬" : "구글", "선택 옵션")}
+      ${metric("저장방식", "구글", "Drive 저장")}
     </section>
   `;
 }
@@ -597,10 +582,6 @@ function renderReport(job) {
       <section class="panel grid">
         <h2>사진 업로드</h2>
         ${fileBox("photos", "사진 앨범 열기")}
-        <div class="storage-row">
-          <label><input type="radio" name="storage" value="local" ${state.storageMode === "local" ? "checked" : ""} /> 로컬에 저장</label>
-          <label><input type="radio" name="storage" value="google" ${state.storageMode === "google" ? "checked" : ""} /> 구글클라우드 저장</label>
-        </div>
       </section>
       <section class="panel grid">
         ${textarea("report", "소견서 내용", job.report, "소견서 자동생성 후 수정할 수 있습니다.")}
@@ -806,72 +787,107 @@ function renderEstimate(job) {
 
 function renderQuickJobList() {
   const query = state.quickListQuery || "";
-  const jobs = [...state.jobs]
+  const allJobs = [...state.jobs].sort((a, b) => `${b.date || ""}${b.createdAt || ""}`.localeCompare(`${a.date || ""}${a.createdAt || ""}`));
+  const jobs = allJobs
     .filter((job) => matchesQuickJobSearch(job, query))
     .sort((a, b) => `${b.date || ""}${b.createdAt || ""}`.localeCompare(`${a.date || ""}${a.createdAt || ""}`));
+  const month = state.quickListMonth || new Date().toISOString().slice(0, 7);
+  const selectedDate = state.quickListSelectedDate || "";
+  const selectedJobs = selectedDate ? allJobs.filter((job) => job.date === selectedDate) : [];
   return `
     <div class="quick-list-backdrop">
       <section class="quick-list-box">
         <div class="quick-list-head">
           <div>
             <h2>작업 리스트</h2>
-            <p class="muted">저장된 작업을 날짜별, 주소별, 아파트별로 분류하고 현장 단어로 검색합니다.</p>
+            <p class="muted">Google Drive에서 불러온 작업을 달력과 검색으로 확인합니다.</p>
           </div>
           <div class="quick-list-actions">
-            <button class="btn ghost" data-action="import-local-jobs">로컬에서 불러오기</button>
             <button class="btn primary" data-action="import-google-jobs">구글에서 불러오기</button>
             <button class="btn ghost" data-action="close-quick-list">닫기</button>
           </div>
-          <input class="hidden-input" data-local-job-import type="file" accept=".json,application/json" multiple />
         </div>
         <div class="quick-list-search">
-          <input data-quick-list-search value="${escapeAttr(query)}" placeholder="날짜, 주소, 아파트, 누수, 방수, 창틀방수, 옥상방수 등 검색" />
+          <input data-quick-list-search value="${escapeAttr(query)}" placeholder="주소, 아파트, 누수, 방수, 창틀방수, 옥상방수 등 검색" />
           <button class="btn ghost" data-action="clear-quick-list-search" ${query ? "" : "disabled"}>검색 지우기</button>
           <span class="muted">검색 결과 ${jobs.length}건</span>
         </div>
-        <div class="quick-list-grid">
-          ${renderQuickListGroup("날짜별", groupJobsBy(jobs, (job) => job.date || "날짜 없음"))}
-          ${renderQuickListGroup("주소별", groupJobsBy(jobs, (job) => normalizeGroupLabel(job.address, "주소 미입력")))}
-          ${renderQuickListGroup("아파트별", groupJobsBy(jobs, (job) => extractApartmentGroup(job.address)))}
-        </div>
+        ${query ? renderQuickSearchResults(jobs) : renderQuickCalendar(allJobs, month, selectedDate, selectedJobs)}
       </section>
     </div>
   `;
 }
 
-function renderQuickListGroup(title, groups) {
-  const entries = Object.entries(groups);
+function renderQuickSearchResults(jobs) {
   return `
-    <div class="quick-list-column">
-      <h3>${escapeHtml(title)}</h3>
-      ${entries.length ? entries.map(([label, jobs]) => `
-        <details class="quick-list-group" open>
-          <summary>${escapeHtml(label)} <span>${jobs.length}건</span></summary>
-          <div class="quick-list-items">
-            ${jobs.map((job) => `
-              <button class="quick-list-item ${job.id === state.currentJobId ? "active" : ""}" data-action="select-job" data-id="${escapeAttr(job.id)}">
-                <strong>${escapeHtml(job.address || "주소 미입력")}</strong>
-                <span>${escapeHtml(job.date || "-")} · ${escapeHtml(job.customerName || job.phone || "이름/전화 없음")}</span>
-              </button>
-            `).join("")}
-          </div>
-        </details>
-      `).join("") : `<p class="muted">저장된 작업이 없습니다.</p>`}
+    <div class="quick-result-panel">
+      <h3>검색 결과</h3>
+      ${renderQuickJobItems(jobs)}
     </div>
   `;
 }
 
-function groupJobsBy(jobs, getKey) {
-  return jobs.reduce((groups, job) => {
-    const key = getKey(job);
-    groups[key] = groups[key] || [];
-    groups[key].push(job);
-    return groups;
+function renderQuickCalendar(jobs, month, selectedDate, selectedJobs) {
+  const counts = jobs.reduce((map, job) => {
+    if (!job.date || !job.date.startsWith(month)) return map;
+    map[job.date] = (map[job.date] || 0) + 1;
+    return map;
   }, {});
+  const [year, monthNumber] = month.split("-").map(Number);
+  const first = new Date(year, monthNumber - 1, 1);
+  const lastDate = new Date(year, monthNumber, 0).getDate();
+  const leading = first.getDay();
+  const cells = [];
+  for (let i = 0; i < leading; i += 1) cells.push(null);
+  for (let day = 1; day <= lastDate; day += 1) cells.push(`${month}-${String(day).padStart(2, "0")}`);
+  while (cells.length % 7) cells.push(null);
+  return `
+    <div class="quick-calendar-panel">
+      <div class="quick-calendar-head">
+        <button class="btn ghost" data-action="set-quick-list-month" data-month="${escapeAttr(shiftMonth(month, -1))}">이전달</button>
+        <h3>${escapeHtml(month)}</h3>
+        <button class="btn ghost" data-action="set-quick-list-month" data-month="${escapeAttr(shiftMonth(month, 1))}">다음달</button>
+      </div>
+      <div class="quick-calendar-weekdays">
+        ${["일", "월", "화", "수", "목", "금", "토"].map((day) => `<b>${day}</b>`).join("")}
+      </div>
+      <div class="quick-calendar-grid">
+        ${cells.map((date) => {
+          if (!date) return `<div class="quick-calendar-day empty"></div>`;
+          const count = counts[date] || 0;
+          return `
+            <button class="quick-calendar-day ${count ? "has-work" : ""} ${date === selectedDate ? "selected" : ""}" data-action="select-quick-date" data-date="${escapeAttr(date)}" ${count ? "" : "disabled"}>
+              <span>${Number(date.slice(-2))}</span>
+              ${count ? `<strong>${count}건</strong>` : ""}
+            </button>
+          `;
+        }).join("")}
+      </div>
+      <div class="quick-date-results">
+        <h3>${selectedDate ? `${escapeHtml(selectedDate)} 작업` : "날짜의 건수를 누르면 리스트가 열립니다"}</h3>
+        ${selectedDate ? renderQuickJobItems(selectedJobs) : `<p class="muted">작업한 날짜에는 건수가 표시됩니다.</p>`}
+      </div>
+    </div>
+  `;
 }
 
-function normalizeGroupLabel(value, fallback) {
-  return String(value || "").trim() || fallback;
+function renderQuickJobItems(jobs) {
+  return jobs.length ? `
+    <div class="quick-list-items">
+      ${jobs.map((job) => `
+        <button class="quick-list-item ${job.id === state.currentJobId ? "active" : ""}" data-action="select-job" data-id="${escapeAttr(job.id)}">
+          <strong>${escapeHtml(job.address || "주소 미입력")}</strong>
+          <span>${escapeHtml(job.date || "-")} · ${escapeHtml(job.customerName || job.phone || "이름/전화 없음")}</span>
+        </button>
+      `).join("")}
+    </div>
+  ` : `<p class="muted">해당 작업이 없습니다.</p>`;
+}
+
+function shiftMonth(month, delta) {
+  const [year, monthNumber] = month.split("-").map(Number);
+  const date = new Date(year, monthNumber - 1 + delta, 1);
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
 }
 
 function extractApartmentGroup(address = "") {
@@ -951,21 +967,6 @@ function buildQuickJobSearchText(job) {
   ].join(" "));
 }
 
-async function importJobsFromLocalFiles(files) {
-  try {
-    const jobs = [];
-    for (const file of files) {
-      const text = await file.text();
-      jobs.push(...extractJobsFromImportedData(JSON.parse(text)));
-    }
-    const count = mergeImportedJobs(jobs);
-    notify(`로컬 파일에서 작업 ${count}개를 불러왔습니다.`);
-  } catch (error) {
-    console.error(error);
-    notify("로컬 작업 파일을 읽지 못했습니다. 작업데이터.json 또는 로컬백업.json을 선택하세요.");
-  }
-}
-
 async function importJobsFromGoogleDrive() {
   try {
     const config = googleConfig();
@@ -991,6 +992,10 @@ async function importJobsFromGoogleDrive() {
       jobs.push(...extractJobsFromImportedData(await response.json()));
     }
     const count = mergeImportedJobs(jobs);
+    if (state.jobs[0]?.date) {
+      state.quickListMonth = state.jobs[0].date.slice(0, 7);
+      state.quickListSelectedDate = state.jobs[0].date;
+    }
     notify(`Google Drive에서 작업 ${count}개를 불러왔습니다.`);
   } catch (error) {
     console.error(error);
@@ -1155,15 +1160,6 @@ function bindEvents() {
     });
   });
 
-  app.querySelectorAll("[data-local-job-import]").forEach((input) => {
-    input.addEventListener("change", async () => {
-      const files = Array.from(input.files || []);
-      input.value = "";
-      if (!files.length) return;
-      await importJobsFromLocalFiles(files);
-    });
-  });
-
   const quickSearch = app.querySelector("[data-quick-list-search]");
   if (quickSearch) {
     quickSearch.addEventListener("input", () => {
@@ -1172,13 +1168,6 @@ function bindEvents() {
       render();
     });
   }
-
-  app.querySelectorAll("input[name='storage']").forEach((input) => {
-    input.addEventListener("change", () => {
-      state.storageMode = input.value;
-      saveState();
-    });
-  });
 
   app.querySelectorAll("[data-action]").forEach((button) => {
     button.addEventListener("click", () => handleAction(button.dataset.action, button.dataset));
@@ -1258,7 +1247,7 @@ function handleAction(action, data) {
   const job = currentJob();
   if (action === "save") {
     saveState();
-    notify("저장되었습니다.");
+    saveCurrentJobToGoogleDrive({ askMedia: false });
   }
   if (action === "new-job") {
     const next = createJob();
@@ -1274,13 +1263,20 @@ function handleAction(action, data) {
     saveState();
     render();
   }
-  if (action === "import-local-jobs") {
-    const input = app.querySelector("[data-local-job-import]");
-    if (input) input.click();
-  }
   if (action === "import-google-jobs") importJobsFromGoogleDrive();
   if (action === "clear-quick-list-search") {
     state.quickListQuery = "";
+    saveState();
+    render();
+  }
+  if (action === "set-quick-list-month") {
+    state.quickListMonth = data.month;
+    state.quickListSelectedDate = "";
+    saveState();
+    render();
+  }
+  if (action === "select-quick-date") {
+    state.quickListSelectedDate = data.date;
     saveState();
     render();
   }
@@ -1294,7 +1290,6 @@ function handleAction(action, data) {
   if (action === "google-drive-save") saveCurrentJobToGoogleDrive();
   if (action === "save-google-settings" && saveGoogleSettingsFromForm()) saveCurrentJobToGoogleDrive();
   if (action === "continue-google-drive-save") continueGoogleDriveSave();
-  if (action === "backup-reset-local") backupAndResetLocalStorage();
   if (action === "cancel-google-drive-save") {
     driveSaveDraft = null;
     render();
@@ -1508,8 +1503,9 @@ async function ensureDriveFolder(token, name, parentId) {
   return response.json();
 }
 
-async function saveCurrentJobToGoogleDrive() {
+async function saveCurrentJobToGoogleDrive(options = {}) {
   try {
+    const askMedia = options.askMedia !== false;
     const config = googleConfig();
     if (!config.apiKey || !config.clientId) {
       state.googleSetupOpen = true;
@@ -1520,8 +1516,8 @@ async function saveCurrentJobToGoogleDrive() {
     }
     state.googleSetupOpen = false;
     saveState();
-    const wantPhotos = confirm("사진폴더를 만들고 사진을 업로드하시겠습니까? y/n");
-    const wantRecordings = confirm("녹음폴더를 만들고 녹음파일을 업로드하시겠습니까? y/n");
+    const wantPhotos = askMedia ? confirm("사진폴더를 만들고 사진을 업로드하시겠습니까? y/n") : false;
+    const wantRecordings = askMedia ? confirm("녹음폴더를 만들고 녹음파일을 업로드하시겠습니까? y/n") : false;
     const prepared = await prepareGoogleDriveSave(wantPhotos, wantRecordings);
     if (wantPhotos || wantRecordings) {
       driveSaveDraft = {
@@ -1536,7 +1532,7 @@ async function saveCurrentJobToGoogleDrive() {
       notify("PDF와 폴더를 먼저 만들었습니다. 화면 아래에서 사진/녹음파일을 선택하세요.");
       return;
     }
-    notify(`Google Drive 저장 완료: ${prepared.dateFolder.name} 폴더 · PDF 2개 · 작업데이터 1개`);
+    notify(`Google Drive 저장 완료: ${prepared.yearFolder.name}/${prepared.monthFolder.name}/${prepared.dateFolder.name} · PDF 2개 · 작업데이터 1개`);
   } catch (error) {
     notify(`Google Drive 저장 실패: ${driveErrorMessage(error)}`);
     console.error(error);
@@ -1561,7 +1557,12 @@ async function prepareGoogleDriveSave(wantPhotos, wantRecordings) {
   state.googleDrive = { ...googleConfig(), folderId: mainFolder.id, folderName: mainFolder.name };
   saveState();
   const job = currentJob();
-  const dateFolder = await ensureDriveFolder(token, job.date || new Date().toISOString().slice(0, 10), mainFolder.id);
+  const dateValue = job.date || new Date().toISOString().slice(0, 10);
+  const year = dateValue.slice(0, 4) || new Date().getFullYear().toString();
+  const month = dateValue.slice(0, 7) || `${year}-${String(new Date().getMonth() + 1).padStart(2, "0")}`;
+  const yearFolder = await ensureDriveFolder(token, year, mainFolder.id);
+  const monthFolder = await ensureDriveFolder(token, month, yearFolder.id);
+  const dateFolder = await ensureDriveFolder(token, dateValue, monthFolder.id);
   const baseName = safeFileName(job.address || "주소미입력");
   const reportBlob = await createDocumentPdfBlob("report", job);
   const estimateBlob = await createDocumentPdfBlob("estimate", job);
@@ -1571,7 +1572,7 @@ async function prepareGoogleDriveSave(wantPhotos, wantRecordings) {
   await uploadBlobToDrive(token, dateFolder.id, `${baseName}-작업데이터.json`, dataBlob, "application/json");
   const photoFolder = wantPhotos ? await ensureDriveFolder(token, "사진", dateFolder.id) : null;
   const recordingFolder = wantRecordings ? await ensureDriveFolder(token, "녹음", dateFolder.id) : null;
-  return { token, dateFolder, baseName, photoFolder, recordingFolder };
+  return { token, yearFolder, monthFolder, dateFolder, baseName, photoFolder, recordingFolder };
 }
 
 async function uploadSelectedDriveMedia(prepared, photoFiles, recordingFiles) {
@@ -1594,44 +1595,6 @@ async function uploadSelectedDriveMedia(prepared, photoFiles, recordingFiles) {
     notify(`Google Drive 저장 완료: ${prepared.dateFolder.name} 폴더 · 사진 ${photoCount}개 · 녹음 ${recordingCount}개`);
   } catch (error) {
     notify(`Google Drive 업로드 실패: ${driveErrorMessage(error)}`);
-    console.error(error);
-  }
-}
-
-async function backupAndResetLocalStorage() {
-  if (!confirm("현재 로컬 자료를 Google Drive에 백업한 뒤 이 브라우저의 작업 자료를 비울까요?")) return;
-  try {
-    const config = googleConfig();
-    if (!config.apiKey || !config.clientId) {
-      state.googleSetupOpen = true;
-      saveState();
-      render();
-      notify("먼저 Google Drive 저장 설정을 입력하세요.");
-      return;
-    }
-    const prepared = await prepareGoogleDriveSave(false, false);
-    const backup = {
-      exportedAt: new Date().toISOString(),
-      storageKey: STORAGE_KEY,
-      googleFolder: prepared.dateFolder,
-      state,
-      note: "이 파일은 WaterLeak Multi Check 로컬 작업 데이터 백업입니다. 녹음 원본 파일은 별도 업로드가 필요할 수 있습니다.",
-    };
-    const blob = new Blob([JSON.stringify(backup, null, 2)], { type: "application/json" });
-    await uploadBlobToDrive(prepared.token, prepared.dateFolder.id, `${prepared.baseName}-로컬백업.json`, blob, "application/json");
-    await clearRecordingDatabase();
-    const googleBackup = googleConfig();
-    localStorage.removeItem(STORAGE_KEY);
-    state = { ...defaultState, googleDrive: googleBackup, currentJobId: null, jobs: [] };
-    const fresh = createJob();
-    state.currentJobId = fresh.id;
-    state.jobs = [fresh];
-    state.activeView = "dashboard";
-    saveState();
-    render();
-    notify("Google 백업 후 로컬 작업 자료를 비웠습니다.");
-  } catch (error) {
-    notify(`백업 리셋 실패: ${driveErrorMessage(error)}`);
     console.error(error);
   }
 }
