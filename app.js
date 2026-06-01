@@ -50,7 +50,6 @@ const viewOrder = [
   ["blog", "블로그 작성"],
   ["estimate", "견적서"],
   ["report", "AI 소견서"],
-  ["history", "작업 리스트"],
 ];
 
 const defaultState = {
@@ -66,6 +65,7 @@ const defaultState = {
   googleSetupOpen: false,
   blogEditorOpen: false,
   blogCustomOpen: false,
+  quickListOpen: false,
   jobs: [],
 };
 
@@ -284,6 +284,7 @@ function render() {
           <span class="status-pill top-status">${escapeHtml(job.date || "-")} · ${escapeHtml(job.address || "주소 미입력")}</span>
           <span class="status-pill storage-pill">${escapeHtml(storageEstimate.text)}</span>
           <button class="btn ghost top-new-job" data-action="new-job">새 작업</button>
+          <button class="btn ghost top-job-list" data-action="toggle-quick-list">리스트</button>
           <button class="btn ghost top-refresh" data-action="hard-refresh">새 버전 새로고침</button>
           <button class="btn warn top-backup-reset" data-action="backup-reset-local">백업리셋</button>
         </div>
@@ -293,6 +294,7 @@ function render() {
         <main class="content"><div class="view-stage ${animationClass}">${renderView()}</div></main>
       </div>
       ${state.blogEditorOpen ? renderBlogEditor(job) : ""}
+      ${state.quickListOpen ? renderQuickJobList() : ""}
     </div>
   `;
   bindEvents();
@@ -313,7 +315,6 @@ function renderView() {
     report: renderReport,
     blog: renderBlog,
     estimate: renderEstimate,
-    history: renderHistory,
   };
   return (views[state.activeView] || views.dashboard)(job);
 }
@@ -750,20 +751,48 @@ function renderEstimate(job) {
           </tr>
         </tbody>
       </table>
-      <table class="table estimate-items-table" style="margin-top:16px">
-        <thead><tr><th>품명</th><th style="width:90px">수량</th><th style="width:150px">공급가액</th><th class="no-print" style="width:80px">관리</th></tr></thead>
+      <div class="estimate-edit-list">
+        ${items.map((item, index) => `
+          <div class="estimate-edit-card">
+            <div class="estimate-edit-card-head">
+              <strong>품명 ${index + 1}</strong>
+              <button class="btn warn no-print" data-action="remove-estimate" data-index="${index}">삭제</button>
+            </div>
+            <label class="estimate-edit-field estimate-edit-name">
+              <span>품명</span>
+              <textarea class="estimate-item-name" data-estimate="${index}" data-field="name" placeholder="예: 누수 진단 및 온수 배관 보수">${escapeHtml([item.name, item.spec].filter(Boolean).join(" / "))}</textarea>
+            </label>
+            <div class="estimate-edit-row">
+              <label class="estimate-edit-field">
+                <span>수량</span>
+                <input data-estimate="${index}" data-field="qty" type="number" value="${escapeAttr(item.qty || 1)}" placeholder="1" />
+              </label>
+              <label class="estimate-edit-field">
+                <span>공급가액</span>
+                <input data-estimate="${index}" data-field="cost" type="number" value="${escapeAttr(estimateLineTotal(item) || "")}" placeholder="0" />
+              </label>
+            </div>
+          </div>
+        `).join("")}
+        <div class="estimate-total-box">
+          <div><span>공급가액</span><strong data-estimate-total="supplyTotal">${totals.supplyTotal.toLocaleString()}원</strong></div>
+          <div><span>부가세</span><strong data-estimate-total="tax">${totals.tax.toLocaleString()}원</strong></div>
+          <div class="estimate-grand-total"><span>합계금액</span><strong data-estimate-total="total">${totals.total.toLocaleString()}원</strong></div>
+        </div>
+      </div>
+      <table class="table estimate-print-items print-only" style="margin-top:16px">
+        <thead><tr><th>품명</th><th style="width:90px">수량</th><th style="width:150px">공급가액</th></tr></thead>
         <tbody>
-          ${items.map((item, index) => `
+          ${items.map((item) => `
             <tr>
-              <td><textarea class="estimate-item-name" data-estimate="${index}" data-field="name" placeholder="예: 누수 진단 및 온수 배관 보수">${escapeHtml([item.name, item.spec].filter(Boolean).join(" / "))}</textarea></td>
-              <td><input data-estimate="${index}" data-field="qty" type="number" value="${escapeAttr(item.qty || 1)}" placeholder="1" /></td>
-              <td><input data-estimate="${index}" data-field="cost" type="number" value="${escapeAttr(estimateLineTotal(item) || "")}" placeholder="0" /></td>
-              <td class="no-print"><button class="btn warn" data-action="remove-estimate" data-index="${index}">삭제</button></td>
+              <td>${escapeHtml([item.name, item.spec].filter(Boolean).join(" / "))}</td>
+              <td>${escapeHtml(item.qty || 1)}</td>
+              <td>${estimateLineTotal(item).toLocaleString()}원</td>
             </tr>
           `).join("")}
-          <tr><th colspan="2">공급가액</th><td colspan="2"><strong data-estimate-total="supplyTotal">${totals.supplyTotal.toLocaleString()}원</strong></td></tr>
-          <tr><th colspan="2">부가세</th><td colspan="2"><strong data-estimate-total="tax">${totals.tax.toLocaleString()}원</strong></td></tr>
-          <tr class="estimate-total"><th colspan="2">합계금액</th><td colspan="2"><strong data-estimate-total="total">${totals.total.toLocaleString()}원</strong></td></tr>
+          <tr><th colspan="2">공급가액</th><td><strong>${totals.supplyTotal.toLocaleString()}원</strong></td></tr>
+          <tr><th colspan="2">부가세</th><td><strong>${totals.tax.toLocaleString()}원</strong></td></tr>
+          <tr class="estimate-total"><th colspan="2">합계금액</th><td><strong>${totals.total.toLocaleString()}원</strong></td></tr>
         </tbody>
       </table>
       <div class="estimate-note">
@@ -774,35 +803,68 @@ function renderEstimate(job) {
   `;
 }
 
-function renderHistory() {
-  const query = document.querySelector("#historyQuery")?.value || "";
-  const jobs = state.jobs
-    .filter((job) => `${job.date} ${job.customerName || ""} ${job.address} ${job.phone} ${job.situation}`.toLowerCase().includes(query.toLowerCase()))
-    .sort((a, b) => b.date.localeCompare(a.date));
+function renderQuickJobList() {
+  const jobs = [...state.jobs].sort((a, b) => `${b.date || ""}${b.createdAt || ""}`.localeCompare(`${a.date || ""}${a.createdAt || ""}`));
   return `
-    <div class="section-head">
-      <div>
-        <h1>전체 작업 상황 리스트</h1>
-        <p class="muted">날짜별 작업 목록을 찾고 출력할 수 있습니다.</p>
-      </div>
-      <div class="toolbar">
-        <input id="historyQuery" value="${escapeAttr(query)}" placeholder="주소, 전화번호, 내용 찾기" />
-        <button class="btn ghost" data-action="print">출력</button>
-      </div>
-    </div>
-    <section class="list">
-      ${jobs.map((job) => `
-        <div class="list-item">
-          <strong>${escapeHtml(job.date)}</strong>
+    <div class="quick-list-backdrop">
+      <section class="quick-list-box">
+        <div class="quick-list-head">
           <div>
-            <b>${escapeHtml(job.address || "주소 미입력")}</b>
-            <p class="muted">${escapeHtml(job.phone || "-")} · 기본 ${countDone(job.plumbingChecks)}/${job.plumbingChecks.length}, 방수 ${countDone(job.waterproofChecks)}/${job.waterproofChecks.length}</p>
+            <h2>작업 리스트</h2>
+            <p class="muted">저장된 작업을 날짜별, 주소별, 아파트별로 분류해서 봅니다.</p>
           </div>
-          <button class="btn ghost" data-action="select-job" data-id="${job.id}">열기</button>
+          <button class="btn ghost" data-action="close-quick-list">닫기</button>
         </div>
-      `).join("") || `<div class="list-item">검색 결과가 없습니다.</div>`}
-    </section>
+        <div class="quick-list-grid">
+          ${renderQuickListGroup("날짜별", groupJobsBy(jobs, (job) => job.date || "날짜 없음"))}
+          ${renderQuickListGroup("주소별", groupJobsBy(jobs, (job) => normalizeGroupLabel(job.address, "주소 미입력")))}
+          ${renderQuickListGroup("아파트별", groupJobsBy(jobs, (job) => extractApartmentGroup(job.address)))}
+        </div>
+      </section>
+    </div>
   `;
+}
+
+function renderQuickListGroup(title, groups) {
+  const entries = Object.entries(groups);
+  return `
+    <div class="quick-list-column">
+      <h3>${escapeHtml(title)}</h3>
+      ${entries.length ? entries.map(([label, jobs]) => `
+        <details class="quick-list-group" open>
+          <summary>${escapeHtml(label)} <span>${jobs.length}건</span></summary>
+          <div class="quick-list-items">
+            ${jobs.map((job) => `
+              <button class="quick-list-item ${job.id === state.currentJobId ? "active" : ""}" data-action="select-job" data-id="${escapeAttr(job.id)}">
+                <strong>${escapeHtml(job.address || "주소 미입력")}</strong>
+                <span>${escapeHtml(job.date || "-")} · ${escapeHtml(job.customerName || job.phone || "이름/전화 없음")}</span>
+              </button>
+            `).join("")}
+          </div>
+        </details>
+      `).join("") : `<p class="muted">저장된 작업이 없습니다.</p>`}
+    </div>
+  `;
+}
+
+function groupJobsBy(jobs, getKey) {
+  return jobs.reduce((groups, job) => {
+    const key = getKey(job);
+    groups[key] = groups[key] || [];
+    groups[key].push(job);
+    return groups;
+  }, {});
+}
+
+function normalizeGroupLabel(value, fallback) {
+  return String(value || "").trim() || fallback;
+}
+
+function extractApartmentGroup(address = "") {
+  const text = String(address || "").trim();
+  if (!text) return "아파트명 없음";
+  const match = text.match(/[가-힣A-Za-z0-9·\-\s]+?(?:아파트|APT|apt|오피스텔|빌라|맨션|주공|자이|래미안|푸르지오|힐스테이트|더샵|롯데캐슬|아이파크)/);
+  return match ? match[0].trim() : "아파트명 없음";
 }
 
 function field(id, label, type, value, placeholder = "", step = "", className = "") {
@@ -944,9 +1006,6 @@ function bindEvents() {
     });
   }
 
-  const historyQuery = app.querySelector("#historyQuery");
-  if (historyQuery) historyQuery.addEventListener("input", render);
-
   bindSwipeNavigation();
 }
 
@@ -1008,6 +1067,17 @@ function handleAction(action, data) {
     state.jobs.unshift(next);
     state.currentJobId = next.id;
     state.activeView = "dashboard";
+    state.quickListOpen = false;
+    saveState();
+    render();
+  }
+  if (action === "toggle-quick-list") {
+    state.quickListOpen = !state.quickListOpen;
+    saveState();
+    render();
+  }
+  if (action === "close-quick-list") {
+    state.quickListOpen = false;
     saveState();
     render();
   }
@@ -1098,6 +1168,7 @@ function handleAction(action, data) {
   if (action === "select-job") {
     state.currentJobId = data.id;
     state.activeView = "dashboard";
+    state.quickListOpen = false;
     saveState();
     render();
   }
