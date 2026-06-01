@@ -69,6 +69,7 @@ const defaultState = {
   quickListQuery: "",
   quickListMonth: new Date().toISOString().slice(0, 7),
   quickListSelectedDate: "",
+  deletedJobIds: [],
   jobs: [],
 };
 
@@ -819,7 +820,7 @@ function renderEstimate(job) {
 
 function renderQuickJobList() {
   const query = state.quickListQuery || "";
-  const allJobs = [...state.jobs].sort((a, b) => `${b.date || ""}${b.createdAt || ""}`.localeCompare(`${a.date || ""}${a.createdAt || ""}`));
+  const allJobs = visibleJobs().sort((a, b) => `${b.date || ""}${b.createdAt || ""}`.localeCompare(`${a.date || ""}${a.createdAt || ""}`));
   const jobs = allJobs
     .filter((job) => matchesQuickJobSearch(job, query))
     .sort((a, b) => `${b.date || ""}${b.createdAt || ""}`.localeCompare(`${a.date || ""}${a.createdAt || ""}`));
@@ -908,13 +909,24 @@ function renderQuickJobItems(jobs) {
   return jobs.length ? `
     <div class="quick-list-items">
       ${jobs.map((job) => `
-        <button class="quick-list-item ${job.id === state.currentJobId ? "active" : ""}" data-action="select-job" data-id="${escapeAttr(job.id)}">
-          <strong>${escapeHtml(job.address || "주소 미입력")}</strong>
-          <span>${escapeHtml(job.date || "-")} · ${escapeHtml(job.customerName || job.phone || "이름/전화 없음")}</span>
-        </button>
+        <div class="quick-list-item ${job.id === state.currentJobId ? "active" : ""}">
+          <button class="quick-list-main" data-action="select-job" data-id="${escapeAttr(job.id)}">
+            <strong>${escapeHtml(job.address || "주소 미입력")}</strong>
+            <span>${escapeHtml(job.date || "-")} · ${escapeHtml(job.customerName || job.phone || "이름/전화 없음")}</span>
+          </button>
+          <div class="quick-list-item-actions">
+            <button class="btn primary" data-action="edit-quick-job" data-id="${escapeAttr(job.id)}">수정</button>
+            <button class="btn warn" data-action="delete-quick-job" data-id="${escapeAttr(job.id)}">삭제</button>
+          </div>
+        </div>
       `).join("")}
     </div>
   ` : `<p class="muted">해당 작업이 없습니다.</p>`;
+}
+
+function visibleJobs() {
+  const deleted = new Set(state.deletedJobIds || []);
+  return state.jobs.filter((job) => job?.id && !deleted.has(job.id));
 }
 
 function shiftMonth(month, delta) {
@@ -1055,6 +1067,7 @@ function extractJobsFromImportedData(data) {
 }
 
 function mergeImportedJobs(importedJobs) {
+  const deleted = new Set(state.deletedJobIds || []);
   const validJobs = importedJobs.filter((job) => job && (job.id || job.date || job.address || job.customerName));
   let added = 0;
   validJobs.forEach((job) => {
@@ -1070,6 +1083,7 @@ function mergeImportedJobs(importedJobs) {
       photoFiles: Array.isArray(job.photoFiles) ? job.photoFiles : [],
       leakAudioPoints: Array.isArray(job.leakAudioPoints) ? job.leakAudioPoints : [],
     };
+    if (deleted.has(normalizedJob.id)) return;
     const existingIndex = state.jobs.findIndex((existing) => existing.id === normalizedJob.id);
     if (existingIndex >= 0) {
       state.jobs[existingIndex] = { ...state.jobs[existingIndex], ...normalizedJob };
@@ -1434,13 +1448,41 @@ function handleAction(action, data) {
   }
   if (action === "print") window.print();
   if (action === "download-estimate-pdf") openPdfPrintWindow("estimate");
-  if (action === "select-job") {
-    state.currentJobId = data.id;
-    state.activeView = "dashboard";
-    state.quickListOpen = false;
-    saveState();
-    render();
+  if (action === "select-job" || action === "edit-quick-job") openQuickJob(data.id);
+  if (action === "delete-quick-job") deleteQuickJob(data.id);
+}
+
+function openQuickJob(id) {
+  if (!state.jobs.some((item) => item.id === id)) {
+    notify("작업 데이터를 찾지 못했습니다.");
+    return;
   }
+  state.currentJobId = id;
+  state.activeView = "dashboard";
+  state.quickListOpen = false;
+  saveState();
+  render();
+}
+
+function deleteQuickJob(id) {
+  const job = state.jobs.find((item) => item.id === id);
+  if (!job) {
+    notify("삭제할 작업을 찾지 못했습니다.");
+    return;
+  }
+  const label = [job.date, job.address || job.customerName || "주소 미입력"].filter(Boolean).join(" · ");
+  if (!confirm(`${label}\n\n이 작업을 리스트에서 삭제할까요?\nGoogle Drive 원본 파일은 지우지 않고, 앱 목록에서만 숨깁니다.`)) return;
+  state.deletedJobIds = [...new Set([...(state.deletedJobIds || []), id])];
+  state.jobs = state.jobs.filter((item) => item.id !== id);
+  if (state.currentJobId === id) {
+    const next = visibleJobs()[0] || createJob();
+    if (!state.jobs.some((item) => item.id === next.id)) state.jobs.unshift(next);
+    state.currentJobId = next.id;
+    state.activeView = "dashboard";
+  }
+  saveState();
+  render();
+  notify("작업 리스트에서 숨김 처리했습니다. Google Drive 원본은 그대로 둡니다.");
 }
 
 function openExternalMap(address, provider = "kakao") {

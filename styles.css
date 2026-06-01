@@ -187,11 +187,29 @@ button {
   border: 1px solid #d8e3e8;
   border-radius: 6px;
   color: var(--ink);
+  display: grid;
+  gap: 8px;
+  grid-template-columns: minmax(0, 1fr) auto;
+  padding: 8px;
+  text-align: left;
+}
+
+.quick-list-main {
+  background: transparent;
+  border: 0;
+  color: inherit;
   cursor: pointer;
   display: grid;
   gap: 3px;
-  padding: 8px;
+  min-width: 0;
+  padding: 0;
   text-align: left;
+}
+
+.quick-list-item-actions {
+  align-items: center;
+  display: flex;
+  gap: 6px;
 }
 
 .quick-list-item.active {
@@ -199,14 +217,14 @@ button {
   border-color: #5eead4;
 }
 
-.quick-list-item strong,
-.quick-list-item span {
+.quick-list-main strong,
+.quick-list-main span {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.quick-list-item span {
+.quick-list-main span {
   color: var(--muted);
   font-size: 12px;
 }
@@ -1703,6 +1721,15 @@ canvas {
 
   .quick-list-search {
     grid-template-columns: 1fr;
+  }
+
+  .quick-list-item {
+    grid-template-columns: 1fr;
+  }
+
+  .quick-list-item-actions {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
   }
 
   .phone-input-row,
