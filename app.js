@@ -112,7 +112,6 @@ function createJob() {
     blogPhotos: [],
     videos: [],
     recordings: [],
-    bluetoothDevice: "",
     report: "",
     blog: "",
     blogCategory: "",
@@ -345,9 +344,9 @@ function renderFieldSteps(activeId) {
   return `
     <div class="field-step-strip">
       ${steps.map(([id, label], index) => `
-        <span class="${id === activeId ? "active" : ""}">
+        <button class="${id === activeId ? "active" : ""}" data-view="${id}" type="button">
           <b>${index + 1}</b>${label}
-        </span>
+        </button>
       `).join("")}
     </div>
   `;
@@ -396,11 +395,11 @@ function renderFieldReadinessPanel(job) {
   const estimateReady = (job.estimateItems || []).some((item) => Number(item.cost || item.unitPrice || 0) > 0 || item.name);
   const somersReady = Boolean((job.somersPhotos || []).length || job.somersLeakLevel || job.somersFrequency || job.somersSuspectLocation);
   const items = [
-    ["Google Drive", googleReady ? "준비" : "설정 필요", googleReady ? "작업데이터, PDF, 소머즈 촬영 업로드 가능" : "API Key와 OAuth Client ID 입력 후 저장"],
-    ["마이크 입력", micReady ? "지원" : "미지원", micReady ? "녹음과 실시간 주파수 분석 가능" : "HTTPS/브라우저 권한 또는 장치 연결 확인"],
-    ["녹음 기록", recordingCount ? `${recordingCount}개` : "대기", recordingCount ? "현장 음성 기록 저장됨" : "상황/점검/누수추적기에서 녹음 가능"],
-    ["소머즈", somersReady ? "기록중" : "대기", somersReady ? "촬영/OCR 자료가 작업 기록에 포함됨" : "촬영 이미지와 OCR 값을 입력"],
-    ["문서 출력", reportReady || estimateReady ? "준비중" : "대기", "소견서와 견적서는 PDF 인쇄로 확인"],
+    ["Google", googleReady ? "준비" : "설정", googleReady ? "Drive 저장 가능" : "키 입력 필요"],
+    ["마이크", micReady ? "지원" : "미지원", micReady ? "녹음/분석 가능" : "권한 확인"],
+    ["녹음", recordingCount ? `${recordingCount}개` : "대기", recordingCount ? "기록 있음" : "녹음 가능"],
+    ["소머즈", somersReady ? "기록" : "대기", somersReady ? "OCR 포함" : "촬영 필요"],
+    ["문서", reportReady || estimateReady ? "준비" : "대기", "출력 확인"],
   ];
   return `
     <section class="field-readiness-panel">
@@ -586,8 +585,7 @@ function renderTracker(job) {
         <p class="muted">마이크 입력을 실시간 주파수 그래프로 표시하고 필요한 소리를 녹음합니다.</p>
       </div>
       <div class="toolbar">
-        <button class="btn ghost" data-action="bluetooth">블루투스 연결</button>
-        <button class="btn primary" data-action="start-spectrum">소리 분석 시작</button>
+        <button class="btn primary" data-action="start-spectrum">USB-C / 3.5파이 입력 분석</button>
         <button class="btn ghost record-btn ${trackerRecordingActive ? "recording" : ""} ${trackerRecording ? "saved" : ""}" data-action="record-tracker">
           <span class="voice-icon ${trackerRecordingActive && !trackerRecordingPaused ? "blue pulse" : trackerRecording ? "blue" : "idle"}"></span>${trackerRecordingActive ? "녹음멈춤" : trackerRecording ? "저장완료" : "녹음"}
         </button>
@@ -615,7 +613,7 @@ function renderTracker(job) {
       <div class="leak-ai-head">
         <div>
           <h2>AI 청음 누수 분석</h2>
-          <p class="muted">청음기 이어폰 출력은 USB-C 오디오 캡처를 통해 입력하는 방식이 가장 안정적입니다.</p>
+          <p class="muted">청음기 3.5파이 출력 또는 USB-C 오디오 캡처 입력을 실시간 주파수 그래프로 분석합니다.</p>
         </div>
       </div>
       <div class="leak-metrics-grid">
@@ -655,8 +653,8 @@ function renderTrackerV2Expansion(leakPoints = []) {
       <article class="tracker-v2-card">
         <span class="v2-kicker">DAESUNG INPUT</span>
         <h3>대성 청음기 입력</h3>
-        <p>대성 청음기 → AUX → USB-C 인터페이스 → 앱 입력 흐름을 기준으로 실시간 분석 영역을 유지합니다.</p>
-        <div class="v2-flow"><span>청음기</span><b>→</b><span>AUX</span><b>→</b><span>USB-C</span><b>→</b><span>FFT</span></div>
+        <p>대성 청음기 → 3.5파이/AUX → USB-C 오디오 캡처 또는 직접 입력 흐름을 기준으로 실시간 분석 영역을 유지합니다.</p>
+        <div class="v2-flow"><span>청음기</span><b>→</b><span>3.5파이</span><b>→</b><span>USB-C</span><b>→</b><span>FFT</span></div>
       </article>
       <article class="tracker-v2-card">
         <span class="v2-kicker">SOMERS OCR</span>
@@ -716,10 +714,10 @@ function renderTrackerV2Workbench(job, leakPoints = []) {
         <div>
           <span class="v2-kicker">SCREEN 02</span>
           <h3>대성 청음 분석 화면</h3>
-          <p>현재 실시간 그래프와 연결되는 입력 계통입니다. AUX/USB-C 입력 후 FFT, 피크, 누수대역 평균을 같은 기준으로 봅니다.</p>
+          <p>현재 실시간 그래프와 연결되는 입력 계통입니다. 3.5파이/AUX 또는 USB-C 입력 후 FFT, 피크, 누수대역 평균을 같은 기준으로 봅니다.</p>
         </div>
         <div class="v2-meter-stack">
-          <span><b>INPUT</b> USB-C 오디오 캡처</span>
+          <span><b>INPUT</b> 3.5파이 / USB-C 오디오 입력</span>
           <span><b>FFT</b> 실시간 주파수 분석</span>
           <span><b>WAVE</b> 실시간 파형 확장 예정</span>
         </div>
@@ -1653,7 +1651,6 @@ function handleAction(action, data) {
     saveState();
     render();
   }
-  if (action === "bluetooth") connectBluetooth();
   if (action === "start-spectrum") startSpectrum();
   if (action === "stop-spectrum") stopSpectrum();
   if (action === "save-leak-point") saveLeakAudioPoint();
@@ -2731,19 +2728,6 @@ function buildEstimatePrintHtml(job) {
 function stampSealImage(className = "stamp-seal") {
   const src = new URL("assets/stamp-choi.png", window.location.href).href;
   return `<img class="${className}" src="${src}" alt="최규석 도장" />`;
-}
-
-async function connectBluetooth() {
-  if (!navigator.bluetooth) {
-    notify("이 브라우저는 Web Bluetooth를 지원하지 않습니다.");
-    return;
-  }
-  try {
-    const device = await navigator.bluetooth.requestDevice({ acceptAllDevices: true });
-    updateJob({ bluetoothDevice: device.name || device.id || "Bluetooth 장치" });
-  } catch (error) {
-    notify("블루투스 연결이 취소되었습니다.");
-  }
 }
 
 async function startSpectrum() {
