@@ -107,6 +107,8 @@ function createJob() {
     waterproofChecks: createChecks(baseWaterproofChecks),
     photos: [],
     photoFiles: [],
+    somersPhotos: [],
+    somersPhotoFiles: [],
     blogPhotos: [],
     videos: [],
     recordings: [],
@@ -116,6 +118,13 @@ function createJob() {
     blogCategory: "",
     blogKeyword: "",
     leakAudioPoints: [],
+    somersLeakLevel: "",
+    somersFrequency: "",
+    somersOrangeMark: "",
+    somersSuspectLocation: "",
+    somersCaptureMemo: "",
+    excavationResult: "",
+    finalLeakLocation: "",
     vatMode: "exclusive",
     estimateItems: [{ name: "", cost: "" }],
     createdAt: new Date().toISOString(),
@@ -212,7 +221,25 @@ function currentJob() {
   }
   job.plumbingChecks = normalizeChecks(job.plumbingChecks, basePlumbingChecks);
   job.waterproofChecks = normalizeChecks(job.waterproofChecks, baseWaterproofChecks);
+  normalizeV2Fields(job);
   return job;
+}
+
+function normalizeV2Fields(job) {
+  const defaults = {
+    somersLeakLevel: "",
+    somersFrequency: "",
+    somersOrangeMark: "",
+    somersSuspectLocation: "",
+    somersCaptureMemo: "",
+    excavationResult: "",
+    finalLeakLocation: "",
+  };
+  Object.entries(defaults).forEach(([key, value]) => {
+    if (job[key] == null) job[key] = value;
+  });
+  if (!Array.isArray(job.somersPhotos)) job.somersPhotos = [];
+  if (!Array.isArray(job.somersPhotoFiles)) job.somersPhotoFiles = [];
 }
 
 function updateJob(patch) {
@@ -306,6 +333,26 @@ function renderView() {
   return (views[state.activeView] || views.dashboard)(job);
 }
 
+function renderFieldSteps(activeId) {
+  const steps = [
+    ["dashboard", "현장정보"],
+    ["basic", "기본점검"],
+    ["tracker", "누수추적"],
+    ["blog", "블로그"],
+    ["estimate", "견적서"],
+    ["report", "소견서"],
+  ];
+  return `
+    <div class="field-step-strip">
+      ${steps.map(([id, label], index) => `
+        <span class="${id === activeId ? "active" : ""}">
+          <b>${index + 1}</b>${label}
+        </span>
+      `).join("")}
+    </div>
+  `;
+}
+
 function renderDashboard(job) {
   return `
     <div class="section-head">
@@ -318,6 +365,8 @@ function renderDashboard(job) {
         <button class="btn primary" data-action="google-drive-save">구글저장</button>
       </div>
     </div>
+    ${renderFieldSteps("dashboard")}
+    ${renderFieldReadinessPanel(job)}
     <section class="panel grid">
       <div class="info-grid dashboard-info-grid">
         ${field("date", "날짜", "date", job.date, "", "", "info-date")}
@@ -330,10 +379,63 @@ function renderDashboard(job) {
       ${renderGoogleDriveInlineSetup()}
       ${renderDriveMediaPicker()}
     </section>
+    ${renderDashboardCommandDeck(job)}
     <section class="meter-cards" style="margin-top:14px">
       ${metric("점검 완료", countDone([...job.plumbingChecks, ...job.waterproofChecks]), `${job.plumbingChecks.length + job.waterproofChecks.length}개 중`)}
       ${metric("소견서", job.report ? "작성됨" : "미작성", "AI 초안")}
       ${metric("저장방식", "구글", "Drive 저장")}
+    </section>
+  `;
+}
+
+function renderFieldReadinessPanel(job) {
+  const googleReady = Boolean(googleConfig().apiKey && googleConfig().clientId);
+  const micReady = Boolean(navigator.mediaDevices?.getUserMedia);
+  const recordingCount = (job.recordings || []).length;
+  const reportReady = Boolean(job.report);
+  const estimateReady = (job.estimateItems || []).some((item) => Number(item.cost || item.unitPrice || 0) > 0 || item.name);
+  const somersReady = Boolean((job.somersPhotos || []).length || job.somersLeakLevel || job.somersFrequency || job.somersSuspectLocation);
+  const items = [
+    ["Google Drive", googleReady ? "준비" : "설정 필요", googleReady ? "작업데이터, PDF, 소머즈 촬영 업로드 가능" : "API Key와 OAuth Client ID 입력 후 저장"],
+    ["마이크 입력", micReady ? "지원" : "미지원", micReady ? "녹음과 실시간 주파수 분석 가능" : "HTTPS/브라우저 권한 또는 장치 연결 확인"],
+    ["녹음 기록", recordingCount ? `${recordingCount}개` : "대기", recordingCount ? "현장 음성 기록 저장됨" : "상황/점검/누수추적기에서 녹음 가능"],
+    ["소머즈", somersReady ? "기록중" : "대기", somersReady ? "촬영/OCR 자료가 작업 기록에 포함됨" : "촬영 이미지와 OCR 값을 입력"],
+    ["문서 출력", reportReady || estimateReady ? "준비중" : "대기", "소견서와 견적서는 PDF 인쇄로 확인"],
+  ];
+  return `
+    <section class="field-readiness-panel">
+      ${items.map(([label, status, help]) => `
+        <div class="${status === "설정 필요" || status === "미지원" ? "attention" : ""}">
+          <span>${label}</span>
+          <b>${status}</b>
+          <small>${help}</small>
+        </div>
+      `).join("")}
+    </section>
+  `;
+}
+
+function renderDashboardCommandDeck(job) {
+  const checks = [...job.plumbingChecks, ...job.waterproofChecks];
+  const done = countDone(checks);
+  const pointCount = (job.leakAudioPoints || []).length;
+  const cards = [
+    ["basic", "01", "기본점검 계속", `${done}/${checks.length} 완료`, "밸브, 방수, 우수관, 유가 상태를 빠르게 확인합니다."],
+    ["tracker", "02", "누수추적 시작", `${pointCount}개 지점`, "실시간 그래프와 청음 점수로 의심 위치를 좁힙니다."],
+    ["blog", "03", "블로그 자료 정리", job.blog ? "자료 있음" : "대기", "현장 자료를 ChatGPT용 프롬프트와 원고로 정리합니다."],
+    ["estimate", "04", "견적서 작성", `${(job.estimateItems || []).length}개 항목`, "공급가액, 부가세, 합계를 현장에서 바로 계산합니다."],
+    ["report", "05", "AI 소견서 작성", job.report ? "작성됨" : "미작성", "현장 기록과 점검 결과를 소견서 초안으로 만듭니다."],
+  ];
+  return `
+    <section class="command-deck">
+      ${cards.map(([view, index, title, meta, desc]) => `
+        <button class="command-card" data-view="${view}" type="button">
+          <span>${index}</span>
+          <strong>${title}</strong>
+          <b>${meta}</b>
+          <small>${desc}</small>
+        </button>
+      `).join("")}
     </section>
   `;
 }
@@ -419,7 +521,7 @@ function renderGoogleDriveInlineSetup() {
 function renderChecklist(title) {
   const job = currentJob();
   const groups = [
-    ["plumbingChecks", "기본점검", (job.plumbingChecks || []).filter((check) => check.id !== "hot_water")],
+    ["plumbingChecks", "기본점검", job.plumbingChecks || []],
     ["waterproofChecks", "방수문제", job.waterproofChecks || []],
   ];
   return `
@@ -433,6 +535,7 @@ function renderChecklist(title) {
         <button class="btn primary" data-action="save">점검목록 저장</button>
       </div>
     </div>
+    ${renderFieldSteps("basic")}
     <section class="panel check-list">
       ${groups.map(([type, groupTitle, checks]) => `
         <h2 class="check-group-title">${groupTitle}</h2>
@@ -493,6 +596,7 @@ function renderTracker(job) {
         <button class="btn warn" data-action="stop-spectrum">정지</button>
       </div>
     </div>
+    ${renderFieldSteps("tracker")}
     <section class="audio-panel">
       <div class="toolbar" style="justify-content:space-between;margin-bottom:10px">
         <h2>실시간 주파수 그래프</h2>
@@ -538,7 +642,123 @@ function renderTracker(job) {
         `).join("") : `<p class="muted">아직 저장된 측정 지점이 없습니다.</p>`}
       </div>
     </section>
+    ${renderTrackerV2Expansion(leakPoints)}
+    ${renderTrackerV2Workbench(job, leakPoints)}
     ${renderTrackerPipeCheck(job)}
+  `;
+}
+
+function renderTrackerV2Expansion(leakPoints = []) {
+  const bestPoint = [...leakPoints].sort((a, b) => Number(b.score || 0) - Number(a.score || 0))[0];
+  return `
+    <section class="tracker-v2-grid">
+      <article class="tracker-v2-card">
+        <span class="v2-kicker">DAESUNG INPUT</span>
+        <h3>대성 청음기 입력</h3>
+        <p>대성 청음기 → AUX → USB-C 인터페이스 → 앱 입력 흐름을 기준으로 실시간 분석 영역을 유지합니다.</p>
+        <div class="v2-flow"><span>청음기</span><b>→</b><span>AUX</span><b>→</b><span>USB-C</span><b>→</b><span>FFT</span></div>
+      </article>
+      <article class="tracker-v2-card">
+        <span class="v2-kicker">SOMERS OCR</span>
+        <h3>소머즈 촬영 데이터</h3>
+        <p>API가 없는 장비 화면은 촬영 후 OCR로 누수 레벨, 주파수, 그래프, 주황색 표시, 의심 위치를 읽는 방향입니다.</p>
+        <div class="v2-tags"><span>누수 레벨</span><span>주파수</span><span>그래프</span><span>의심 위치</span></div>
+      </article>
+      <article class="tracker-v2-card">
+        <span class="v2-kicker">MULTI POINT</span>
+        <h3>다지점 비교 모드</h3>
+        <p>A/B/C/D 지점을 같은 기준으로 저장하고 비교해 최종 의심 위치를 빠르게 추천하는 공간입니다.</p>
+        <div class="v2-point-row">
+          ${["A", "B", "C", "D"].map((label, index) => {
+            const point = leakPoints[index];
+            return `<span class="${point ? "filled" : ""}">${label}<small>${point ? `${Number(point.score || 0)}%` : "대기"}</small></span>`;
+          }).join("")}
+        </div>
+      </article>
+      <article class="tracker-v2-card">
+        <span class="v2-kicker">LEARNING DATA</span>
+        <h3>결과 저장/학습 데이터</h3>
+        <p>청음 결과, 소머즈 OCR, 실제 굴착 결과를 함께 남겨 장기 학습 데이터로 확장합니다.</p>
+        <strong class="v2-recommend">${bestPoint ? `현재 최고 의심: ${escapeHtml(bestPoint.name || "측정지점")} ${Number(bestPoint.score || 0)}%` : "측정 지점을 저장하면 추천 후보가 표시됩니다."}</strong>
+      </article>
+    </section>
+  `;
+}
+
+function renderTrackerV2Workbench(job, leakPoints = []) {
+  const topPoints = [...leakPoints].sort((a, b) => Number(b.score || 0) - Number(a.score || 0)).slice(0, 4);
+  const somersPreview = (job.somersPhotoFiles || [])[0];
+  return `
+    <section class="tracker-v2-workbench">
+      <article class="v2-screen somers-screen">
+        <div>
+          <span class="v2-kicker">SCREEN 01</span>
+          <h3>소머즈 촬영 화면</h3>
+          <p>장비 화면을 촬영해 OCR로 누수 레벨, 주파수, 그래프, 주황색 표시, 의심 위치를 추출하는 설계 영역입니다.</p>
+        </div>
+        <label class="v2-capture-box">
+          <span>소머즈 화면 사진 선택</span>
+          <input data-file-type="somersPhotos" type="file" accept="image/*" capture="environment" multiple />
+        </label>
+        <div class="v2-capture-status">
+          <span>촬영 자료 <b>${(job.somersPhotos || []).length ? `${job.somersPhotos.length}장 저장됨` : "대기"}</b></span>
+          ${somersPreview?.dataUrl ? `<img src="${escapeAttr(somersPreview.dataUrl)}" alt="소머즈 촬영 미리보기" />` : ""}
+        </div>
+        <div class="v2-ocr-grid">
+          <label>누수 레벨<input data-job-field="somersLeakLevel" value="${escapeAttr(job.somersLeakLevel || "")}" placeholder="예: 78" /></label>
+          <label>주파수<input data-job-field="somersFrequency" value="${escapeAttr(job.somersFrequency || "")}" placeholder="예: 620 Hz" /></label>
+          <label>주황 표시<input data-job-field="somersOrangeMark" value="${escapeAttr(job.somersOrangeMark || "")}" placeholder="예: 강함 / 우측" /></label>
+          <label>의심 위치<input data-job-field="somersSuspectLocation" value="${escapeAttr(job.somersSuspectLocation || "")}" placeholder="예: 욕실 앞 배관" /></label>
+          <label>촬영 메모<textarea data-job-field="somersCaptureMemo" placeholder="촬영 각도, 화면 밝기, 소머즈 그래프 특징을 기록합니다.">${escapeHtml(job.somersCaptureMemo || "")}</textarea></label>
+        </div>
+      </article>
+      <article class="v2-screen daesung-screen">
+        <div>
+          <span class="v2-kicker">SCREEN 02</span>
+          <h3>대성 청음 분석 화면</h3>
+          <p>현재 실시간 그래프와 연결되는 입력 계통입니다. AUX/USB-C 입력 후 FFT, 피크, 누수대역 평균을 같은 기준으로 봅니다.</p>
+        </div>
+        <div class="v2-meter-stack">
+          <span><b>INPUT</b> USB-C 오디오 캡처</span>
+          <span><b>FFT</b> 실시간 주파수 분석</span>
+          <span><b>WAVE</b> 실시간 파형 확장 예정</span>
+        </div>
+      </article>
+      <article class="v2-screen compare-screen">
+        <div>
+          <span class="v2-kicker">SCREEN 03</span>
+          <h3>다지점 비교 화면</h3>
+          <p>A/B/C/D 지점의 점수와 위험도를 비교해 현장에서 바로 의심 위치를 좁히는 화면입니다.</p>
+        </div>
+        <div class="v2-compare-table">
+          ${["A", "B", "C", "D"].map((label, index) => {
+            const point = topPoints[index];
+            return `
+              <div class="${point ? "filled" : ""}">
+                <strong>${label}</strong>
+                <span>${escapeHtml(point?.name || "측정 대기")}</span>
+                <b>${point ? `${Number(point.score || 0)}%` : "- %"}</b>
+              </div>
+            `;
+          }).join("")}
+        </div>
+      </article>
+      <article class="v2-screen save-screen">
+        <div>
+          <span class="v2-kicker">SCREEN 04</span>
+          <h3>결과 저장 화면</h3>
+          <p>대성 청음, 소머즈 OCR, 다지점 비교, 실제 굴착 결과를 한 작업 기록에 묶어 장기 학습 데이터로 남깁니다.</p>
+        </div>
+        <div class="v2-save-checks">
+          <span>청음 점수 <b>${leakPoints.length ? "저장됨" : "대기"}</b></span>
+          <span>소머즈 OCR <b>${job.somersLeakLevel || job.somersFrequency || job.somersSuspectLocation ? "기록됨" : "대기"}</b></span>
+          <label>최종 누수 위치<input data-job-field="finalLeakLocation" value="${escapeAttr(job.finalLeakLocation || "")}" placeholder="예: 주방 싱크대 하부 온수관" /></label>
+          <label>실제 굴착 결과<textarea data-job-field="excavationResult" placeholder="굴착 위치, 실제 파손 지점, 보수 결과를 기록합니다.">${escapeHtml(job.excavationResult || "")}</textarea></label>
+          <span>Google Drive <b>연동 가능</b></span>
+        </div>
+        <button class="btn primary" data-action="google-drive-save">결과 Google 저장</button>
+      </article>
+    </section>
   `;
 }
 
@@ -587,6 +807,7 @@ function renderReport(job) {
         <button class="btn ghost" data-action="clear-report">새로만들기</button>
       </div>
     </div>
+    ${renderFieldSteps("report")}
     <div class="grid two">
       <section class="panel grid">
         <h2>사진 업로드</h2>
@@ -600,6 +821,16 @@ function renderReport(job) {
         </div>
       </section>
     </div>
+    <section class="panel pdf-preview-panel">
+      <div class="section-head compact">
+        <div>
+          <h2>소견서 출력 미리보기</h2>
+          <p class="muted">PDF 팝업이 차단되어도 현장에서 출력 내용을 먼저 확인할 수 있습니다.</p>
+        </div>
+        <button class="btn ghost" data-action="download-report-pdf">인쇄창 다시 열기</button>
+      </div>
+      <div class="pdf-preview-page">${buildReportPrintHtml(job)}</div>
+    </section>
   `;
 }
 
@@ -619,6 +850,7 @@ function renderBlog(job) {
         <button class="btn warn" data-action="clear-blog-data">자료 삭제</button>
       </div>
     </div>
+    ${renderFieldSteps("blog")}
     ${renderCustomBlogPanel(job)}
     <section class="panel blog-preview-panel">
       <div class="section-head compact">
@@ -714,6 +946,7 @@ function renderEstimate(job) {
         <button class="btn ghost" data-action="download-estimate-pdf">PDF 다운로드</button>
       </div>
     </div>
+    ${renderFieldSteps("estimate")}
     <section class="print-area estimate-form">
       <h2 class="estimate-title">${escapeHtml(docTitle)}</h2>
       <div class="estimate-meta">
@@ -810,6 +1043,16 @@ function renderEstimate(job) {
         ${textarea("estimateNote", "비고", job.estimateNote || "상기 견적은 현장 상황 및 추가 작업 범위에 따라 변경될 수 있습니다.", "비고")}
       </div>
       <div class="estimate-sign">공급자 확인: ${escapeHtml(PROVIDER.owner)} ${stampSealImage("stamp-seal")}</div>
+    </section>
+    <section class="panel pdf-preview-panel estimate-preview-panel">
+      <div class="section-head compact">
+        <div>
+          <h2>견적서 출력 미리보기</h2>
+          <p class="muted">현장 화면에서 인쇄 결과를 확인하고 PDF 다운로드를 다시 실행할 수 있습니다.</p>
+        </div>
+        <button class="btn ghost" data-action="download-estimate-pdf">인쇄창 다시 열기</button>
+      </div>
+      <div class="pdf-preview-page">${buildEstimatePrintHtml(job)}</div>
     </section>
   `;
 }
@@ -991,6 +1234,16 @@ function buildQuickJobSearchText(job) {
     .join(" ");
   const estimateText = (job.estimateItems || []).map((item) => [item.name, item.spec, item.cost].join(" ")).join(" ");
   const leakText = (job.leakAudioPoints || []).map((point) => [point.name, point.score, point.risk, point.metrics?.peakHz].join(" ")).join(" ");
+  const v2Text = [
+    job.somersLeakLevel,
+    job.somersFrequency,
+    job.somersOrangeMark,
+    job.somersSuspectLocation,
+    job.somersCaptureMemo,
+    ...(job.somersPhotos || []),
+    job.finalLeakLocation,
+    job.excavationResult,
+  ].join(" ");
   return normalizeSearchText([
     job.date,
     job.customerName,
@@ -1005,6 +1258,7 @@ function buildQuickJobSearchText(job) {
     checkText,
     estimateText,
     leakText,
+    v2Text,
   ].join(" "));
 }
 
@@ -1077,8 +1331,11 @@ function mergeImportedJobs(importedJobs) {
       recordings: Array.isArray(job.recordings) ? job.recordings : [],
       photos: Array.isArray(job.photos) ? job.photos : [],
       photoFiles: Array.isArray(job.photoFiles) ? job.photoFiles : [],
+      somersPhotos: Array.isArray(job.somersPhotos) ? job.somersPhotos : [],
+      somersPhotoFiles: Array.isArray(job.somersPhotoFiles) ? job.somersPhotoFiles : [],
       leakAudioPoints: Array.isArray(job.leakAudioPoints) ? job.leakAudioPoints : [],
     };
+    normalizeV2Fields(normalizedJob);
     if (deleted.has(normalizedJob.id)) return;
     const existingIndex = state.jobs.findIndex((existing) => existing.id === normalizedJob.id);
     if (existingIndex >= 0) {
@@ -1184,9 +1441,13 @@ function bindEvents() {
     input.addEventListener("change", async () => {
       const job = currentJob();
       const files = Array.from(input.files || []);
-      job[input.dataset.fileType] = files.map((file) => file.name);
-      if (input.dataset.fileType === "photos") {
+      const fileType = input.dataset.fileType;
+      job[fileType] = files.map((file) => file.name);
+      if (fileType === "photos") {
         job.photoFiles = await filesToPrintableImages(files);
+      }
+      if (fileType === "somersPhotos") {
+        job.somersPhotoFiles = await filesToPrintableImages(files);
       }
       saveState();
       render();
@@ -1634,7 +1895,8 @@ async function saveCurrentJobToGoogleDrive(options = {}) {
       return;
     }
     const prepared = await prepareGoogleDriveSave(false, false);
-    notify(`Google Drive 저장 완료: ${prepared.yearFolder.name}/${prepared.monthFolder.name}/${prepared.dateFolder.name} · PDF 2개 · 작업데이터 1개`);
+    const somersText = prepared.somersPhotoCount ? ` · 소머즈 ${prepared.somersPhotoCount}개` : "";
+    notify(`Google Drive 저장 완료: ${prepared.yearFolder.name}/${prepared.monthFolder.name}/${prepared.dateFolder.name} · PDF 2개 · 작업데이터 1개${somersText}`);
   } catch (error) {
     notify(`Google Drive 저장 실패: ${driveErrorMessage(error)}`);
     console.error(error);
@@ -1670,9 +1932,24 @@ async function prepareGoogleDriveSave(wantPhotos, wantRecordings) {
   await uploadBlobToDrive(token, dateFolder.id, `${baseName}-견적서.pdf`, estimateBlob, "application/pdf");
   const dataBlob = new Blob([JSON.stringify({ exportedAt: new Date().toISOString(), job }, null, 2)], { type: "application/json" });
   await uploadBlobToDrive(token, dateFolder.id, `${baseName}-작업데이터.json`, dataBlob, "application/json");
+  const somersPhotoCount = await uploadStoredSomersPhotosToDrive(token, dateFolder.id, baseName, job);
   const photoFolder = wantPhotos ? await ensureDriveFolder(token, "사진", dateFolder.id) : null;
   const recordingFolder = wantRecordings ? await ensureDriveFolder(token, "녹음", dateFolder.id) : null;
-  return { token, yearFolder, monthFolder, dateFolder, baseName, photoFolder, recordingFolder };
+  return { token, yearFolder, monthFolder, dateFolder, baseName, photoFolder, recordingFolder, somersPhotoCount };
+}
+
+async function uploadStoredSomersPhotosToDrive(token, dateFolderId, baseName, job) {
+  const somersPhotos = Array.isArray(job.somersPhotoFiles) ? job.somersPhotoFiles.filter((photo) => photo?.dataUrl) : [];
+  if (!somersPhotos.length) return 0;
+  const somersFolder = await ensureDriveFolder(token, "소머즈", dateFolderId);
+  let count = 0;
+  for (const [index, photo] of somersPhotos.entries()) {
+    const blob = await dataUrlToBlob(photo.dataUrl);
+    const name = `${baseName}-소머즈-${safeFileName(photo.name || `capture-${index + 1}.jpg`)}`;
+    await uploadBlobToDrive(token, somersFolder.id, name, blob, blob.type || "image/jpeg");
+    count += 1;
+  }
+  return count;
 }
 
 async function uploadSelectedDriveMedia(prepared, photoFiles, recordingFiles) {
@@ -1692,7 +1969,8 @@ async function uploadSelectedDriveMedia(prepared, photoFiles, recordingFiles) {
         recordingCount += 1;
       }
     }
-    notify(`Google Drive 저장 완료: ${prepared.dateFolder.name} 폴더 · 사진 ${photoCount}개 · 녹음 ${recordingCount}개`);
+    const somersText = prepared.somersPhotoCount ? ` · 소머즈 ${prepared.somersPhotoCount}개` : "";
+    notify(`Google Drive 저장 완료: ${prepared.dateFolder.name} 폴더 · 사진 ${photoCount}개 · 녹음 ${recordingCount}개${somersText}`);
   } catch (error) {
     notify(`Google Drive 업로드 실패: ${driveErrorMessage(error)}`);
     console.error(error);
@@ -1761,7 +2039,7 @@ async function createDocumentPdfBlob(type, job) {
 }
 
 function buildReportPdfPages(job) {
-  const report = job.report || generateReport(job);
+  const report = reportContentForDocument(job.report || generateReport(job));
   return paginatePdfLines([
     { text: "누수진단 소견서", size: 32, bold: true, align: "center", gap: 18 },
     { text: `진단일자: ${job.date || ""}`, size: 16 },
@@ -1917,7 +2195,7 @@ async function toggleRecording(target = { kind: "situation" }) {
     render();
     notify("녹음 중입니다.");
   } catch (error) {
-    notify("마이크 권한을 확인하세요.");
+    notify("마이크 권한이 필요합니다. 브라우저 권한 허용, USB-C 오디오 캡처 연결, HTTPS/로컬 실행 상태를 확인하세요.");
   }
 }
 
@@ -2223,6 +2501,11 @@ function readFileAsDataUrl(file) {
   });
 }
 
+async function dataUrlToBlob(dataUrl) {
+  const response = await fetch(dataUrl);
+  return response.blob();
+}
+
 async function resizeImageFile(file, maxSide = 1400, quality = 0.82) {
   const dataUrl = await readFileAsDataUrl(file);
   const image = await loadImage(dataUrl);
@@ -2345,7 +2628,7 @@ function openPdfPrintWindow(type) {
 }
 
 function buildReportPrintHtml(job) {
-  const report = job.report || generateReport(job);
+  const report = reportContentForDocument(job.report || generateReport(job));
   return `
     <h1>누수진단 소견서</h1>
     <table>
@@ -2367,8 +2650,27 @@ function buildReportPrintHtml(job) {
   `;
 }
 
+function reportContentForDocument(report) {
+  const text = String(report || "").trim();
+  const firstSection = text.search(/\n\s*1\.\s*현장\s*상황/);
+  if (firstSection >= 0) return text.slice(firstSection).trim();
+  return text
+    .replace(/^\[누수진단 소견서\]\s*/u, "")
+    .replace(/^진단일자:.*(?:\r?\n)?/mu, "")
+    .replace(/^고객 이름:.*(?:\r?\n)?/mu, "")
+    .replace(/^현장주소:.*(?:\r?\n)?/mu, "")
+    .replace(/^연락처:.*(?:\r?\n)?/mu, "")
+    .replace(/^작성자:.*(?:\r?\n)?/mu, "")
+    .replace(/^사업자번호:.*(?:\r?\n)?/mu, "")
+    .replace(/^공급자 주소:.*(?:\r?\n)?/mu, "")
+    .replace(/^공급자 확인:.*(?:\r?\n)?/mu, "")
+    .trim();
+}
+
 function buildReportPhotoPages(job) {
-  const photos = Array.isArray(job.photoFiles) ? job.photoFiles.filter((photo) => photo?.dataUrl) : [];
+  const fieldPhotos = Array.isArray(job.photoFiles) ? job.photoFiles.filter((photo) => photo?.dataUrl).map((photo) => ({ ...photo, group: "현장 사진" })) : [];
+  const somersPhotos = Array.isArray(job.somersPhotoFiles) ? job.somersPhotoFiles.filter((photo) => photo?.dataUrl).map((photo) => ({ ...photo, group: "소머즈 촬영" })) : [];
+  const photos = [...fieldPhotos, ...somersPhotos];
   if (!photos.length) return "";
   const chunks = [];
   for (let i = 0; i < photos.length; i += 8) chunks.push(photos.slice(i, i + 8));
@@ -2379,7 +2681,7 @@ function buildReportPhotoPages(job) {
         ${chunk.map((photo, index) => `
           <figure>
             <img src="${escapeAttr(photo.dataUrl)}" alt="${escapeAttr(photo.name || `첨부 사진 ${index + 1}`)}" />
-            <figcaption>${escapeHtml(photo.name || `사진 ${pageIndex * 8 + index + 1}`)}</figcaption>
+            <figcaption>${escapeHtml(`${photo.group || "첨부 사진"} - ${photo.name || `사진 ${pageIndex * 8 + index + 1}`}`)}</figcaption>
           </figure>
         `).join("")}
       </div>
@@ -2470,7 +2772,7 @@ async function startSpectrum() {
     source.connect(analyser);
     renderSpectrum();
   } catch (error) {
-    notify("마이크/오디오 입력 권한을 허용해야 합니다. USB-C 오디오 캡처를 연결한 뒤 다시 실행해보세요.");
+    notify("마이크/오디오 입력 권한이 필요합니다. USB-C 오디오 캡처 연결, 브라우저 권한, 입력 장치를 확인한 뒤 다시 실행하세요.");
   }
 }
 
@@ -2704,6 +3006,16 @@ function generateReport(job) {
   const leakAudioSummary = (job.leakAudioPoints || [])
     .map((point) => `- ${point.name}: ${point.score}% / ${point.risk} / 피크 ${point.metrics?.peakHz || "-"} Hz`)
     .join("\n") || "저장된 AI 청음 측정 지점이 없습니다.";
+  const v2EvidenceSummary = [
+    `- 소머즈 누수 레벨: ${job.somersLeakLevel || "미기록"}`,
+    `- 소머즈 주파수: ${job.somersFrequency || "미기록"}`,
+    `- 소머즈 주황 표시: ${job.somersOrangeMark || "미기록"}`,
+    `- 소머즈 의심 위치: ${job.somersSuspectLocation || "미기록"}`,
+    `- 소머즈 촬영 자료: ${(job.somersPhotos || []).length ? `${job.somersPhotos.length}장 (${job.somersPhotos.join(", ")})` : "미기록"}`,
+    `- 소머즈 촬영 메모: ${job.somersCaptureMemo || "미기록"}`,
+    `- 최종 누수 위치: ${job.finalLeakLocation || "미기록"}`,
+    `- 실제 굴착 결과: ${job.excavationResult || "미기록"}`,
+  ].join("\n");
   return `[누수진단 소견서]
 
 진단일자: ${job.date}
@@ -2727,11 +3039,14 @@ ${summaryLines(job.waterproofChecks)}
 4. AI 청음 누수 분석
 ${leakAudioSummary}
 
-5. 종합 의견
+5. 누수추적기 V2 기록
+${v2EvidenceSummary}
+
+6. 종합 의견
 ${plumbingIssues.length ? "배관 계통 누수 가능성이 확인 또는 의심됩니다. 압력검사, 청음, 열화상/가스탐지 등 다각적 추적을 권장합니다." : "기본 배관 점검에서는 중대한 누수 징후가 제한적입니다."}
 ${waterproofIssues.length ? "외부 요인 또는 방수층 문제 가능성도 함께 검토해야 합니다." : "방수 및 외부 요인은 현재 기록 기준 특이사항이 적습니다."}
 
-6. 첨부자료
+7. 첨부자료
 사진: ${(job.photos || []).length ? `${job.photos.length}장 (${job.photos.join(", ")})` : "없음"}`;
 }
 
@@ -2813,6 +3128,11 @@ function buildBlogPrompt(job, custom = null) {
 - 주소: ${job.address || ""}
 - 상황 기록: ${job.situation || "현장 상황 기록을 바탕으로 작성"}
 - 환경 기록: ${job.environment || ""}
+- 소머즈 OCR: 레벨 ${job.somersLeakLevel || "미기록"}, 주파수 ${job.somersFrequency || "미기록"}, 주황 표시 ${job.somersOrangeMark || "미기록"}, 의심 위치 ${job.somersSuspectLocation || "미기록"}
+- 소머즈 촬영 자료: ${(job.somersPhotos || []).length ? `${job.somersPhotos.length}장 (${job.somersPhotos.join(", ")})` : "미기록"}
+- 소머즈 촬영 메모: ${job.somersCaptureMemo || "미기록"}
+- 최종 누수 위치: ${job.finalLeakLocation || "미기록"}
+- 실제 굴착 결과: ${job.excavationResult || "미기록"}
 - 소견서 요약: ${job.report || "소견서가 있으면 함께 반영"}
 - 점검 요약:
 ${summaryLines([...job.plumbingChecks, ...job.waterproofChecks])}
