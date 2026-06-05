@@ -658,45 +658,7 @@ function renderTracker(job) {
         `).join("") : `<p class="muted">아직 저장된 측정 지점이 없습니다.</p>`}
       </div>
     </section>
-    ${renderTrackerV2Expansion(leakPoints)}
     ${renderTrackerV2Workbench(job, leakPoints)}
-  `;
-}
-
-function renderTrackerV2Expansion(leakPoints = []) {
-  const bestPoint = [...leakPoints].sort((a, b) => Number(b.score || 0) - Number(a.score || 0))[0];
-  return `
-    <section class="tracker-v2-grid">
-      <article class="tracker-v2-card">
-        <span class="v2-kicker">DAESUNG INPUT</span>
-        <h3>대성 청음기 입력</h3>
-        <p>대성 청음기 → 3.5파이/AUX → USB-C 오디오 캡처 또는 직접 입력 흐름을 기준으로 실시간 분석 영역을 유지합니다.</p>
-        <div class="v2-flow"><span>청음기</span><b>→</b><span>3.5파이</span><b>→</b><span>USB-C</span><b>→</b><span>FFT</span></div>
-      </article>
-      <article class="tracker-v2-card">
-        <span class="v2-kicker">SOMERS OCR</span>
-        <h3>소머즈 촬영 데이터</h3>
-        <p>API가 없는 장비 화면은 촬영 후 OCR로 누수 레벨, 주파수, 그래프, 주황색 표시, 의심 위치를 읽는 방향입니다.</p>
-        <div class="v2-tags"><span>누수 레벨</span><span>주파수</span><span>그래프</span><span>의심 위치</span></div>
-      </article>
-      <article class="tracker-v2-card">
-        <span class="v2-kicker">MULTI POINT</span>
-        <h3>다지점 비교 모드</h3>
-        <p>A/B/C/D 지점을 같은 기준으로 저장하고 비교해 최종 의심 위치를 빠르게 추천하는 공간입니다.</p>
-        <div class="v2-point-row">
-          ${["A", "B", "C", "D"].map((label, index) => {
-            const point = leakPoints[index];
-            return `<span class="${point ? "filled" : ""}">${label}<small>${point ? `${Number(point.score || 0)}%` : "대기"}</small></span>`;
-          }).join("")}
-        </div>
-      </article>
-      <article class="tracker-v2-card">
-        <span class="v2-kicker">LEARNING DATA</span>
-        <h3>결과 저장/학습 데이터</h3>
-        <p>청음 결과, 소머즈 OCR, 실제 굴착 결과를 함께 남겨 장기 학습 데이터로 확장합니다.</p>
-        <strong class="v2-recommend">${bestPoint ? `현재 최고 의심: ${escapeHtml(bestPoint.name || "측정지점")} ${Number(bestPoint.score || 0)}%` : "측정 지점을 저장하면 추천 후보가 표시됩니다."}</strong>
-      </article>
-    </section>
   `;
 }
 
@@ -727,21 +689,9 @@ function renderTrackerV2Workbench(job, leakPoints = []) {
           <label>촬영 메모<textarea data-job-field="somersCaptureMemo" placeholder="촬영 각도, 화면 밝기, 소머즈 그래프 특징을 기록합니다.">${escapeHtml(job.somersCaptureMemo || "")}</textarea></label>
         </div>
       </article>
-      <article class="v2-screen daesung-screen">
-        <div>
-          <span class="v2-kicker">SCREEN 02</span>
-          <h3>대성 청음 분석 화면</h3>
-          <p>현재 실시간 그래프와 연결되는 입력 계통입니다. 3.5파이/AUX 또는 USB-C 입력 후 FFT, 피크, 누수대역 평균을 같은 기준으로 봅니다.</p>
-        </div>
-        <div class="v2-meter-stack">
-          <span><b>INPUT</b> 3.5파이 / USB-C 오디오 입력</span>
-          <span><b>FFT</b> 실시간 주파수 분석</span>
-          <span><b>WAVE</b> 실시간 파형 확장 예정</span>
-        </div>
-      </article>
       <article class="v2-screen compare-screen">
         <div>
-          <span class="v2-kicker">SCREEN 03</span>
+          <span class="v2-kicker">SCREEN 02</span>
           <h3>다지점 비교 화면</h3>
           <p>A/B/C/D 지점의 점수와 위험도를 비교해 현장에서 바로 의심 위치를 좁히는 화면입니다.</p>
         </div>
@@ -760,7 +710,7 @@ function renderTrackerV2Workbench(job, leakPoints = []) {
       </article>
       <article class="v2-screen save-screen">
         <div>
-          <span class="v2-kicker">SCREEN 04</span>
+          <span class="v2-kicker">SCREEN 03</span>
           <h3>결과 저장 화면</h3>
           <p>대성 청음, 소머즈 OCR, 다지점 비교, 실제 굴착 결과를 한 작업 기록에 묶어 장기 학습 데이터로 남깁니다.</p>
         </div>
