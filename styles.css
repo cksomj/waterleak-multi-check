@@ -864,6 +864,17 @@ textarea[data-job-field="report"] {
   width: 1px;
 }
 
+.audio-input-select {
+  background: #121a20;
+  border: 1px solid #34434d;
+  border-radius: 6px;
+  color: var(--ink);
+  font-weight: 800;
+  min-height: 42px;
+  min-width: 170px;
+  padding: 8px 10px;
+}
+
 .btn.primary {
   background: linear-gradient(180deg, #ff9b3d, var(--primary));
   color: #160d05;
@@ -1007,6 +1018,31 @@ textarea[data-job-field="report"] {
   color: #e8fbff;
   padding: 16px;
   box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.03), 0 18px 44px rgba(0, 0, 0, 0.28);
+}
+
+.audio-panel-head {
+  align-items: center;
+  display: grid;
+  gap: 10px;
+  grid-template-columns: minmax(0, 1fr) minmax(156px, 310px);
+  margin-bottom: 10px;
+}
+
+.audio-panel-head h2 {
+  min-width: 0;
+}
+
+.peak-status {
+  display: block;
+  font-size: clamp(10px, 2.6vw, 12px);
+  line-height: 1.1;
+  max-width: 100%;
+  min-height: 34px;
+  overflow: hidden;
+  padding: 10px 9px;
+  text-align: center;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .spectrum-wrap {
@@ -2492,6 +2528,16 @@ canvas {
 
   .leak-metrics-grid {
     grid-template-columns: 1fr;
+  }
+
+  .audio-panel-head {
+    grid-template-columns: minmax(0, 1fr) minmax(132px, 148px);
+  }
+
+  .peak-status {
+    font-size: 10px;
+    min-height: 32px;
+    padding: 9px 7px;
   }
 
   .v2-capture-box {
