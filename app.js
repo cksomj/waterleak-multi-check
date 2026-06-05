@@ -735,6 +735,7 @@ function renderTrackerV2Workbench(job, leakPoints = []) {
 }
 
 function renderReport(job) {
+  const reportDraft = job.report ? reportContentForDocument(job.report) : "";
   return `
     <div class="section-head">
       <div>
@@ -754,7 +755,7 @@ function renderReport(job) {
         ${fileBox("photos", "사진 앨범 열기")}
       </section>
       <section class="panel grid">
-        ${textarea("report", "소견서 내용", job.report, "소견서 자동생성 후 수정할 수 있습니다.")}
+        ${textarea("report", "소견서 내용", reportDraft, "소견서 자동생성 후 수정할 수 있습니다.")}
         <div class="toolbar">
           <button class="btn primary" data-action="save">수정 저장</button>
           <button class="btn warn" data-action="delete-report">삭제</button>
@@ -1608,7 +1609,7 @@ function handleAction(action, data) {
   if (action === "clear-tracker") notify("화면 그래프 로그를 삭제했습니다.");
   if (action === "save-somers-photo") notify("소머즈 사진 자료가 저장되어 Google 저장 때 자동 분류됩니다.");
   if (action === "save-somers-sound") notify("소머즈 소리 자료가 저장되어 Google 저장 때 자동 분류됩니다.");
-  if (action === "generate-report") updateJob({ report: generateReport(job) });
+  if (action === "generate-report") updateJob({ report: reportContentForDocument(generateReport(job)) });
   if (action === "download-report-pdf") openPdfPrintWindow("report");
   if (action === "clear-report" || action === "delete-report") updateJob({ report: "" });
   if (action === "generate-blog") updateJob({ blog: buildBlogPrompt(job) });
