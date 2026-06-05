@@ -2936,7 +2936,7 @@ async function resolveUsbAudioInputDeviceId() {
 
 function pickPreferredAudioInputDeviceId() {
   if (state.audioInputDeviceId && audioInputDevices.some((device) => device.deviceId === state.audioInputDeviceId)) return state.audioInputDeviceId;
-  const externalPattern = /(usb|type-c|type c|audio|capture|adapter|headset|external|외부|오디오|캡처|헤드셋|이어폰)/i;
+  const externalPattern = /(usb|type-c|type c|capture|adapter|external|usb-c|외부|캡처|어댑터)/i;
   const internalPattern = /(built-in|internal|mic|microphone|내장|마이크)/i;
   const external = audioInputDevices.find((device) => externalPattern.test(device.label || "") && !internalPattern.test(device.label || ""));
   return external?.deviceId || "";
@@ -2947,12 +2947,10 @@ function markSelectedAudioInput() {
   const label = track?.label || state.audioInputLabel || "";
   state.audioInputLabel = label;
   const external = looksLikeExternalAudioInput(label);
-  const internal = looksLikeInternalAudioInput(label);
-  state.audioInputStatus = label ? `${external ? "USB-C 입력" : internal ? "내장 마이크 의심" : "입력 확인"}: ${label}` : "입력 장치명 확인 불가";
+  state.audioInputStatus = label ? `${external ? "USB-C 입력" : "USB-C 아님"}: ${label}` : "USB-C 입력 확인 불가";
   saveState();
-  const looksInternal = /(built-in|internal|내장|phone|휴대폰)/i.test(label) || (!/(usb|type-c|type c|capture|adapter|external|외부|캡처)/i.test(label) && /mic|microphone|마이크/i.test(label));
-  if (looksInternal) {
-    notify("현재 입력이 내장 마이크일 수 있습니다. USB-C 오디오 캡처를 연결한 뒤 다시 USB-C 입력 분석을 누르세요.");
+  if (!external) {
+    notify("USB-C 입력으로 확인되지 않습니다. 내장 마이크일 수 있으니 USB-C 오디오 캡처를 연결한 뒤 다시 분석을 누르세요.");
   } else if (label) {
     notify(`오디오 입력 사용 중: ${label}`);
   }
@@ -2960,7 +2958,7 @@ function markSelectedAudioInput() {
 }
 
 function looksLikeExternalAudioInput(label = "") {
-  return /(usb|type-c|type c|capture|adapter|external|headset|외부|오디오|캡처|이어폰|헤드셋)/i.test(label);
+  return /(usb|usb-c|type-c|type c|capture|adapter|external|외부|캡처|어댑터)/i.test(label);
 }
 
 function looksLikeInternalAudioInput(label = "") {
@@ -2969,9 +2967,9 @@ function looksLikeInternalAudioInput(label = "") {
 
 function audioInputStatusClass() {
   const status = state.audioInputStatus || "";
-  if (/USB-C|외부|capture|usb|캡처/i.test(status)) return "ready";
-  if (/내장|실패|불가|마이크 의심/i.test(status)) return "warn";
-  return "";
+  if (/^USB-C 입력/i.test(status)) return "ready";
+  if (/확인 중|자동선택/i.test(status)) return "";
+  return "warn";
 }
 
 function clamp(value, min, max) {
