@@ -1868,6 +1868,7 @@ async function prepareGoogleDriveSave() {
   await uploadBlobToDrive(token, docFolder.id, `${baseName}-견적서.pdf`, estimateBlob, "application/pdf");
   const dataBlob = new Blob([JSON.stringify({ exportedAt: new Date().toISOString(), job }, null, 2)], { type: "application/json" });
   await uploadBlobToDrive(token, dataFolder.id, `${baseName}-작업데이터.json`, dataBlob, "application/json");
+  const blogDocumentCount = await uploadStoredBlogDocumentsToDrive(token, docFolder.id, baseName, job);
   const fieldPhotoCount = await uploadStoredFieldPhotosToDrive(token, dateFolder.id, baseName, job);
   const somersPhotoCount = await uploadStoredSomersPhotosToDrive(token, dateFolder.id, baseName, job);
   const somersSoundCount = await uploadStoredRecordingsToDrive(token, dateFolder.id, baseName, job, "somers:sound", ["소머즈", "소리"]);
@@ -1878,12 +1879,24 @@ async function prepareGoogleDriveSave() {
     monthFolder,
     dateFolder,
     baseName,
+    blogDocumentCount,
     fieldPhotoCount,
     somersPhotoCount,
     somersSoundCount,
     daesungSoundCount,
-    totalAssetCount: 3 + fieldPhotoCount + somersPhotoCount + somersSoundCount + daesungSoundCount,
+    totalAssetCount: 3 + blogDocumentCount + fieldPhotoCount + somersPhotoCount + somersSoundCount + daesungSoundCount,
   };
+}
+
+async function uploadStoredBlogDocumentsToDrive(token, docFolderId, baseName, job) {
+  const blogHtml = String(job.blog || "").trim();
+  if (!blogHtml) return 0;
+  const fullHtml = buildBlogBackupHtml(job, blogHtml);
+  const htmlBlob = new Blob([fullHtml], { type: "text/html;charset=utf-8" });
+  const textBlob = new Blob([blogPlainTextForBackup(blogHtml)], { type: "text/plain;charset=utf-8" });
+  await uploadBlobToDrive(token, docFolderId, `${baseName}-블로그원고.html`, htmlBlob, "text/html");
+  await uploadBlobToDrive(token, docFolderId, `${baseName}-블로그원고.txt`, textBlob, "text/plain");
+  return 2;
 }
 
 async function uploadStoredFieldPhotosToDrive(token, dateFolderId, baseName, job) {
@@ -3335,7 +3348,7 @@ function saveBlogEditor() {
   state.blogEditorOpen = false;
   saveState();
   render();
-  notify("블로그 글이 앱에 저장되었습니다.");
+  notify("블로그 글을 앱에 임시 저장했습니다. Google Drive에는 자료 백업 때 함께 올라갑니다.");
 }
 
 function clearBlogEditor() {
@@ -3457,6 +3470,41 @@ function formatBlogContent(value) {
   const text = String(value || "");
   if (/<[a-z][\s\S]*>/i.test(text)) return text;
   return escapeHtml(text).replace(/\n/g, "<br>");
+}
+
+function buildBlogBackupHtml(job, content) {
+  return `<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <title>${escapeHtml([job.date, job.address || job.customerName, "블로그 원고"].filter(Boolean).join(" - "))}</title>
+    <style>
+      body { color: #111827; font-family: "Malgun Gothic", Arial, sans-serif; line-height: 1.75; margin: 34px; }
+      .doc { max-width: 760px; margin: 0 auto; }
+      .meta { border-bottom: 1px solid #d1d5db; color: #4b5563; font-size: 14px; margin-bottom: 24px; padding-bottom: 12px; }
+      h1, h2 { line-height: 1.35; }
+      img { max-width: 100%; }
+    </style>
+  </head>
+  <body>
+    <main class="doc">
+      <section class="meta">
+        <div>저장일자: ${escapeHtml(job.date || "")}</div>
+        <div>현장주소: ${escapeHtml(job.address || "")}</div>
+        <div>고객명: ${escapeHtml(job.customerName || "")}</div>
+      </section>
+      ${formatBlogContent(content)}
+    </main>
+  </body>
+</html>`;
+}
+
+function blogPlainTextForBackup(content) {
+  const text = String(content || "");
+  if (!/<[a-z][\s\S]*>/i.test(text)) return text;
+  const container = document.createElement("div");
+  container.innerHTML = text;
+  return container.innerText.trim();
 }
 
 function notify(message) {
