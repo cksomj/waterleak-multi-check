@@ -461,11 +461,12 @@ function textareaWithSituationRecording(job) {
         <label for="situation">상황 기록</label>
         <div class="mini-actions record-actions">
           <button class="btn ghost record-btn ${active ? "recording" : ""} ${recording ? "saved" : ""}" data-action="record-field" data-field="situation">
-            <span class="voice-icon ${active && !paused ? "blue pulse" : recording ? "blue" : "idle"}"></span>${active ? "녹음멈춤" : recording ? "저장완료" : "녹음"}
-          </button>
-          <button class="btn ghost pause-btn" data-action="pause-recording" data-field="situation" ${active ? "" : "disabled"}>${paused ? "이어녹음" : "일시정지"}</button>
-          <button class="btn ghost listen-btn" data-action="play-recording" data-recording-id="${escapeAttr(recording?.id || "")}" ${recording ? "" : "disabled"}>재생</button>
-          <button class="btn ghost clear-btn" data-action="delete-recording" data-recording-id="${escapeAttr(recording?.id || "")}" ${recording ? "" : "disabled"}>삭제</button>
+          <span class="voice-icon ${active && !paused ? "blue pulse" : recording ? "blue" : "idle"}"></span>${active ? "녹음멈춤" : recording ? "저장완료" : "녹음"}
+        </button>
+        <label class="btn ghost import-file-btn">파일가져오기<input data-import-recording data-target-kind="field" data-field="situation" type="file" accept="audio/*" /></label>
+        <button class="btn ghost pause-btn" data-action="pause-recording" data-field="situation" ${active ? "" : "disabled"}>${paused ? "이어녹음" : "일시정지"}</button>
+        <button class="btn ghost listen-btn" data-action="play-recording" data-recording-id="${escapeAttr(recording?.id || "")}" ${recording ? "" : "disabled"}>재생</button>
+        <button class="btn ghost clear-btn" data-action="delete-recording" data-recording-id="${escapeAttr(recording?.id || "")}" ${recording ? "" : "disabled"}>삭제</button>
         </div>
       </div>
       <textarea id="situation" data-job-field="situation" placeholder="누수 발생 위치, 시간, 피해상황, 고객 진술을 직접 입력합니다.">${escapeHtml(job.situation || "")}</textarea>
@@ -577,6 +578,7 @@ function renderCheckRow(type, check) {
             <button class="btn ghost record-btn ${pipeRecordingActive ? "recording" : ""} ${pipeRecording ? "saved" : ""}" data-action="record-check" data-check="${check.id}" data-check-type="${type}">
               <span class="voice-icon ${pipeRecordingActive ? "blue pulse" : pipeRecording ? "blue" : "idle"}"></span>${pipeRecordingActive ? "녹음멈춤" : pipeRecording ? "저장완료" : "녹음"}
             </button>
+            <label class="btn ghost import-file-btn">파일가져오기<input data-import-recording data-target-kind="check" data-check="${escapeAttr(check.id)}" data-check-type="${escapeAttr(type)}" type="file" accept="audio/*" /></label>
             <button class="btn ghost listen-btn" data-action="play-recording" data-recording-id="${escapeAttr(pipeRecording?.id || "")}" ${pipeRecording ? "" : "disabled"}>재생</button>
             <button class="btn ghost clear-btn" data-action="delete-recording" data-recording-id="${escapeAttr(pipeRecording?.id || "")}" ${pipeRecording ? "" : "disabled"}>삭제</button>
           </div>
@@ -607,6 +609,7 @@ function renderTracker(job) {
         <button class="btn ghost record-btn ${trackerRecordingActive ? "recording" : ""} ${trackerRecording ? "saved" : ""}" data-action="record-tracker">
           <span class="voice-icon ${trackerRecordingActive && !trackerRecordingPaused ? "blue pulse" : trackerRecording ? "blue" : "idle"}"></span>${trackerRecordingActive ? "녹음멈춤" : trackerRecording ? "저장완료" : "녹음"}
         </button>
+        <label class="btn ghost import-file-btn">녹음파일 가져오기<input data-import-recording data-target-kind="tracker" type="file" accept="audio/*" /></label>
         <button class="btn ghost listen-btn" data-action="play-recording" data-recording-id="${escapeAttr(trackerRecording?.id || "")}" ${trackerRecording ? "" : "disabled"}>재생</button>
         <button class="btn ghost clear-btn" data-action="delete-recording" data-recording-id="${escapeAttr(trackerRecording?.id || "")}" ${trackerRecording ? "" : "disabled"}>삭제</button>
         <button class="btn warn" data-action="stop-spectrum">정지</button>
@@ -675,12 +678,12 @@ function renderTrackerV2Workbench(job, leakPoints = []) {
           <p>장비 화면을 촬영해 OCR로 누수 레벨, 주파수, 그래프, 주황색 표시, 의심 위치를 추출하는 설계 영역입니다.</p>
         </div>
         <label class="v2-capture-box">
-          <span>소머즈 화면 사진 선택</span>
-          <input data-file-type="somersPhotos" type="file" accept="image/*" capture="environment" multiple />
+          <span>소머즈 사진 파일 가져오기</span>
+          <input data-file-type="somersPhotos" type="file" accept="image/*" multiple />
         </label>
         <div class="v2-analyze-row">
           <button class="btn primary" data-action="analyze-somers-photo" ${somersHasPhoto ? "" : "disabled"}>소머즈 사진 분석</button>
-          <span>${somersHasPhoto ? "촬영 후 분석 버튼을 눌러 OCR 보조값을 채웁니다." : "사진을 먼저 촬영하거나 선택하세요."}</span>
+          <span>${somersHasPhoto ? "파일을 불러온 뒤 분석 버튼을 눌러 OCR 보조값을 채웁니다." : "소머즈 사진 파일을 먼저 불러오세요."}</span>
         </div>
         <div class="v2-capture-status">
           <span>촬영 자료 <b>${(job.somersPhotos || []).length ? `${job.somersPhotos.length}장 저장됨` : "대기"}</b></span>
@@ -1401,6 +1404,15 @@ function bindEvents() {
       }
       saveState();
       render();
+    });
+  });
+
+  app.querySelectorAll("[data-import-recording]").forEach((input) => {
+    input.addEventListener("change", async () => {
+      const files = Array.from(input.files || []);
+      const file = files.find((item) => item.type.startsWith("audio/")) || files[0];
+      if (!file) return;
+      await importRecordingFile(file, input.dataset);
     });
   });
 
@@ -2192,6 +2204,34 @@ async function stopWavRecording() {
   wavRecorder = null;
   saveState();
   render();
+}
+
+async function importRecordingFile(file, dataset = {}) {
+  if (!file) return;
+  const target = recordingTargetFromDataset(dataset);
+  const id = `rec-${Date.now()}`;
+  const recording = {
+    id,
+    name: safeFileName(file.name || `imported-recording-${Date.now()}`),
+    targetKey: targetKey(target),
+    target,
+    type: file.type || "audio/mpeg",
+    createdAt: new Date().toISOString(),
+    imported: true,
+  };
+  await putRecordingBlob(id, file);
+  const job = currentJob();
+  job.recordings = [...(job.recordings || []).filter((item) => item.targetKey !== recording.targetKey), recording];
+  job.updatedAt = new Date().toISOString();
+  saveState();
+  render();
+  notify("녹음 파일을 가져와 저장했습니다.");
+}
+
+function recordingTargetFromDataset(dataset = {}) {
+  if (dataset.targetKind === "tracker") return { kind: "tracker" };
+  if (dataset.targetKind === "check") return { kind: "check", type: dataset.checkType || "", id: dataset.check || "" };
+  return { kind: "field", field: dataset.field || "situation" };
 }
 
 function targetKey(target = {}) {
