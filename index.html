@@ -3,8 +3,9 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>WaterLeak Multi Check System</title>
-    <link rel="stylesheet" href="./styles.css?v=20260601-google-three-options" />
+    <title>WaterLeak Multi Check V2</title>
+    <meta name="theme-color" content="#080b0e" />
+    <link rel="stylesheet" href="./styles.css?v=20260605-field-v2m" />
   </head>
   <body>
     <div id="app"></div>
@@ -12,16 +13,16 @@
       window.addEventListener("error", function (event) {
         var app = document.getElementById("app");
         if (app && !app.innerHTML) {
-          app.innerHTML = "<pre style=\"padding:16px;white-space:pre-wrap;color:#b91c1c;\">앱 실행 오류: " + event.message + "</pre>";
+          app.innerHTML = "<pre style=\"padding:16px;white-space:pre-wrap;color:#f87171;background:#080b0e;\">앱 실행 오류: " + event.message + "</pre>";
         }
       });
       window.addEventListener("unhandledrejection", function (event) {
         var app = document.getElementById("app");
         if (app && !app.innerHTML) {
-          app.innerHTML = "<pre style=\"padding:16px;white-space:pre-wrap;color:#b91c1c;\">앱 실행 오류: " + (event.reason && event.reason.message ? event.reason.message : event.reason) + "</pre>";
+          app.innerHTML = "<pre style=\"padding:16px;white-space:pre-wrap;color:#f87171;background:#080b0e;\">앱 실행 오류: " + (event.reason && event.reason.message ? event.reason.message : event.reason) + "</pre>";
         }
       });
     </script>
-    <script src="./app.js?v=20260601-google-three-options"></script>
+    <script src="./app.js?v=20260605-field-v2m"></script>
   </body>
 </html>
