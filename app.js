@@ -45,7 +45,7 @@ const blogEmojis = [
 
 const viewOrder = [
   ["dashboard", "메인메뉴"],
-  ["basic", "기본점검"],
+  ["basic", "기본검사"],
   ["tracker", "누수추적기"],
   ["blog", "블로그 작성"],
   ["estimate", "견적서"],
@@ -117,6 +117,7 @@ function createJob() {
     blogCategory: "",
     blogKeyword: "",
     leakAudioPoints: [],
+    pipeLeakTypes: { cold: false, hot: false, heating: false },
     somersLeakLevel: "",
     somersFrequency: "",
     somersOrangeMark: "",
@@ -220,8 +221,18 @@ function currentJob() {
   }
   job.plumbingChecks = normalizeChecks(job.plumbingChecks, basePlumbingChecks);
   job.waterproofChecks = normalizeChecks(job.waterproofChecks, baseWaterproofChecks);
+  normalizePipeLeakTypes(job);
   normalizeV2Fields(job);
   return job;
+}
+
+function normalizePipeLeakTypes(job) {
+  job.pipeLeakTypes = {
+    cold: false,
+    hot: false,
+    heating: false,
+    ...(job.pipeLeakTypes || {}),
+  };
 }
 
 function normalizeV2Fields(job) {
@@ -323,7 +334,7 @@ function renderView() {
   const job = currentJob();
   const views = {
     dashboard: renderDashboard,
-    basic: () => renderChecklist("기본점검 및 방수문제 목록"),
+    basic: () => renderChecklist("기본검사 및 방수문제 목록"),
     tracker: renderTracker,
     report: renderReport,
     blog: renderBlog,
@@ -335,7 +346,7 @@ function renderView() {
 function renderFieldSteps(activeId) {
   const steps = [
     ["dashboard", "현장정보"],
-    ["basic", "기본점검"],
+    ["basic", "기본검사"],
     ["tracker", "누수추적"],
     ["blog", "블로그"],
     ["estimate", "견적서"],
@@ -419,7 +430,7 @@ function renderDashboardCommandDeck(job) {
   const done = countDone(checks);
   const pointCount = (job.leakAudioPoints || []).length;
   const cards = [
-    ["basic", "01", "기본점검 계속", `${done}/${checks.length} 완료`, "밸브, 방수, 우수관, 유가 상태를 빠르게 확인합니다."],
+    ["basic", "01", "기본검사 계속", `${done}/${checks.length} 완료`, "밸브, 방수, 우수관, 유가 상태를 빠르게 확인합니다."],
     ["tracker", "02", "누수추적 시작", `${pointCount}개 지점`, "실시간 그래프와 청음 점수로 의심 위치를 좁힙니다."],
     ["blog", "03", "블로그 자료 정리", job.blog ? "자료 있음" : "대기", "현장 자료를 ChatGPT용 프롬프트와 원고로 정리합니다."],
     ["estimate", "04", "견적서 작성", `${(job.estimateItems || []).length}개 항목`, "공급가액, 부가세, 합계를 현장에서 바로 계산합니다."],
@@ -520,7 +531,7 @@ function renderGoogleDriveInlineSetup() {
 function renderChecklist(title) {
   const job = currentJob();
   const groups = [
-    ["plumbingChecks", "기본점검", job.plumbingChecks || []],
+    ["plumbingChecks", "기본검사", job.plumbingChecks || []],
     ["waterproofChecks", "방수문제", job.waterproofChecks || []],
   ];
   return `
@@ -548,6 +559,7 @@ function renderCheckRow(type, check) {
   const isPipeLeakCheck = check.id === "hot_water";
   const pipeRecording = isPipeLeakCheck ? getLastRecordingForTarget({ kind: "check", type, id: check.id }) : null;
   const pipeRecordingActive = isPipeLeakCheck && wavRecorder?.recording && targetKey(recordingTarget) === targetKey({ kind: "check", type, id: check.id });
+  const pipeLeakTypes = currentJob().pipeLeakTypes || {};
   return `
     <div class="check-row">
       <input type="checkbox" ${check.done ? "checked" : ""} data-check="${check.id}" data-check-type="${type}" data-field="done" />
@@ -555,6 +567,12 @@ function renderCheckRow(type, check) {
         <strong>${escapeHtml(check.title)}</strong>
         <p class="muted">${escapeHtml(check.guide)}</p>
         ${isPipeLeakCheck ? `
+          <div class="pipe-leak-type-box">
+            <span>누수 체크박스</span>
+            <label><input type="checkbox" data-pipe-leak-type="cold" ${pipeLeakTypes.cold ? "checked" : ""} /> 냉수</label>
+            <label><input type="checkbox" data-pipe-leak-type="hot" ${pipeLeakTypes.hot ? "checked" : ""} /> 온수</label>
+            <label><input type="checkbox" data-pipe-leak-type="heating" ${pipeLeakTypes.heating ? "checked" : ""} /> 난방</label>
+          </div>
           <div class="mini-actions record-actions">
             <button class="btn ghost record-btn ${pipeRecordingActive ? "recording" : ""} ${pipeRecording ? "saved" : ""}" data-action="record-check" data-check="${check.id}" data-check-type="${type}">
               <span class="voice-icon ${pipeRecordingActive ? "blue pulse" : pipeRecording ? "blue" : "idle"}"></span>${pipeRecordingActive ? "녹음멈춤" : pipeRecording ? "저장완료" : "녹음"}
@@ -642,7 +660,6 @@ function renderTracker(job) {
     </section>
     ${renderTrackerV2Expansion(leakPoints)}
     ${renderTrackerV2Workbench(job, leakPoints)}
-    ${renderTrackerPipeCheck(job)}
   `;
 }
 
@@ -756,38 +773,6 @@ function renderTrackerV2Workbench(job, leakPoints = []) {
         </div>
         <button class="btn primary" data-action="google-drive-save">결과 Google 저장</button>
       </article>
-    </section>
-  `;
-}
-
-function renderTrackerPipeCheck(job) {
-  const check = (job.plumbingChecks || []).find((item) => item.id === "hot_water") || normalizeChecks([], basePlumbingChecks)[0];
-  const target = { kind: "check", type: "plumbingChecks", id: check.id };
-  const recording = getLastRecordingForTarget(target);
-  const active = wavRecorder?.recording && targetKey(recordingTarget) === targetKey(target);
-  const paused = active && wavRecorder?.paused;
-  return `
-    <section class="panel tracker-pipe-check">
-      <div class="check-row">
-        <input type="checkbox" ${check.done ? "checked" : ""} data-check="${check.id}" data-check-type="plumbingChecks" data-field="done" />
-        <div>
-          <strong>${escapeHtml(check.title)}</strong>
-          <p class="muted">${escapeHtml(check.guide)}</p>
-          <div class="mini-actions record-actions">
-            <button class="btn ghost record-btn ${active ? "recording" : ""} ${recording ? "saved" : ""}" data-action="record-check" data-check="${check.id}" data-check-type="plumbingChecks">
-              <span class="voice-icon ${active && !paused ? "blue pulse" : recording ? "blue" : "idle"}"></span>${active ? "녹음멈춤" : recording ? "저장완료" : "녹음"}
-            </button>
-            <button class="btn ghost pause-btn" data-action="pause-recording" data-check="${check.id}" data-check-type="plumbingChecks" ${active ? "" : "disabled"}>${paused ? "이어녹음" : "일시정지"}</button>
-            <button class="btn ghost listen-btn" data-action="play-recording" data-recording-id="${escapeAttr(recording?.id || "")}" ${recording ? "" : "disabled"}>재생</button>
-            <button class="btn ghost clear-btn" data-action="delete-recording" data-recording-id="${escapeAttr(recording?.id || "")}" ${recording ? "" : "disabled"}>삭제</button>
-          </div>
-        </div>
-        <div class="check-result">
-          <select data-check="${check.id}" data-check-type="plumbingChecks" data-field="result">
-            ${["대기", "정상", "의심", "누수확인", "재검필요"].map((item) => `<option ${check.result === item ? "selected" : ""}>${item}</option>`).join("")}
-          </select>
-        </div>
-      </div>
     </section>
   `;
 }
@@ -1250,6 +1235,7 @@ function buildQuickJobSearchText(job) {
     job.phone,
     job.situation,
     job.environment,
+    pipeLeakTypeSummary(job),
     job.report,
     job.blog,
     job.workSummary,
@@ -1333,6 +1319,7 @@ function mergeImportedJobs(importedJobs) {
       somersPhotoFiles: Array.isArray(job.somersPhotoFiles) ? job.somersPhotoFiles : [],
       leakAudioPoints: Array.isArray(job.leakAudioPoints) ? job.leakAudioPoints : [],
     };
+    normalizePipeLeakTypes(normalizedJob);
     normalizeV2Fields(normalizedJob);
     if (deleted.has(normalizedJob.id)) return;
     const existingIndex = state.jobs.findIndex((existing) => existing.id === normalizedJob.id);
@@ -1418,6 +1405,16 @@ function bindEvents() {
       const fieldName = input.dataset.field;
       const value = fieldName === "done" ? input.checked : input.value;
       updateCheck(input.dataset.checkType, input.dataset.check, { [fieldName]: value });
+    });
+  });
+
+  app.querySelectorAll("[data-pipe-leak-type]").forEach((input) => {
+    input.addEventListener("input", () => {
+      const job = currentJob();
+      normalizePipeLeakTypes(job);
+      job.pipeLeakTypes[input.dataset.pipeLeakType] = input.checked;
+      job.updatedAt = new Date().toISOString();
+      saveState();
     });
   });
 
@@ -3000,6 +2997,7 @@ ${job.situation || "현장 상황 기록이 필요합니다."}
 
 2. 배관 누수 점검 결과
 ${summaryLines(job.plumbingChecks)}
+${pipeLeakTypeSummary(job)}
 
 3. 방수 및 외부 요인 점검 결과
 ${summaryLines(job.waterproofChecks)}
@@ -3024,7 +3022,7 @@ function generateBlog(job, custom = null) {
   const title = `${keyword} 현장 점검 방법`;
   const description = fitDescription(`${keyword}은 ${category}에서 중요한 기준이며 문제 상황, 점검 순서, 기록 내용을 차분히 확인해 원인을 좁히고 필요한 조치를 판단하는 과정입니다.`);
   const situation = job.situation || "고객 진술과 피해 위치를 기준으로 누수 범위를 좁혀 확인했습니다.";
-  const checks = summaryLines([...job.plumbingChecks, ...job.waterproofChecks]);
+  const checks = `${summaryLines([...job.plumbingChecks, ...job.waterproofChecks])}\n${pipeLeakTypeSummary(job)}`;
   if (custom) {
     return `제목: ${title}
 디스크립션: ${description}
@@ -3096,6 +3094,7 @@ function buildBlogPrompt(job, custom = null) {
 - 주소: ${job.address || ""}
 - 상황 기록: ${job.situation || "현장 상황 기록을 바탕으로 작성"}
 - 환경 기록: ${job.environment || ""}
+- 배관 누수 구분: ${pipeLeakTypeSummary(job)}
 - 소머즈 OCR: 레벨 ${job.somersLeakLevel || "미기록"}, 주파수 ${job.somersFrequency || "미기록"}, 주황 표시 ${job.somersOrangeMark || "미기록"}, 의심 위치 ${job.somersSuspectLocation || "미기록"}
 - 소머즈 촬영 자료: ${(job.somersPhotos || []).length ? `${job.somersPhotos.length}장 (${job.somersPhotos.join(", ")})` : "미기록"}
 - 소머즈 촬영 메모: ${job.somersCaptureMemo || "미기록"}
@@ -3104,6 +3103,7 @@ function buildBlogPrompt(job, custom = null) {
 - 소견서 요약: ${job.report || "소견서가 있으면 함께 반영"}
 - 점검 요약:
 ${summaryLines([...job.plumbingChecks, ...job.waterproofChecks])}
+- 배관 누수 구분: ${pipeLeakTypeSummary(job)}
 
 [출력 형식]
 제목:
@@ -3129,6 +3129,17 @@ function openChatGptWithPrompt(job, useCustom = false) {
 
 function summaryLines(checks) {
   return checks.map((check) => `- ${check.title}: ${check.result}${check.memo ? ` (${check.memo})` : ""}`).join("\n");
+}
+
+function pipeLeakTypeSummary(job = currentJob()) {
+  const types = job.pipeLeakTypes || {};
+  const labels = [
+    ["cold", "냉수"],
+    ["hot", "온수"],
+    ["heating", "난방"],
+  ];
+  const selected = labels.filter(([key]) => types[key]).map(([, label]) => label);
+  return selected.length ? `- 누수 체크박스: ${selected.join(", ")}` : "- 누수 체크박스: 미선택";
 }
 
 function countDone(checks) {
