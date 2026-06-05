@@ -665,6 +665,7 @@ function renderTracker(job) {
 function renderTrackerV2Workbench(job, leakPoints = []) {
   const topPoints = [...leakPoints].sort((a, b) => Number(b.score || 0) - Number(a.score || 0)).slice(0, 4);
   const somersPreview = (job.somersPhotoFiles || [])[0];
+  const somersHasPhoto = Boolean((job.somersPhotoFiles || []).some((photo) => photo?.dataUrl));
   return `
     <section class="tracker-v2-workbench">
       <article class="v2-screen somers-screen">
@@ -677,6 +678,10 @@ function renderTrackerV2Workbench(job, leakPoints = []) {
           <span>소머즈 화면 사진 선택</span>
           <input data-file-type="somersPhotos" type="file" accept="image/*" capture="environment" multiple />
         </label>
+        <div class="v2-analyze-row">
+          <button class="btn primary" data-action="analyze-somers-photo" ${somersHasPhoto ? "" : "disabled"}>소머즈 사진 분석</button>
+          <span>${somersHasPhoto ? "촬영 후 분석 버튼을 눌러 OCR 보조값을 채웁니다." : "사진을 먼저 촬영하거나 선택하세요."}</span>
+        </div>
         <div class="v2-capture-status">
           <span>촬영 자료 <b>${(job.somersPhotos || []).length ? `${job.somersPhotos.length}장 저장됨` : "대기"}</b></span>
           ${somersPreview?.dataUrl ? `<img src="${escapeAttr(somersPreview.dataUrl)}" alt="소머즈 촬영 미리보기" />` : ""}
@@ -1588,6 +1593,7 @@ function handleAction(action, data) {
   if (action === "delete-leak-point") deleteLeakAudioPoint(data.id);
   if (action === "save-tracker") notify("추적 데이터가 현재 작업에 저장되었습니다.");
   if (action === "clear-tracker") notify("화면 그래프 로그를 삭제했습니다.");
+  if (action === "analyze-somers-photo") analyzeSomersPhoto();
   if (action === "generate-report") updateJob({ report: generateReport(job) });
   if (action === "download-report-pdf") openPdfPrintWindow("report");
   if (action === "clear-report" || action === "delete-report") updateJob({ report: "" });
@@ -2900,6 +2906,93 @@ function saveLeakAudioPoint() {
   saveState();
   render();
   notify("현재 측정 지점을 저장했습니다.");
+}
+
+async function analyzeSomersPhoto() {
+  const job = currentJob();
+  const photo = (job.somersPhotoFiles || []).find((item) => item?.dataUrl);
+  if (!photo) {
+    notify("소머즈 사진을 먼저 촬영하거나 선택하세요.");
+    return;
+  }
+  try {
+    const analysis = await analyzeSomersImage(photo.dataUrl);
+    const positionText = `${analysis.vertical} ${analysis.horizontal}`;
+    const levelText = `${analysis.score} / 100`;
+    const orangeText = `${analysis.strength} · 화면 ${analysis.orangePercent}%`;
+    const suspectText = analysis.hasOrange ? `소머즈 주황 표시 중심: ${positionText}` : "주황 표시 약함: 수동 확인 필요";
+    const memoLine = `소머즈 사진 분석: 주황 표시 ${orangeText}, 의심 위치 ${suspectText}, 분석시간 ${new Date().toLocaleString()}`;
+    job.somersLeakLevel = job.somersLeakLevel || levelText;
+    job.somersOrangeMark = orangeText;
+    job.somersSuspectLocation = job.somersSuspectLocation || suspectText;
+    job.somersCaptureMemo = mergeMemo(job.somersCaptureMemo, memoLine);
+    job.updatedAt = new Date().toISOString();
+    saveState();
+    render();
+    notify("소머즈 사진 분석 결과를 기록했습니다. 숫자/주파수는 화면을 보며 필요 시 수정하세요.");
+  } catch (error) {
+    console.error(error);
+    notify("사진 분석에 실패했습니다. 다른 사진으로 다시 시도하세요.");
+  }
+}
+
+async function analyzeSomersImage(dataUrl) {
+  const image = await loadImage(dataUrl);
+  const maxSide = 420;
+  const naturalWidth = image.naturalWidth || image.width;
+  const naturalHeight = image.naturalHeight || image.height;
+  const scale = Math.min(1, maxSide / Math.max(naturalWidth, naturalHeight));
+  const width = Math.max(1, Math.round(naturalWidth * scale));
+  const height = Math.max(1, Math.round(naturalHeight * scale));
+  const canvas = document.createElement("canvas");
+  canvas.width = width;
+  canvas.height = height;
+  const ctx = canvas.getContext("2d", { willReadFrequently: true });
+  ctx.drawImage(image, 0, 0, width, height);
+  const pixels = ctx.getImageData(0, 0, width, height).data;
+  let orangeCount = 0;
+  let weightedX = 0;
+  let weightedY = 0;
+  let weightTotal = 0;
+  for (let i = 0; i < pixels.length; i += 4) {
+    const r = pixels[i];
+    const g = pixels[i + 1];
+    const b = pixels[i + 2];
+    const isOrange = r > 150 && g > 55 && g < 205 && b < 135 && r > g * 1.08 && g > b * 1.25;
+    if (!isOrange) continue;
+    const index = i / 4;
+    const x = index % width;
+    const y = Math.floor(index / width);
+    const weight = Math.max(1, r + g - b);
+    orangeCount += 1;
+    weightedX += x * weight;
+    weightedY += y * weight;
+    weightTotal += weight;
+  }
+  const totalPixels = width * height;
+  const orangeRatio = orangeCount / totalPixels;
+  const cx = weightTotal ? weightedX / weightTotal : width / 2;
+  const cy = weightTotal ? weightedY / weightTotal : height / 2;
+  const horizontal = cx < width * 0.33 ? "좌측" : cx > width * 0.66 ? "우측" : "중앙";
+  const vertical = cy < height * 0.33 ? "상단" : cy > height * 0.66 ? "하단" : "중앙";
+  const orangePercent = Math.round(orangeRatio * 1000) / 10;
+  const score = Math.round(clamp(orangeRatio * 1400 + (orangeCount ? 38 : 8), 0, 100));
+  const strength = orangeRatio > 0.045 ? "강함" : orangeRatio > 0.018 ? "중간" : orangeRatio > 0.006 ? "약함" : "미약";
+  return {
+    score,
+    strength,
+    orangePercent,
+    horizontal,
+    vertical,
+    hasOrange: orangeRatio > 0.006,
+  };
+}
+
+function mergeMemo(current, line) {
+  const text = String(current || "").trim();
+  if (!text) return line;
+  if (text.includes(line)) return text;
+  return `${text}\n${line}`;
 }
 
 function deleteLeakAudioPoint(id) {
