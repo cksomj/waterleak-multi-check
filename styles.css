@@ -23,6 +23,7 @@
 
 body {
   margin: 0;
+  overflow-x: hidden;
   background:
     radial-gradient(circle at 22% -12%, rgba(249, 115, 22, 0.16), transparent 34%),
     linear-gradient(180deg, #0a0e12 0%, var(--bg) 48%);
@@ -43,6 +44,8 @@ button {
 
 .shell {
   min-height: 100vh;
+  max-width: 100vw;
+  overflow-x: hidden;
 }
 
 .topbar {
@@ -371,7 +374,21 @@ button {
   animation-fill-mode: both;
   animation-timing-function: cubic-bezier(0.2, 0.78, 0.22, 1);
   min-height: calc(100vh - 106px);
+  min-width: 0;
   will-change: transform, opacity;
+}
+
+.panel,
+.card,
+.field,
+.section-head,
+.toolbar,
+.command-deck,
+.tracker-v2-grid,
+.tracker-v2-workbench,
+.pdf-preview-page,
+.estimate-form {
+  min-width: 0;
 }
 
 .view-stage.slide-in-right {
@@ -453,14 +470,16 @@ button {
   margin: -4px 0 16px;
 }
 
-.field-step-strip span {
+.field-step-strip button {
   align-items: center;
   background: #0f161b;
   border: 1px solid #283842;
   border-radius: 8px;
   color: var(--muted);
+  cursor: pointer;
   display: flex;
   gap: 8px;
+  justify-content: center;
   min-height: 42px;
   padding: 8px 10px;
   white-space: nowrap;
@@ -479,14 +498,14 @@ button {
   width: 24px;
 }
 
-.field-step-strip span.active {
+.field-step-strip button.active {
   background: rgba(249, 115, 22, 0.15);
   border-color: rgba(249, 115, 22, 0.72);
   color: #ffb15f;
   font-weight: 900;
 }
 
-.field-step-strip span.active b {
+.field-step-strip button.active b {
   background: #f97316;
   color: #160d05;
 }
@@ -600,9 +619,9 @@ p {
 
 .field-readiness-panel {
   display: grid;
-  gap: 10px;
+  gap: 6px;
   grid-template-columns: repeat(5, minmax(0, 1fr));
-  margin-bottom: 14px;
+  margin-bottom: 10px;
 }
 
 .field-readiness-panel div {
@@ -610,9 +629,9 @@ p {
   border: 1px solid #24343d;
   border-radius: 8px;
   display: grid;
-  gap: 5px;
-  min-height: 112px;
-  padding: 12px;
+  gap: 2px;
+  min-height: 64px;
+  padding: 8px;
 }
 
 .field-readiness-panel div.attention {
@@ -629,7 +648,7 @@ p {
 
 .field-readiness-panel b {
   color: #e7f0f3;
-  font-size: 20px;
+  font-size: 15px;
 }
 
 .field-readiness-panel div.attention b {
@@ -638,8 +657,8 @@ p {
 
 .field-readiness-panel small {
   color: var(--muted);
-  font-size: 12px;
-  line-height: 1.45;
+  font-size: 11px;
+  line-height: 1.25;
 }
 
 .panel,
@@ -2212,6 +2231,16 @@ canvas {
     grid-template-columns: 1fr;
   }
 
+  .layout {
+    display: block;
+    width: 100%;
+  }
+
+  .content {
+    max-width: 100vw;
+    overflow-x: hidden;
+  }
+
   .grid.three {
     grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
   }
@@ -2238,16 +2267,7 @@ canvas {
   }
 
   .sidebar {
-    border-bottom: 1px solid var(--line);
-    border-right: 0;
-    display: flex;
-    gap: 6px;
-    height: auto;
-    min-height: auto;
-    overflow-x: auto;
-    padding: 8px;
-    position: static;
-    scrollbar-width: thin;
+    display: none;
   }
 
   .nav-button {
@@ -2336,15 +2356,19 @@ canvas {
   }
 
   .field-step-strip {
-    display: flex;
-    overflow-x: auto;
-    padding-bottom: 4px;
-    scrollbar-width: thin;
+    display: grid;
+    gap: 6px;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    margin: 0 0 12px;
+    overflow: visible;
+    padding-bottom: 0;
   }
 
-  .field-step-strip span {
-    flex: 0 0 auto;
-    min-width: 112px;
+  .field-step-strip button {
+    font-size: 13px;
+    min-height: 44px;
+    min-width: 0;
+    padding: 7px 6px;
   }
 
   .command-deck {
@@ -2352,7 +2376,7 @@ canvas {
   }
 
   .field-readiness-panel {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-columns: repeat(5, minmax(0, 1fr));
   }
 
   .leak-ai-head,
@@ -2469,14 +2493,11 @@ canvas {
   }
 
   .sidebar {
-    position: sticky;
-    top: 0;
-    z-index: 30;
+    display: none;
   }
 
   .nav-button {
-    min-width: 104px;
-    min-height: 48px;
+    min-width: 0;
   }
 
   .toolbar {
@@ -2488,7 +2509,7 @@ canvas {
   }
 
   .field-readiness-panel {
-    grid-template-columns: 1fr;
+    grid-template-columns: repeat(5, minmax(0, 1fr));
   }
 
   .toolbar .btn {
@@ -2526,11 +2547,11 @@ canvas {
 
 @media (max-width: 520px) {
   body {
-    font-size: 15px;
+    font-size: 14px;
   }
 
   .content {
-    padding: 14px;
+    padding: 10px;
   }
 
   .brand small {
@@ -2546,16 +2567,50 @@ canvas {
     justify-content: center;
   }
 
-  .nav-button {
-    min-width: 108px;
+  .field-step-strip {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .field-step-strip button {
+    gap: 3px;
+    min-height: 42px;
+    padding: 6px 4px;
+  }
+
+  .field-step-strip b {
+    font-size: 11px;
+    height: 20px;
+    width: 20px;
+  }
+
+  .field-readiness-panel {
+    gap: 4px;
+  }
+
+  .field-readiness-panel div {
+    min-height: 48px;
+    padding: 5px 3px;
+    text-align: center;
+  }
+
+  .field-readiness-panel span {
+    font-size: 10px;
+  }
+
+  .field-readiness-panel b {
+    font-size: 12px;
+  }
+
+  .field-readiness-panel small {
+    display: none;
   }
 
   .section-head h1 {
-    font-size: 23px;
+    font-size: 21px;
   }
 
   .panel {
-    padding: 13px;
+    padding: 11px;
   }
 
   .btn {
@@ -2563,7 +2618,7 @@ canvas {
   }
 
   canvas {
-    height: 310px;
+    height: 270px;
   }
 
   .leak-score-overlay {
