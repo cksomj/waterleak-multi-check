@@ -1233,6 +1233,12 @@ textarea[data-job-field="report"] {
   max-width: 210px;
 }
 
+.v2-file-analysis-grid {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
 .v2-capture-status {
   display: grid;
   gap: 8px;
@@ -1279,6 +1285,15 @@ textarea[data-job-field="report"] {
   font-size: 12px;
   font-weight: 800;
   line-height: 1.45;
+}
+
+.v2-analyze-row.sound {
+  background: rgba(56, 189, 248, 0.08);
+  border-color: rgba(56, 189, 248, 0.28);
+}
+
+.v2-analyze-row.sound span {
+  color: #bae6fd;
 }
 
 .v2-ocr-grid,
@@ -2489,6 +2504,10 @@ canvas {
   }
 
   .v2-analyze-row {
+    grid-template-columns: 1fr;
+  }
+
+  .v2-file-analysis-grid {
     grid-template-columns: 1fr;
   }
 
