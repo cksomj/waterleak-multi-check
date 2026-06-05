@@ -609,7 +609,6 @@ function renderTracker(job) {
         <button class="btn ghost record-btn ${trackerRecordingActive ? "recording" : ""} ${trackerRecording ? "saved" : ""}" data-action="record-tracker">
           <span class="voice-icon ${trackerRecordingActive && !trackerRecordingPaused ? "blue pulse" : trackerRecording ? "blue" : "idle"}"></span>${trackerRecordingActive ? "녹음멈춤" : trackerRecording ? "저장완료" : "녹음"}
         </button>
-        <label class="btn ghost import-file-btn">녹음파일 가져오기<input data-import-recording data-target-kind="tracker" type="file" accept="audio/*" /></label>
         <button class="btn ghost listen-btn" data-action="play-recording" data-recording-id="${escapeAttr(trackerRecording?.id || "")}" ${trackerRecording ? "" : "disabled"}>재생</button>
         <button class="btn ghost clear-btn" data-action="delete-recording" data-recording-id="${escapeAttr(trackerRecording?.id || "")}" ${trackerRecording ? "" : "disabled"}>삭제</button>
         <button class="btn warn" data-action="stop-spectrum">정지</button>
@@ -669,24 +668,36 @@ function renderTrackerV2Workbench(job, leakPoints = []) {
   const topPoints = [...leakPoints].sort((a, b) => Number(b.score || 0) - Number(a.score || 0)).slice(0, 4);
   const somersPreview = (job.somersPhotoFiles || [])[0];
   const somersHasPhoto = Boolean((job.somersPhotoFiles || []).some((photo) => photo?.dataUrl));
+  const trackerRecording = getLastRecordingForTarget({ kind: "tracker" });
   return `
     <section class="tracker-v2-workbench">
       <article class="v2-screen somers-screen">
         <div>
           <span class="v2-kicker">SCREEN 01</span>
-          <h3>소머즈 촬영 화면</h3>
-          <p>장비 화면을 촬영해 OCR로 누수 레벨, 주파수, 그래프, 주황색 표시, 의심 위치를 추출하는 설계 영역입니다.</p>
+          <h3>소머즈 사진 / 소리 분석</h3>
+          <p>소머즈 화면 사진과 현장 소리 파일을 불러와 누수 레벨, 주황 표시, 의심 위치, 청음 점수를 함께 기록합니다.</p>
         </div>
-        <label class="v2-capture-box">
-          <span>소머즈 사진 파일 가져오기</span>
-          <input data-file-type="somersPhotos" type="file" accept="image/*" multiple />
-        </label>
-        <div class="v2-analyze-row">
-          <button class="btn primary" data-action="analyze-somers-photo" ${somersHasPhoto ? "" : "disabled"}>소머즈 사진 분석</button>
-          <span>${somersHasPhoto ? "파일을 불러온 뒤 분석 버튼을 눌러 OCR 보조값을 채웁니다." : "소머즈 사진 파일을 먼저 불러오세요."}</span>
+        <div class="v2-file-analysis-grid">
+          <label class="v2-capture-box">
+            <span>소머즈 사진 파일 가져오기</span>
+            <input data-file-type="somersPhotos" type="file" accept="image/*" multiple />
+          </label>
+          <div class="v2-analyze-row">
+            <button class="btn primary" data-action="analyze-somers-photo" ${somersHasPhoto ? "" : "disabled"}>사진 분석</button>
+            <span>${somersHasPhoto ? "사진 분석으로 OCR 보조값을 채웁니다." : "소머즈 사진 파일을 먼저 불러오세요."}</span>
+          </div>
+          <label class="v2-capture-box">
+            <span>현장 소리 파일 가져오기</span>
+            <input data-import-recording data-target-kind="tracker" type="file" accept="audio/*" />
+          </label>
+          <div class="v2-analyze-row sound">
+            <button class="btn primary" data-action="analyze-imported-recording" ${trackerRecording ? "" : "disabled"}>소리 분석</button>
+            <span>${trackerRecording ? `${escapeHtml(trackerRecording.name || "녹음 파일")} 분석 가능` : "녹음 파일을 먼저 불러오세요."}</span>
+          </div>
         </div>
         <div class="v2-capture-status">
           <span>촬영 자료 <b>${(job.somersPhotos || []).length ? `${job.somersPhotos.length}장 저장됨` : "대기"}</b></span>
+          <span>소리 자료 <b>${trackerRecording ? "저장됨" : "대기"}</b></span>
           ${somersPreview?.dataUrl ? `<img src="${escapeAttr(somersPreview.dataUrl)}" alt="소머즈 촬영 미리보기" />` : ""}
         </div>
         <div class="v2-ocr-grid">
@@ -1606,6 +1617,7 @@ function handleAction(action, data) {
   if (action === "save-tracker") notify("추적 데이터가 현재 작업에 저장되었습니다.");
   if (action === "clear-tracker") notify("화면 그래프 로그를 삭제했습니다.");
   if (action === "analyze-somers-photo") analyzeSomersPhoto();
+  if (action === "analyze-imported-recording") analyzeImportedRecording();
   if (action === "generate-report") updateJob({ report: generateReport(job) });
   if (action === "download-report-pdf") openPdfPrintWindow("report");
   if (action === "clear-report" || action === "delete-report") updateJob({ report: "" });
@@ -3033,6 +3045,85 @@ function mergeMemo(current, line) {
   if (!text) return line;
   if (text.includes(line)) return text;
   return `${text}\n${line}`;
+}
+
+async function analyzeImportedRecording() {
+  const recording = getLastRecordingForTarget({ kind: "tracker" });
+  if (!recording) {
+    notify("소리 파일을 먼저 가져오세요.");
+    return;
+  }
+  try {
+    const blob = await getRecordingBlob(recording.id);
+    if (!blob) {
+      notify("소리 파일을 찾지 못했습니다.");
+      return;
+    }
+    const metrics = await analyzeAudioBlob(blob);
+    const risk = getLeakAudioRisk(metrics.score);
+    const job = currentJob();
+    const point = {
+      id: `leak-${Date.now()}`,
+      name: `파일분석 ${recording.name || "소리자료"}`,
+      score: metrics.score,
+      risk: risk.label,
+      color: risk.color,
+      metrics,
+      createdAt: new Date().toISOString(),
+      sourceRecordingId: recording.id,
+    };
+    job.leakAudioPoints = [point, ...(job.leakAudioPoints || [])];
+    job.somersCaptureMemo = mergeMemo(job.somersCaptureMemo, `소리 파일 분석: ${point.score}% / ${point.risk}, 피크 추정 ${metrics.peakHz} Hz, 파일 ${recording.name || "소리자료"}`);
+    job.updatedAt = new Date().toISOString();
+    lastLeakAudioMetrics = metrics;
+    saveState();
+    render();
+    notify("소리 파일 분석 결과를 다지점 비교에 저장했습니다.");
+  } catch (error) {
+    console.error(error);
+    notify("소리 파일 분석에 실패했습니다. 다른 오디오 파일로 다시 시도하세요.");
+  }
+}
+
+async function analyzeAudioBlob(blob) {
+  const buffer = await blob.arrayBuffer();
+  const context = new (window.AudioContext || window.webkitAudioContext)();
+  try {
+    const audioBuffer = await context.decodeAudioData(buffer.slice(0));
+    const data = audioBuffer.getChannelData(0);
+    const sampleRate = audioBuffer.sampleRate;
+    const step = Math.max(1, Math.floor(data.length / 90000));
+    let sumSquares = 0;
+    let peak = 0;
+    let zeroCrossings = 0;
+    let diffSum = 0;
+    let count = 0;
+    let prev = data[0] || 0;
+    for (let i = 0; i < data.length; i += step) {
+      const value = data[i] || 0;
+      sumSquares += value * value;
+      peak = Math.max(peak, Math.abs(value));
+      if ((value >= 0 && prev < 0) || (value < 0 && prev >= 0)) zeroCrossings += 1;
+      diffSum += Math.abs(value - prev);
+      prev = value;
+      count += 1;
+    }
+    const rms = Math.sqrt(sumSquares / Math.max(1, count));
+    const zeroCrossHz = Math.round((zeroCrossings * sampleRate) / Math.max(1, count * step * 2));
+    const roughHighEnergy = clamp((diffSum / Math.max(1, count)) * 26, 0, 1);
+    const score = Math.round(clamp(rms * 180 + peak * 36 + roughHighEnergy * 38 + (zeroCrossHz > 3200 ? 12 : 0), 0, 100));
+    return {
+      score,
+      rawScore: score,
+      peakHz: Math.max(0, zeroCrossHz),
+      lowAvg: Math.round(clamp(rms * 95, 0, 100)),
+      midAvg: Math.round(clamp((rms + roughHighEnergy * 0.45) * 92, 0, 100)),
+      leakAvg: Math.round(clamp((roughHighEnergy * 0.72 + peak * 0.28) * 100, 0, 100)),
+      ultraAvg: Math.round(clamp(roughHighEnergy * 88, 0, 100)),
+    };
+  } finally {
+    await context.close();
+  }
 }
 
 function deleteLeakAudioPoint(id) {
