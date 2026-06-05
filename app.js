@@ -72,6 +72,7 @@ const defaultState = {
   deletedJobIds: [],
   audioInputDeviceId: "",
   audioInputLabel: "",
+  audioInputStatus: "외부 입력 자동선택",
   jobs: [],
 };
 
@@ -592,10 +593,7 @@ function renderTracker(job) {
       </div>
       <div class="toolbar">
         <button class="btn primary" data-action="start-spectrum">USB-C / 3.5파이 입력 분석</button>
-        <select class="audio-input-select" data-audio-input>
-          <option value="">외부 입력 자동선택</option>
-          ${audioInputDevices.map((device) => `<option value="${escapeAttr(device.deviceId)}" ${state.audioInputDeviceId === device.deviceId ? "selected" : ""}>${escapeHtml(device.label || "오디오 입력")}</option>`).join("")}
-        </select>
+        <span class="audio-input-status ${audioInputStatusClass()}">${escapeHtml(state.audioInputStatus || "외부 입력 자동선택")}</span>
         <button class="btn ghost record-btn ${trackerRecordingActive ? "recording" : ""} ${trackerRecording ? "saved" : ""}" data-action="record-tracker">
           <span class="voice-icon ${trackerRecordingActive && !trackerRecordingPaused ? "blue pulse" : trackerRecording ? "blue" : "idle"}"></span>${trackerRecordingActive ? "녹음멈춤" : trackerRecording ? "저장완료" : "녹음"}
         </button>
@@ -1414,15 +1412,6 @@ function bindEvents() {
       const file = files.find((item) => item.type.startsWith("audio/")) || files[0];
       if (!file) return;
       await importRecordingFile(file, input.dataset);
-    });
-  });
-
-  app.querySelectorAll("[data-audio-input]").forEach((select) => {
-    select.addEventListener("change", () => {
-      state.audioInputDeviceId = select.value;
-      state.audioInputLabel = select.options[select.selectedIndex]?.text || "";
-      saveState();
-      notify(state.audioInputDeviceId ? `오디오 입력 선택: ${state.audioInputLabel}` : "외부 입력 자동선택으로 설정했습니다.");
     });
   });
 
@@ -2772,8 +2761,10 @@ async function startSpectrum() {
     if (audioContext) await audioContext.close();
     leakAudioHistory = [];
     lastLeakAudioMetrics = null;
-    await refreshAudioInputDevices({ silent: true });
-    const selectedDeviceId = pickPreferredAudioInputDeviceId();
+    state.audioInputStatus = "외부 입력 확인 중";
+    saveState();
+    render();
+    const selectedDeviceId = await resolveUsbAudioInputDeviceId();
     const audioConstraints = {
       echoCancellation: false,
       noiseSuppression: false,
@@ -2787,8 +2778,8 @@ async function startSpectrum() {
       },
       video: false,
     });
-    await refreshAudioInputDevices({ silent: true });
-    warnIfInternalMicSelected();
+    await refreshAudioInputDevices({ silent: true, skipRender: true });
+    markSelectedAudioInput();
     audioContext = new (window.AudioContext || window.webkitAudioContext)();
     const source = audioContext.createMediaStreamSource(micStream);
     analyser = audioContext.createAnalyser();
@@ -2799,6 +2790,9 @@ async function startSpectrum() {
     source.connect(analyser);
     renderSpectrum();
   } catch (error) {
+    state.audioInputStatus = "입력 확인 실패";
+    saveState();
+    render();
     notify("마이크/오디오 입력 권한이 필요합니다. USB-C 오디오 캡처 연결, 브라우저 권한, 입력 장치를 확인한 뒤 다시 실행하세요.");
   }
 }
@@ -2907,12 +2901,37 @@ async function refreshAudioInputDevices(options = {}) {
       const label = audioInputDevices.find((device) => device.deviceId === state.audioInputDeviceId)?.label || state.audioInputLabel || "";
       notify(label ? `현재 오디오 입력: ${label}` : "입력장치 이름은 권한 허용 후 확인됩니다. USB-C 장치를 연결한 뒤 입력 분석을 눌러주세요.");
     }
-    render();
+    if (!options.skipRender) render();
     return audioInputDevices;
   } catch (error) {
     if (options.notifyResult) notify("오디오 입력장치 확인에 실패했습니다.");
     return [];
   }
+}
+
+async function resolveUsbAudioInputDeviceId() {
+  await refreshAudioInputDevices({ silent: true, skipRender: true });
+  let selectedDeviceId = pickPreferredAudioInputDeviceId();
+  const hasLabels = audioInputDevices.some((device) => device.label);
+  if (!selectedDeviceId && !hasLabels) {
+    const tempStream = await navigator.mediaDevices.getUserMedia({
+      audio: {
+        echoCancellation: false,
+        noiseSuppression: false,
+        autoGainControl: false,
+        channelCount: 1,
+      },
+      video: false,
+    });
+    tempStream.getTracks().forEach((track) => track.stop());
+    await refreshAudioInputDevices({ silent: true, skipRender: true });
+    selectedDeviceId = pickPreferredAudioInputDeviceId();
+  }
+  state.audioInputDeviceId = selectedDeviceId || "";
+  const selected = audioInputDevices.find((device) => device.deviceId === selectedDeviceId);
+  state.audioInputLabel = selected?.label || "";
+  saveState();
+  return selectedDeviceId;
 }
 
 function pickPreferredAudioInputDeviceId() {
@@ -2923,17 +2942,36 @@ function pickPreferredAudioInputDeviceId() {
   return external?.deviceId || "";
 }
 
-function warnIfInternalMicSelected() {
+function markSelectedAudioInput() {
   const track = micStream?.getAudioTracks?.()[0];
   const label = track?.label || state.audioInputLabel || "";
   state.audioInputLabel = label;
+  const external = looksLikeExternalAudioInput(label);
+  const internal = looksLikeInternalAudioInput(label);
+  state.audioInputStatus = label ? `${external ? "USB-C 입력" : internal ? "내장 마이크 의심" : "입력 확인"}: ${label}` : "입력 장치명 확인 불가";
   saveState();
   const looksInternal = /(built-in|internal|내장|phone|휴대폰)/i.test(label) || (!/(usb|type-c|type c|capture|adapter|external|외부|캡처)/i.test(label) && /mic|microphone|마이크/i.test(label));
   if (looksInternal) {
-    notify("현재 입력이 내장 마이크일 수 있습니다. USB-C 오디오 캡처를 연결한 뒤 외부 입력 선택에서 장치를 고르세요.");
+    notify("현재 입력이 내장 마이크일 수 있습니다. USB-C 오디오 캡처를 연결한 뒤 다시 USB-C 입력 분석을 누르세요.");
   } else if (label) {
     notify(`오디오 입력 사용 중: ${label}`);
   }
+  render();
+}
+
+function looksLikeExternalAudioInput(label = "") {
+  return /(usb|type-c|type c|capture|adapter|external|headset|외부|오디오|캡처|이어폰|헤드셋)/i.test(label);
+}
+
+function looksLikeInternalAudioInput(label = "") {
+  return /(built-in|internal|내장|phone|휴대폰)/i.test(label) || (!looksLikeExternalAudioInput(label) && /mic|microphone|마이크/i.test(label));
+}
+
+function audioInputStatusClass() {
+  const status = state.audioInputStatus || "";
+  if (/USB-C|외부|capture|usb|캡처/i.test(status)) return "ready";
+  if (/내장|실패|불가|마이크 의심/i.test(status)) return "warn";
+  return "";
 }
 
 function clamp(value, min, max) {
