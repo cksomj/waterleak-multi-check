@@ -2038,7 +2038,7 @@ async function createDocumentPdfBlob(type, job) {
 }
 
 function buildReportPdfPages(job) {
-  const report = reportContentForDocument(job.report || generateReport(job));
+  const report = reportContentForDocument(job.report ?? generateReport(job));
   return paginatePdfLines([
     { text: "누수진단 소견서", size: 32, bold: true, align: "center", gap: 18 },
     { text: `진단일자: ${job.date || ""}`, size: 16 },
@@ -2691,7 +2691,7 @@ function openPdfPrintWindow(type) {
 }
 
 function buildReportPrintHtml(job) {
-  const report = reportContentForDocument(job.report || generateReport(job));
+  const report = reportContentForDocument(job.report ?? generateReport(job));
   return `
     <h1>누수진단 소견서</h1>
     <table>
