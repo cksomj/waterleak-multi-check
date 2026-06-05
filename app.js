@@ -596,7 +596,6 @@ function renderTracker(job) {
           <option value="">외부 입력 자동선택</option>
           ${audioInputDevices.map((device) => `<option value="${escapeAttr(device.deviceId)}" ${state.audioInputDeviceId === device.deviceId ? "selected" : ""}>${escapeHtml(device.label || "오디오 입력")}</option>`).join("")}
         </select>
-        <button class="btn ghost" data-action="refresh-audio-inputs">입력확인</button>
         <button class="btn ghost record-btn ${trackerRecordingActive ? "recording" : ""} ${trackerRecording ? "saved" : ""}" data-action="record-tracker">
           <span class="voice-icon ${trackerRecordingActive && !trackerRecordingPaused ? "blue pulse" : trackerRecording ? "blue" : "idle"}"></span>${trackerRecordingActive ? "녹음멈춤" : trackerRecording ? "저장완료" : "녹음"}
         </button>
@@ -1612,7 +1611,6 @@ function handleAction(action, data) {
   }
   if (action === "start-spectrum") startSpectrum();
   if (action === "stop-spectrum") stopSpectrum();
-  if (action === "refresh-audio-inputs") refreshAudioInputDevices({ notifyResult: true });
   if (action === "save-leak-point") saveLeakAudioPoint();
   if (action === "delete-leak-point") deleteLeakAudioPoint(data.id);
   if (action === "save-tracker") notify("추적 데이터가 현재 작업에 저장되었습니다.");
@@ -2185,11 +2183,19 @@ async function toggleRecording(target = { kind: "situation" }) {
     return;
   }
   try {
-    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    let stream;
+    if (target.kind === "tracker") {
+      if (!micStream || !analyser || !audioContext) await startSpectrum();
+      if (!micStream) throw new Error("No tracker audio input");
+      const tracks = micStream.getAudioTracks().map((track) => track.clone());
+      stream = new MediaStream(tracks);
+    } else {
+      stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    }
     recordingTarget = target;
     await startWavRecording(stream);
     render();
-    notify("녹음 중입니다.");
+    notify(target.kind === "tracker" ? "그래프를 보면서 녹음 중입니다." : "녹음 중입니다.");
   } catch (error) {
     notify("마이크 권한이 필요합니다. 브라우저 권한 허용, USB-C 오디오 캡처 연결, HTTPS/로컬 실행 상태를 확인하세요.");
   }
@@ -2924,7 +2930,7 @@ function warnIfInternalMicSelected() {
   saveState();
   const looksInternal = /(built-in|internal|내장|phone|휴대폰)/i.test(label) || (!/(usb|type-c|type c|capture|adapter|external|외부|캡처)/i.test(label) && /mic|microphone|마이크/i.test(label));
   if (looksInternal) {
-    notify("현재 입력이 내장 마이크일 수 있습니다. USB-C 오디오 캡처를 연결한 뒤 입력확인에서 외부 입력을 선택하세요.");
+    notify("현재 입력이 내장 마이크일 수 있습니다. USB-C 오디오 캡처를 연결한 뒤 외부 입력 선택에서 장치를 고르세요.");
   } else if (label) {
     notify(`오디오 입력 사용 중: ${label}`);
   }
