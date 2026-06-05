@@ -920,6 +920,42 @@ textarea[data-job-field="report"] {
   margin-bottom: 4px;
 }
 
+.pipe-leak-type-box {
+  align-items: center;
+  background: rgba(249, 115, 22, 0.08);
+  border: 1px solid rgba(249, 115, 22, 0.32);
+  border-radius: 8px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+  padding: 8px;
+}
+
+.pipe-leak-type-box > span {
+  color: #ffb15f;
+  flex: 1 0 100%;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.pipe-leak-type-box label {
+  align-items: center;
+  background: #10171c;
+  border: 1px solid #2f414c;
+  border-radius: 999px;
+  color: #d9e6eb;
+  display: inline-flex;
+  gap: 5px;
+  min-height: 34px;
+  padding: 5px 10px;
+}
+
+.pipe-leak-type-box input {
+  min-height: auto;
+  width: auto;
+}
+
 .check-result select {
   min-height: 36px;
   padding: 7px 9px;
@@ -1128,10 +1164,6 @@ textarea[data-job-field="report"] {
 .leak-point-item.red {
   background: rgba(239, 68, 68, 0.16);
   border-color: #fca5a5;
-}
-
-.tracker-pipe-check {
-  margin-top: 14px;
 }
 
 .tracker-v2-grid {
