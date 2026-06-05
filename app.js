@@ -60,7 +60,7 @@ const defaultState = {
     apiKey: "",
     clientId: "",
     folderId: "",
-    folderName: "WaterLeak Multi Check",
+    folderName: "WaterLeak Multi Check V2",
   },
   googleSetupOpen: false,
   blogEditorOpen: false,
@@ -70,6 +70,8 @@ const defaultState = {
   quickListMonth: new Date().toISOString().slice(0, 7),
   quickListSelectedDate: "",
   deletedJobIds: [],
+  audioInputDeviceId: "",
+  audioInputLabel: "",
   jobs: [],
 };
 
@@ -89,6 +91,7 @@ let googleAccessToken = "";
 let pendingViewAnimation = "";
 let savedBlogSelection = null;
 let storageEstimate = { percent: null, text: "Google 저장 전용" };
+let audioInputDevices = [];
 
 const app = document.querySelector("#app");
 
@@ -190,7 +193,7 @@ function loadStoredGoogleConfig(fallback = {}) {
         apiKey: "",
         clientId: "",
         folderId: "",
-        folderName: "WaterLeak Multi Check",
+        folderName: "WaterLeak Multi Check V2",
         ...fallback,
         ...JSON.parse(saved),
       };
@@ -202,7 +205,7 @@ function loadStoredGoogleConfig(fallback = {}) {
     apiKey: "",
     clientId: "",
     folderId: "",
-    folderName: "WaterLeak Multi Check",
+    folderName: "WaterLeak Multi Check V2",
     ...fallback,
   };
 }
@@ -301,7 +304,7 @@ function render() {
         <div class="brand">
           <span class="brand-mark">WL</span>
           <div>
-            <strong>WaterLeak Multi Check</strong>
+            <strong>WaterLeak Multi Check V2</strong>
             <small>누수진단 · 소견서 · 견적서 · 블로그 작성</small>
           </div>
         </div>
@@ -487,24 +490,7 @@ function phoneField(job) {
 }
 
 function renderDriveMediaPicker() {
-  if (!driveSaveDraft?.active) return "";
-  return `
-    <div class="drive-setup">
-      <h2>Google Drive 선택 업로드</h2>
-      <label>사진갤러리에서 선택
-        <input data-drive-pick="photos" type="file" accept="image/*" multiple />
-      </label>
-      <p class="muted">선택됨: ${driveSaveDraft.photoFiles.length}개</p>
-      <label>녹음 파일에서 선택
-        <input data-drive-pick="recordings" type="file" accept="audio/*" multiple />
-      </label>
-      <p class="muted">선택됨: ${driveSaveDraft.recordingFiles.length}개</p>
-      <div class="toolbar">
-        <button class="btn primary" data-action="continue-google-drive-save">오늘작업저장</button>
-        <button class="btn ghost" data-action="cancel-google-drive-save">취소</button>
-      </div>
-    </div>
-  `;
+  return "";
 }
 
 function renderGoogleDriveInlineSetup() {
@@ -606,6 +592,11 @@ function renderTracker(job) {
       </div>
       <div class="toolbar">
         <button class="btn primary" data-action="start-spectrum">USB-C / 3.5파이 입력 분석</button>
+        <select class="audio-input-select" data-audio-input>
+          <option value="">외부 입력 자동선택</option>
+          ${audioInputDevices.map((device) => `<option value="${escapeAttr(device.deviceId)}" ${state.audioInputDeviceId === device.deviceId ? "selected" : ""}>${escapeHtml(device.label || "오디오 입력")}</option>`).join("")}
+        </select>
+        <button class="btn ghost" data-action="refresh-audio-inputs">입력확인</button>
         <button class="btn ghost record-btn ${trackerRecordingActive ? "recording" : ""} ${trackerRecording ? "saved" : ""}" data-action="record-tracker">
           <span class="voice-icon ${trackerRecordingActive && !trackerRecordingPaused ? "blue pulse" : trackerRecording ? "blue" : "idle"}"></span>${trackerRecordingActive ? "녹음멈춤" : trackerRecording ? "저장완료" : "녹음"}
         </button>
@@ -616,9 +607,9 @@ function renderTracker(job) {
     </div>
     ${renderFieldSteps("tracker")}
     <section class="audio-panel">
-      <div class="toolbar" style="justify-content:space-between;margin-bottom:10px">
+      <div class="audio-panel-head">
         <h2>실시간 주파수 그래프</h2>
-        <span class="status-pill" id="peakStatus">최고 주파수 대역 대기</span>
+        <span class="status-pill peak-status" id="peakStatus">최고 주파수 대역 대기</span>
       </div>
       <div class="spectrum-wrap">
         <canvas id="spectrum" width="1100" height="360"></canvas>
@@ -668,14 +659,14 @@ function renderTrackerV2Workbench(job, leakPoints = []) {
   const topPoints = [...leakPoints].sort((a, b) => Number(b.score || 0) - Number(a.score || 0)).slice(0, 4);
   const somersPreview = (job.somersPhotoFiles || [])[0];
   const somersHasPhoto = Boolean((job.somersPhotoFiles || []).some((photo) => photo?.dataUrl));
-  const trackerRecording = getLastRecordingForTarget({ kind: "tracker" });
+  const somersRecording = getLastRecordingForTarget({ kind: "somersSound" });
   return `
     <section class="tracker-v2-workbench">
       <article class="v2-screen somers-screen">
         <div>
           <span class="v2-kicker">SCREEN 01</span>
-          <h3>소머즈 사진 / 소리 분석</h3>
-          <p>소머즈 화면 사진과 현장 소리 파일을 불러와 누수 레벨, 주황 표시, 의심 위치, 청음 점수를 함께 기록합니다.</p>
+          <h3>소머즈 사진 / 소리 자료 저장</h3>
+          <p>소머즈가 표시한 의심 지점의 사진과 현장 소리 원본을 저장해 추후 AI 학습 자료로 남깁니다.</p>
         </div>
         <div class="v2-file-analysis-grid">
           <label class="v2-capture-box">
@@ -683,21 +674,21 @@ function renderTrackerV2Workbench(job, leakPoints = []) {
             <input data-file-type="somersPhotos" type="file" accept="image/*" multiple />
           </label>
           <div class="v2-analyze-row">
-            <button class="btn primary" data-action="analyze-somers-photo" ${somersHasPhoto ? "" : "disabled"}>사진 분석</button>
-            <span>${somersHasPhoto ? "사진 분석으로 OCR 보조값을 채웁니다." : "소머즈 사진 파일을 먼저 불러오세요."}</span>
+            <button class="btn primary" data-action="save-somers-photo" ${somersHasPhoto ? "" : "disabled"}>사진 저장</button>
+            <span>${somersHasPhoto ? "소머즈 사진 원본을 AI 학습용 자료로 저장합니다." : "소머즈 사진 파일을 먼저 불러오세요."}</span>
           </div>
           <label class="v2-capture-box">
             <span>현장 소리 파일 가져오기</span>
-            <input data-import-recording data-target-kind="tracker" type="file" accept="audio/*" />
+            <input data-import-recording data-target-kind="somersSound" type="file" accept="audio/*" />
           </label>
           <div class="v2-analyze-row sound">
-            <button class="btn primary" data-action="analyze-imported-recording" ${trackerRecording ? "" : "disabled"}>소리 분석</button>
-            <span>${trackerRecording ? `${escapeHtml(trackerRecording.name || "녹음 파일")} 분석 가능` : "녹음 파일을 먼저 불러오세요."}</span>
+            <button class="btn primary" data-action="save-somers-sound" ${somersRecording ? "" : "disabled"}>소리 저장</button>
+            <span>${somersRecording ? `${escapeHtml(somersRecording.name || "소리 파일")} 저장됨` : "소머즈 현장 소리 파일을 먼저 불러오세요."}</span>
           </div>
         </div>
         <div class="v2-capture-status">
           <span>촬영 자료 <b>${(job.somersPhotos || []).length ? `${job.somersPhotos.length}장 저장됨` : "대기"}</b></span>
-          <span>소리 자료 <b>${trackerRecording ? "저장됨" : "대기"}</b></span>
+          <span>소리 자료 <b>${somersRecording ? "저장됨" : "대기"}</b></span>
           ${somersPreview?.dataUrl ? `<img src="${escapeAttr(somersPreview.dataUrl)}" alt="소머즈 촬영 미리보기" />` : ""}
         </div>
         <div class="v2-ocr-grid">
@@ -1427,6 +1418,15 @@ function bindEvents() {
     });
   });
 
+  app.querySelectorAll("[data-audio-input]").forEach((select) => {
+    select.addEventListener("change", () => {
+      state.audioInputDeviceId = select.value;
+      state.audioInputLabel = select.options[select.selectedIndex]?.text || "";
+      saveState();
+      notify(state.audioInputDeviceId ? `오디오 입력 선택: ${state.audioInputLabel}` : "외부 입력 자동선택으로 설정했습니다.");
+    });
+  });
+
   app.querySelectorAll("[data-drive-pick]").forEach((input) => {
     input.addEventListener("change", () => {
       if (!driveSaveDraft) return;
@@ -1500,7 +1500,7 @@ function saveGoogleSettingsFromForm() {
     ...config,
     apiKey,
     clientId,
-    folderName: config.folderName || "WaterLeak Multi Check",
+    folderName: config.folderName || "WaterLeak Multi Check V2",
   };
   state.googleSetupOpen = false;
   saveGoogleConfigOnly();
@@ -1612,12 +1612,13 @@ function handleAction(action, data) {
   }
   if (action === "start-spectrum") startSpectrum();
   if (action === "stop-spectrum") stopSpectrum();
+  if (action === "refresh-audio-inputs") refreshAudioInputDevices({ notifyResult: true });
   if (action === "save-leak-point") saveLeakAudioPoint();
   if (action === "delete-leak-point") deleteLeakAudioPoint(data.id);
   if (action === "save-tracker") notify("추적 데이터가 현재 작업에 저장되었습니다.");
   if (action === "clear-tracker") notify("화면 그래프 로그를 삭제했습니다.");
-  if (action === "analyze-somers-photo") analyzeSomersPhoto();
-  if (action === "analyze-imported-recording") analyzeImportedRecording();
+  if (action === "save-somers-photo") notify("소머즈 사진 자료가 저장되어 Google 저장 때 자동 분류됩니다.");
+  if (action === "save-somers-sound") notify("소머즈 소리 자료가 저장되어 Google 저장 때 자동 분류됩니다.");
   if (action === "generate-report") updateJob({ report: generateReport(job) });
   if (action === "download-report-pdf") openPdfPrintWindow("report");
   if (action === "clear-report" || action === "delete-report") updateJob({ report: "" });
@@ -1714,7 +1715,7 @@ function googleConfig() {
     apiKey: "",
     clientId: "",
     folderId: "",
-    folderName: "WaterLeak Multi Check",
+    folderName: "WaterLeak Multi Check V2",
     ...(state.googleDrive || {}),
   };
   return state.googleDrive;
@@ -1723,8 +1724,8 @@ function googleConfig() {
 function driveStatusText() {
   const config = googleConfig();
   if (!config.clientId || !config.apiKey) return "처음 저장 때 설정";
-  if (!config.folderId) return `저장 시 폴더 자동 생성 · ${config.folderName || "WaterLeak Multi Check"}`;
-  return `연결됨 · ${config.folderName || "WaterLeak Multi Check"}`;
+  if (!config.folderId) return `저장 시 폴더 자동 생성 · ${config.folderName || "WaterLeak Multi Check V2"}`;
+  return `연결됨 · ${config.folderName || "WaterLeak Multi Check V2"}`;
 }
 
 function loadGoogleIdentityScript() {
@@ -1786,7 +1787,7 @@ async function ensureMainDriveFolder(token, config) {
     const existing = await getDriveFolderById(token, config.folderId);
     if (existing) return existing;
   }
-  return ensureDriveFolder(token, config.folderName || "WaterLeak Multi Check", null);
+  return ensureDriveFolder(token, config.folderName || "WaterLeak Multi Check V2", null);
 }
 
 async function getDriveFolderById(token, folderId) {
@@ -1828,7 +1829,6 @@ async function ensureDriveFolder(token, name, parentId) {
 
 async function saveCurrentJobToGoogleDrive(options = {}) {
   try {
-    const askMedia = options.askMedia !== false;
     const config = googleConfig();
     if (!config.apiKey || !config.clientId) {
       state.googleSetupOpen = true;
@@ -1839,22 +1839,8 @@ async function saveCurrentJobToGoogleDrive(options = {}) {
     }
     state.googleSetupOpen = false;
     saveState();
-    if (askMedia) {
-      driveSaveDraft = {
-        active: true,
-        wantPhotos: true,
-        wantRecordings: true,
-        photoFiles: [],
-        recordingFiles: [],
-        prepared: null,
-      };
-      render();
-      notify("사진/녹음 파일을 선택하거나, 바로 오늘작업저장을 누르세요.");
-      return;
-    }
-    const prepared = await prepareGoogleDriveSave(false, false);
-    const somersText = prepared.somersPhotoCount ? ` · 소머즈 ${prepared.somersPhotoCount}개` : "";
-    notify(`Google Drive 저장 완료: ${prepared.yearFolder.name}/${prepared.monthFolder.name}/${prepared.dateFolder.name} · PDF 2개 · 작업데이터 1개${somersText}`);
+    const prepared = await prepareGoogleDriveSave();
+    notify(`Google Drive 저장 완료: ${prepared.yearFolder.name}/${prepared.monthFolder.name}/${prepared.dateFolder.name} · 자동분류 ${prepared.totalAssetCount}개`);
   } catch (error) {
     notify(`Google Drive 저장 실패: ${driveErrorMessage(error)}`);
     console.error(error);
@@ -1871,7 +1857,7 @@ async function continueGoogleDriveSave() {
   await uploadSelectedDriveMedia(prepared, photoFiles, recordingFiles);
 }
 
-async function prepareGoogleDriveSave(wantPhotos, wantRecordings) {
+async function prepareGoogleDriveSave() {
   const token = await getGoogleAccessToken();
   const mainFolder = await ensureMainDriveFolder(token, googleConfig());
   state.googleDrive = { ...googleConfig(), folderId: mainFolder.id, folderName: mainFolder.name };
@@ -1882,24 +1868,53 @@ async function prepareGoogleDriveSave(wantPhotos, wantRecordings) {
   const month = dateValue.slice(0, 7) || `${year}-${String(new Date().getMonth() + 1).padStart(2, "0")}`;
   const yearFolder = await ensureDriveFolder(token, year, mainFolder.id);
   const monthFolder = await ensureDriveFolder(token, month, yearFolder.id);
-  const dateFolder = await ensureDriveFolder(token, dateValue, monthFolder.id);
+  const folderLabel = safeFileName([dateValue, job.customerName, job.address].filter(Boolean).join("_") || dateValue);
+  const dateFolder = await ensureDriveFolder(token, folderLabel, monthFolder.id);
   const baseName = safeFileName(job.address || "주소미입력");
+  const docFolder = await ensureDriveFolder(token, "문서", dateFolder.id);
+  const dataFolder = await ensureDriveFolder(token, "작업데이터", dateFolder.id);
   const reportBlob = await createDocumentPdfBlob("report", job);
   const estimateBlob = await createDocumentPdfBlob("estimate", job);
-  await uploadBlobToDrive(token, dateFolder.id, `${baseName}-소견서.pdf`, reportBlob, "application/pdf");
-  await uploadBlobToDrive(token, dateFolder.id, `${baseName}-견적서.pdf`, estimateBlob, "application/pdf");
+  await uploadBlobToDrive(token, docFolder.id, `${baseName}-소견서.pdf`, reportBlob, "application/pdf");
+  await uploadBlobToDrive(token, docFolder.id, `${baseName}-견적서.pdf`, estimateBlob, "application/pdf");
   const dataBlob = new Blob([JSON.stringify({ exportedAt: new Date().toISOString(), job }, null, 2)], { type: "application/json" });
-  await uploadBlobToDrive(token, dateFolder.id, `${baseName}-작업데이터.json`, dataBlob, "application/json");
+  await uploadBlobToDrive(token, dataFolder.id, `${baseName}-작업데이터.json`, dataBlob, "application/json");
+  const fieldPhotoCount = await uploadStoredFieldPhotosToDrive(token, dateFolder.id, baseName, job);
   const somersPhotoCount = await uploadStoredSomersPhotosToDrive(token, dateFolder.id, baseName, job);
-  const photoFolder = wantPhotos ? await ensureDriveFolder(token, "사진", dateFolder.id) : null;
-  const recordingFolder = wantRecordings ? await ensureDriveFolder(token, "녹음", dateFolder.id) : null;
-  return { token, yearFolder, monthFolder, dateFolder, baseName, photoFolder, recordingFolder, somersPhotoCount };
+  const somersSoundCount = await uploadStoredRecordingsToDrive(token, dateFolder.id, baseName, job, "somers:sound", ["소머즈", "소리"]);
+  const daesungSoundCount = await uploadStoredRecordingsToDrive(token, dateFolder.id, baseName, job, "tracker", ["대성청음", "소리"]);
+  return {
+    token,
+    yearFolder,
+    monthFolder,
+    dateFolder,
+    baseName,
+    fieldPhotoCount,
+    somersPhotoCount,
+    somersSoundCount,
+    daesungSoundCount,
+    totalAssetCount: 3 + fieldPhotoCount + somersPhotoCount + somersSoundCount + daesungSoundCount,
+  };
+}
+
+async function uploadStoredFieldPhotosToDrive(token, dateFolderId, baseName, job) {
+  const photos = Array.isArray(job.photoFiles) ? job.photoFiles.filter((photo) => photo?.dataUrl) : [];
+  if (!photos.length) return 0;
+  const photoFolder = await ensureNestedDriveFolder(token, dateFolderId, ["현장사진"]);
+  let count = 0;
+  for (const [index, photo] of photos.entries()) {
+    const blob = await dataUrlToBlob(photo.dataUrl);
+    const name = `${baseName}-현장사진-${safeFileName(photo.name || `photo-${index + 1}.jpg`)}`;
+    await uploadBlobToDrive(token, photoFolder.id, name, blob, blob.type || "image/jpeg");
+    count += 1;
+  }
+  return count;
 }
 
 async function uploadStoredSomersPhotosToDrive(token, dateFolderId, baseName, job) {
   const somersPhotos = Array.isArray(job.somersPhotoFiles) ? job.somersPhotoFiles.filter((photo) => photo?.dataUrl) : [];
   if (!somersPhotos.length) return 0;
-  const somersFolder = await ensureDriveFolder(token, "소머즈", dateFolderId);
+  const somersFolder = await ensureNestedDriveFolder(token, dateFolderId, ["소머즈", "사진"]);
   let count = 0;
   for (const [index, photo] of somersPhotos.entries()) {
     const blob = await dataUrlToBlob(photo.dataUrl);
@@ -1908,6 +1923,29 @@ async function uploadStoredSomersPhotosToDrive(token, dateFolderId, baseName, jo
     count += 1;
   }
   return count;
+}
+
+async function uploadStoredRecordingsToDrive(token, dateFolderId, baseName, job, targetKeyValue, folderPath) {
+  const recordings = (job.recordings || []).filter((recording) => recording.targetKey === targetKeyValue);
+  if (!recordings.length) return 0;
+  const folder = await ensureNestedDriveFolder(token, dateFolderId, folderPath);
+  let count = 0;
+  for (const [index, recording] of recordings.entries()) {
+    const blob = await getRecordingBlob(recording.id);
+    if (!blob) continue;
+    const name = `${baseName}-${safeFileName(recording.name || `recording-${index + 1}`)}`;
+    await uploadBlobToDrive(token, folder.id, name, blob, recording.type || blob.type || "audio/wav");
+    count += 1;
+  }
+  return count;
+}
+
+async function ensureNestedDriveFolder(token, parentId, names) {
+  let folder = { id: parentId };
+  for (const name of names) {
+    folder = await ensureDriveFolder(token, name, folder.id);
+  }
+  return folder;
 }
 
 async function uploadSelectedDriveMedia(prepared, photoFiles, recordingFiles) {
@@ -2242,6 +2280,7 @@ async function importRecordingFile(file, dataset = {}) {
 
 function recordingTargetFromDataset(dataset = {}) {
   if (dataset.targetKind === "tracker") return { kind: "tracker" };
+  if (dataset.targetKind === "somersSound") return { kind: "somersSound" };
   if (dataset.targetKind === "check") return { kind: "check", type: dataset.checkType || "", id: dataset.check || "" };
   return { kind: "field", field: dataset.field || "situation" };
 }
@@ -2249,6 +2288,7 @@ function recordingTargetFromDataset(dataset = {}) {
 function targetKey(target = {}) {
   if (!target) return "";
   if (target.kind === "tracker") return "tracker";
+  if (target.kind === "somersSound") return "somers:sound";
   if (target.kind === "check") return `check:${target.type || ""}:${target.id || ""}`;
   if (target.kind === "field") return `field:${target.field || "situation"}`;
   return "field:situation";
@@ -2726,15 +2766,23 @@ async function startSpectrum() {
     if (audioContext) await audioContext.close();
     leakAudioHistory = [];
     lastLeakAudioMetrics = null;
+    await refreshAudioInputDevices({ silent: true });
+    const selectedDeviceId = pickPreferredAudioInputDeviceId();
+    const audioConstraints = {
+      echoCancellation: false,
+      noiseSuppression: false,
+      autoGainControl: false,
+      channelCount: 1,
+    };
+    if (selectedDeviceId) audioConstraints.deviceId = { exact: selectedDeviceId };
     micStream = await navigator.mediaDevices.getUserMedia({
       audio: {
-        echoCancellation: false,
-        noiseSuppression: false,
-        autoGainControl: false,
-        channelCount: 1,
+        ...audioConstraints,
       },
       video: false,
     });
+    await refreshAudioInputDevices({ silent: true });
+    warnIfInternalMicSelected();
     audioContext = new (window.AudioContext || window.webkitAudioContext)();
     const source = audioContext.createMediaStreamSource(micStream);
     analyser = audioContext.createAnalyser();
@@ -2815,7 +2863,7 @@ function renderSpectrum() {
   ctx.fillText("누수 의심 고주파 대역", leakX + 12, 24);
   const status = document.querySelector("#peakStatus");
   const risk = getLeakAudioRisk(smoothedScore);
-  if (status) status.textContent = `${risk.label} · 피크 ${lastLeakAudioMetrics.peakHz} Hz · ${smoothedScore}%`;
+  if (status) status.textContent = `${risk.label} ${lastLeakAudioMetrics.peakHz}Hz ${smoothedScore}%`;
   updateLeakAudioPanel(lastLeakAudioMetrics);
   animationFrame = requestAnimationFrame(renderSpectrum);
 }
@@ -2831,6 +2879,54 @@ function drawIdleSpectrum() {
     const h = 22 + Math.sin(i * 0.8) * 18 + (i % 9) * 4;
     ctx.fillStyle = i % 17 === 0 ? "#e47c24" : "#214f58";
     ctx.fillRect(i * 16, canvas.height - h - 18, 9, h);
+  }
+}
+
+async function refreshAudioInputDevices(options = {}) {
+  if (!navigator.mediaDevices?.enumerateDevices) {
+    if (options.notifyResult) notify("이 브라우저는 입력장치 목록 확인을 지원하지 않습니다.");
+    return [];
+  }
+  try {
+    const devices = await navigator.mediaDevices.enumerateDevices();
+    audioInputDevices = devices.filter((device) => device.kind === "audioinput");
+    const preferredId = pickPreferredAudioInputDeviceId();
+    if (!state.audioInputDeviceId && preferredId) {
+      const preferred = audioInputDevices.find((device) => device.deviceId === preferredId);
+      state.audioInputDeviceId = preferredId;
+      state.audioInputLabel = preferred?.label || "외부 오디오 입력";
+      saveState();
+    }
+    if (!options.silent && options.notifyResult) {
+      const label = audioInputDevices.find((device) => device.deviceId === state.audioInputDeviceId)?.label || state.audioInputLabel || "";
+      notify(label ? `현재 오디오 입력: ${label}` : "입력장치 이름은 권한 허용 후 확인됩니다. USB-C 장치를 연결한 뒤 입력 분석을 눌러주세요.");
+    }
+    render();
+    return audioInputDevices;
+  } catch (error) {
+    if (options.notifyResult) notify("오디오 입력장치 확인에 실패했습니다.");
+    return [];
+  }
+}
+
+function pickPreferredAudioInputDeviceId() {
+  if (state.audioInputDeviceId && audioInputDevices.some((device) => device.deviceId === state.audioInputDeviceId)) return state.audioInputDeviceId;
+  const externalPattern = /(usb|type-c|type c|audio|capture|adapter|headset|external|외부|오디오|캡처|헤드셋|이어폰)/i;
+  const internalPattern = /(built-in|internal|mic|microphone|내장|마이크)/i;
+  const external = audioInputDevices.find((device) => externalPattern.test(device.label || "") && !internalPattern.test(device.label || ""));
+  return external?.deviceId || "";
+}
+
+function warnIfInternalMicSelected() {
+  const track = micStream?.getAudioTracks?.()[0];
+  const label = track?.label || state.audioInputLabel || "";
+  state.audioInputLabel = label;
+  saveState();
+  const looksInternal = /(built-in|internal|내장|phone|휴대폰)/i.test(label) || (!/(usb|type-c|type c|capture|adapter|external|외부|캡처)/i.test(label) && /mic|microphone|마이크/i.test(label));
+  if (looksInternal) {
+    notify("현재 입력이 내장 마이크일 수 있습니다. USB-C 오디오 캡처를 연결한 뒤 입력확인에서 외부 입력을 선택하세요.");
+  } else if (label) {
+    notify(`오디오 입력 사용 중: ${label}`);
   }
 }
 
@@ -2938,7 +3034,7 @@ function updateLeakAudioPanel(metrics) {
 
 function saveLeakAudioPoint() {
   if (!lastLeakAudioMetrics) {
-    notify("소리 분석을 먼저 시작한 뒤 저장하세요.");
+    notify("USB-C / 3.5파이 입력 분석을 먼저 시작한 뒤 저장하세요.");
     return;
   }
   const job = currentJob();
@@ -2958,172 +3054,6 @@ function saveLeakAudioPoint() {
   saveState();
   render();
   notify("현재 측정 지점을 저장했습니다.");
-}
-
-async function analyzeSomersPhoto() {
-  const job = currentJob();
-  const photo = (job.somersPhotoFiles || []).find((item) => item?.dataUrl);
-  if (!photo) {
-    notify("소머즈 사진을 먼저 촬영하거나 선택하세요.");
-    return;
-  }
-  try {
-    const analysis = await analyzeSomersImage(photo.dataUrl);
-    const positionText = `${analysis.vertical} ${analysis.horizontal}`;
-    const levelText = `${analysis.score} / 100`;
-    const orangeText = `${analysis.strength} · 화면 ${analysis.orangePercent}%`;
-    const suspectText = analysis.hasOrange ? `소머즈 주황 표시 중심: ${positionText}` : "주황 표시 약함: 수동 확인 필요";
-    const memoLine = `소머즈 사진 분석: 주황 표시 ${orangeText}, 의심 위치 ${suspectText}, 분석시간 ${new Date().toLocaleString()}`;
-    job.somersLeakLevel = job.somersLeakLevel || levelText;
-    job.somersOrangeMark = orangeText;
-    job.somersSuspectLocation = job.somersSuspectLocation || suspectText;
-    job.somersCaptureMemo = mergeMemo(job.somersCaptureMemo, memoLine);
-    job.updatedAt = new Date().toISOString();
-    saveState();
-    render();
-    notify("소머즈 사진 분석 결과를 기록했습니다. 숫자/주파수는 화면을 보며 필요 시 수정하세요.");
-  } catch (error) {
-    console.error(error);
-    notify("사진 분석에 실패했습니다. 다른 사진으로 다시 시도하세요.");
-  }
-}
-
-async function analyzeSomersImage(dataUrl) {
-  const image = await loadImage(dataUrl);
-  const maxSide = 420;
-  const naturalWidth = image.naturalWidth || image.width;
-  const naturalHeight = image.naturalHeight || image.height;
-  const scale = Math.min(1, maxSide / Math.max(naturalWidth, naturalHeight));
-  const width = Math.max(1, Math.round(naturalWidth * scale));
-  const height = Math.max(1, Math.round(naturalHeight * scale));
-  const canvas = document.createElement("canvas");
-  canvas.width = width;
-  canvas.height = height;
-  const ctx = canvas.getContext("2d", { willReadFrequently: true });
-  ctx.drawImage(image, 0, 0, width, height);
-  const pixels = ctx.getImageData(0, 0, width, height).data;
-  let orangeCount = 0;
-  let weightedX = 0;
-  let weightedY = 0;
-  let weightTotal = 0;
-  for (let i = 0; i < pixels.length; i += 4) {
-    const r = pixels[i];
-    const g = pixels[i + 1];
-    const b = pixels[i + 2];
-    const isOrange = r > 150 && g > 55 && g < 205 && b < 135 && r > g * 1.08 && g > b * 1.25;
-    if (!isOrange) continue;
-    const index = i / 4;
-    const x = index % width;
-    const y = Math.floor(index / width);
-    const weight = Math.max(1, r + g - b);
-    orangeCount += 1;
-    weightedX += x * weight;
-    weightedY += y * weight;
-    weightTotal += weight;
-  }
-  const totalPixels = width * height;
-  const orangeRatio = orangeCount / totalPixels;
-  const cx = weightTotal ? weightedX / weightTotal : width / 2;
-  const cy = weightTotal ? weightedY / weightTotal : height / 2;
-  const horizontal = cx < width * 0.33 ? "좌측" : cx > width * 0.66 ? "우측" : "중앙";
-  const vertical = cy < height * 0.33 ? "상단" : cy > height * 0.66 ? "하단" : "중앙";
-  const orangePercent = Math.round(orangeRatio * 1000) / 10;
-  const score = Math.round(clamp(orangeRatio * 1400 + (orangeCount ? 38 : 8), 0, 100));
-  const strength = orangeRatio > 0.045 ? "강함" : orangeRatio > 0.018 ? "중간" : orangeRatio > 0.006 ? "약함" : "미약";
-  return {
-    score,
-    strength,
-    orangePercent,
-    horizontal,
-    vertical,
-    hasOrange: orangeRatio > 0.006,
-  };
-}
-
-function mergeMemo(current, line) {
-  const text = String(current || "").trim();
-  if (!text) return line;
-  if (text.includes(line)) return text;
-  return `${text}\n${line}`;
-}
-
-async function analyzeImportedRecording() {
-  const recording = getLastRecordingForTarget({ kind: "tracker" });
-  if (!recording) {
-    notify("소리 파일을 먼저 가져오세요.");
-    return;
-  }
-  try {
-    const blob = await getRecordingBlob(recording.id);
-    if (!blob) {
-      notify("소리 파일을 찾지 못했습니다.");
-      return;
-    }
-    const metrics = await analyzeAudioBlob(blob);
-    const risk = getLeakAudioRisk(metrics.score);
-    const job = currentJob();
-    const point = {
-      id: `leak-${Date.now()}`,
-      name: `파일분석 ${recording.name || "소리자료"}`,
-      score: metrics.score,
-      risk: risk.label,
-      color: risk.color,
-      metrics,
-      createdAt: new Date().toISOString(),
-      sourceRecordingId: recording.id,
-    };
-    job.leakAudioPoints = [point, ...(job.leakAudioPoints || [])];
-    job.somersCaptureMemo = mergeMemo(job.somersCaptureMemo, `소리 파일 분석: ${point.score}% / ${point.risk}, 피크 추정 ${metrics.peakHz} Hz, 파일 ${recording.name || "소리자료"}`);
-    job.updatedAt = new Date().toISOString();
-    lastLeakAudioMetrics = metrics;
-    saveState();
-    render();
-    notify("소리 파일 분석 결과를 다지점 비교에 저장했습니다.");
-  } catch (error) {
-    console.error(error);
-    notify("소리 파일 분석에 실패했습니다. 다른 오디오 파일로 다시 시도하세요.");
-  }
-}
-
-async function analyzeAudioBlob(blob) {
-  const buffer = await blob.arrayBuffer();
-  const context = new (window.AudioContext || window.webkitAudioContext)();
-  try {
-    const audioBuffer = await context.decodeAudioData(buffer.slice(0));
-    const data = audioBuffer.getChannelData(0);
-    const sampleRate = audioBuffer.sampleRate;
-    const step = Math.max(1, Math.floor(data.length / 90000));
-    let sumSquares = 0;
-    let peak = 0;
-    let zeroCrossings = 0;
-    let diffSum = 0;
-    let count = 0;
-    let prev = data[0] || 0;
-    for (let i = 0; i < data.length; i += step) {
-      const value = data[i] || 0;
-      sumSquares += value * value;
-      peak = Math.max(peak, Math.abs(value));
-      if ((value >= 0 && prev < 0) || (value < 0 && prev >= 0)) zeroCrossings += 1;
-      diffSum += Math.abs(value - prev);
-      prev = value;
-      count += 1;
-    }
-    const rms = Math.sqrt(sumSquares / Math.max(1, count));
-    const zeroCrossHz = Math.round((zeroCrossings * sampleRate) / Math.max(1, count * step * 2));
-    const roughHighEnergy = clamp((diffSum / Math.max(1, count)) * 26, 0, 1);
-    const score = Math.round(clamp(rms * 180 + peak * 36 + roughHighEnergy * 38 + (zeroCrossHz > 3200 ? 12 : 0), 0, 100));
-    return {
-      score,
-      rawScore: score,
-      peakHz: Math.max(0, zeroCrossHz),
-      lowAvg: Math.round(clamp(rms * 95, 0, 100)),
-      midAvg: Math.round(clamp((rms + roughHighEnergy * 0.45) * 92, 0, 100)),
-      leakAvg: Math.round(clamp((roughHighEnergy * 0.72 + peak * 0.28) * 100, 0, 100)),
-      ultraAvg: Math.round(clamp(roughHighEnergy * 88, 0, 100)),
-    };
-  } finally {
-    await context.close();
-  }
 }
 
 function deleteLeakAudioPoint(id) {
