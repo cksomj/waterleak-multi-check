@@ -1250,6 +1250,24 @@ textarea[data-job-field="report"] {
   width: 100%;
 }
 
+.v2-analyze-row {
+  align-items: center;
+  background: rgba(249, 115, 22, 0.08);
+  border: 1px solid rgba(249, 115, 22, 0.28);
+  border-radius: 8px;
+  display: grid;
+  gap: 8px;
+  grid-template-columns: minmax(140px, auto) 1fr;
+  padding: 10px;
+}
+
+.v2-analyze-row span {
+  color: #ffcf9c;
+  font-size: 12px;
+  font-weight: 800;
+  line-height: 1.45;
+}
+
 .v2-ocr-grid,
 .v2-save-checks {
   display: grid;
@@ -2455,6 +2473,10 @@ canvas {
 
   .v2-capture-box input {
     max-width: none;
+  }
+
+  .v2-analyze-row {
+    grid-template-columns: 1fr;
   }
 
   .v2-ocr-grid,
