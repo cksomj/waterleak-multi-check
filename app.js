@@ -868,6 +868,7 @@ function renderBlogEditor(job) {
 
 function renderEstimate(job) {
   const items = job.estimateItems || [];
+  const printItems = estimatePrintableItems(job);
   const totals = estimateTotals(job);
   const estimateNo = job.estimateNo || `WL-${(job.date || "").replaceAll("-", "") || "00000000"}`;
   const docTitle = job.estimateDocTitle || "견 적 서";
@@ -880,8 +881,7 @@ function renderEstimate(job) {
       </div>
       <div class="toolbar">
         <button class="btn ghost" data-action="toggle-estimate-title">제목 바꾸기</button>
-        <button class="btn ${vatMode === "inclusive" ? "primary" : "ghost"}" data-action="set-estimate-vat" data-mode="inclusive">부가세포함</button>
-        <button class="btn ${vatMode === "exclusive" ? "primary" : "ghost"}" data-action="set-estimate-vat" data-mode="exclusive">부가세별도</button>
+        <button class="btn primary" data-action="toggle-estimate-vat">${vatMode === "inclusive" ? "부가세포함" : "부가세별도"}</button>
         <button class="btn ghost" data-action="add-estimate">품명 추가</button>
         <button class="btn primary" data-action="save">저장 및 수정</button>
         <button class="btn ghost" data-action="download-estimate-pdf">PDF 다운로드</button>
@@ -968,7 +968,7 @@ function renderEstimate(job) {
       <table class="table estimate-print-items print-only" style="margin-top:16px">
         <thead><tr><th>품명</th><th style="width:90px">수량</th><th style="width:150px">공급가액</th></tr></thead>
         <tbody>
-          ${items.map((item) => `
+          ${printItems.map((item) => `
             <tr>
               <td>${escapeHtml([item.name, item.spec].filter(Boolean).join(" / "))}</td>
               <td>${escapeHtml(item.qty || 1)}</td>
@@ -1640,6 +1640,7 @@ function handleAction(action, data) {
   if (action === "toggle-emoji-picker") toggleEmojiPicker();
   if (action === "open-external-link") openExternalLink(data.url);
   if (action === "toggle-estimate-title") toggleEstimateTitle();
+  if (action === "toggle-estimate-vat") toggleEstimateVatMode();
   if (action === "set-estimate-vat") setEstimateVatMode(data.mode);
   if (action === "add-estimate") {
     job.estimateItems.push({ name: "", spec: "", qty: 1, unit: "식", unitPrice: "", cost: "" });
@@ -1648,7 +1649,7 @@ function handleAction(action, data) {
   }
   if (action === "remove-estimate") {
     job.estimateItems.splice(Number(data.index), 1);
-    if (!job.estimateItems.length) job.estimateItems.push({ name: "", cost: "" });
+    job.updatedAt = new Date().toISOString();
     saveState();
     render();
   }
@@ -2055,7 +2056,7 @@ function buildReportPdfPages(job) {
 }
 
 function buildEstimatePdfPages(job) {
-  const items = job.estimateItems || [];
+  const items = estimatePrintableItems(job);
   const totals = estimateTotals(job);
   return paginatePdfLines([
     { text: job.estimateDocTitle || "견 적 서", size: 32, bold: true, align: "center", gap: 18 },
@@ -2581,6 +2582,14 @@ function estimateLineTotal(item) {
   return Number(item.cost || 0);
 }
 
+function estimateItemHasContent(item = {}) {
+  return Boolean(String(item.name || "").trim() || String(item.spec || "").trim() || Number(item.cost || item.unitPrice || 0));
+}
+
+function estimatePrintableItems(job = currentJob()) {
+  return (job.estimateItems || []).filter(estimateItemHasContent);
+}
+
 function estimateVatMode(job = currentJob()) {
   return job.vatMode === "inclusive" ? "inclusive" : "exclusive";
 }
@@ -2637,6 +2646,11 @@ function setEstimateVatMode(mode) {
   job.updatedAt = new Date().toISOString();
   saveState();
   render();
+}
+
+function toggleEstimateVatMode() {
+  const currentMode = estimateVatMode();
+  setEstimateVatMode(currentMode === "inclusive" ? "exclusive" : "inclusive");
 }
 
 function openPdfPrintWindow(type) {
@@ -2753,7 +2767,7 @@ function buildReportPhotoPages(job) {
 }
 
 function buildEstimatePrintHtml(job) {
-  const items = job.estimateItems || [];
+  const items = estimatePrintableItems(job);
   const totals = estimateTotals(job);
   return `
     <h1>${escapeHtml(job.estimateDocTitle || "견 적 서")}</h1>
