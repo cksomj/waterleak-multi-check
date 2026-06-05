@@ -468,7 +468,7 @@ function phoneField(job) {
       <label for="phone">전화번호</label>
       <div class="phone-input-row">
         <input id="phone" data-job-field="phone" type="tel" value="${escapeAttr(job.phone || "")}" placeholder="010-0000-0000" />
-        <button class="btn ghost" data-action="pick-contact-phone" type="button">연락처 선택</button>
+        <button class="btn ghost" data-action="pick-contact-phone" type="button">번호 입력</button>
       </div>
     </div>
   `;
@@ -1506,27 +1506,11 @@ function applyQuickListSearch() {
 }
 
 async function pickContactPhone() {
-  if (!navigator.contacts?.select) {
-    notify("이 브라우저는 연락처 선택을 지원하지 않습니다. 전화번호를 직접 입력하세요.");
-    return;
-  }
-  try {
-    const contacts = await navigator.contacts.select(["name", "tel"], { multiple: false });
-    const selected = contacts?.[0];
-    const tel = selected?.tel?.[0] || "";
-    if (!tel) {
-      notify("선택한 연락처에 전화번호가 없습니다.");
-      return;
-    }
-    const job = currentJob();
-    job.phone = tel;
-    if (!job.customerName && selected.name?.[0]) job.customerName = selected.name[0];
-    saveState();
-    render();
-    notify("연락처 전화번호를 입력했습니다.");
-  } catch (error) {
-    notify("연락처 선택을 취소했거나 브라우저가 차단했습니다.");
-  }
+  const input = app.querySelector("#phone");
+  if (!input) return;
+  input.focus();
+  input.select?.();
+  notify("최근기록/연락처 앱은 열지 않습니다. 전화번호를 직접 입력하세요.");
 }
 
 function saveGoogleSettingsFromForm() {
