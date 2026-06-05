@@ -769,7 +769,7 @@ function renderReport(job) {
         </div>
         <button class="btn ghost" data-action="download-report-pdf">인쇄창 다시 열기</button>
       </div>
-      <div class="pdf-preview-page">${buildReportPrintHtml(job)}</div>
+      <div class="pdf-preview-page" data-live-preview="report">${buildReportPrintHtml(job)}</div>
     </section>
   `;
 }
@@ -992,7 +992,7 @@ function renderEstimate(job) {
         </div>
         <button class="btn ghost" data-action="download-estimate-pdf">인쇄창 다시 열기</button>
       </div>
-      <div class="pdf-preview-page">${buildEstimatePrintHtml(job)}</div>
+      <div class="pdf-preview-page" data-live-preview="estimate">${buildEstimatePrintHtml(job)}</div>
     </section>
   `;
 }
@@ -1354,6 +1354,7 @@ function bindEvents() {
       job.updatedAt = new Date().toISOString();
       saveState();
       if (input.dataset.jobField === "pressureLive") updatePressureDial(value);
+      refreshActiveDocumentPreview(job);
     });
   });
 
@@ -1386,6 +1387,7 @@ function bindEvents() {
       job.updatedAt = new Date().toISOString();
       saveState();
       updateEstimateTotalsInPlace();
+      refreshEstimatePreview(job);
     });
   });
 
@@ -1526,8 +1528,8 @@ function bindSwipeNavigation() {
 function handleAction(action, data) {
   const job = currentJob();
   if (action === "save") {
-    saveState();
-    saveCurrentJobToGoogleDrive({ askMedia: false });
+    saveLocalDraft();
+    return;
   }
   if (action === "new-job") {
     const next = createJob();
@@ -2587,6 +2589,32 @@ function updateEstimateTotalsInPlace(job = currentJob()) {
     const target = document.querySelector(`[data-estimate-total="${key}"]`);
     if (target) target.textContent = `${value.toLocaleString()}원`;
   });
+}
+
+function refreshReportPreview(job = currentJob()) {
+  const target = document.querySelector('[data-live-preview="report"]');
+  if (target) target.innerHTML = buildReportPrintHtml(job);
+}
+
+function refreshEstimatePreview(job = currentJob()) {
+  const target = document.querySelector('[data-live-preview="estimate"]');
+  if (target) target.innerHTML = buildEstimatePrintHtml(job);
+}
+
+function refreshActiveDocumentPreview(job = currentJob()) {
+  if (state.activeView === "report") refreshReportPreview(job);
+  if (state.activeView === "estimate") {
+    updateEstimateTotalsInPlace(job);
+    refreshEstimatePreview(job);
+  }
+}
+
+function saveLocalDraft() {
+  const job = currentJob();
+  job.updatedAt = new Date().toISOString();
+  saveState();
+  refreshActiveDocumentPreview(job);
+  notify("앱에 임시 저장했습니다. Google Drive에는 백업 저장 때만 올라갑니다.");
 }
 
 function setEstimateVatMode(mode) {
