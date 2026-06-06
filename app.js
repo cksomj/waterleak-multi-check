@@ -744,8 +744,10 @@ function renderReport(job) {
       </div>
       <div class="toolbar">
         <button class="btn primary" data-action="generate-report">소견서 만들기</button>
-        <button class="btn ghost" data-action="download-report-pdf">PDF 다운로드</button>
+        <button class="btn primary" data-action="open-chatgpt-report">ChatGPT</button>
+        <span class="toolbar-break"></span>
         <button class="btn ghost" data-action="clear-report">새로만들기</button>
+        <button class="btn ghost" data-action="download-report-pdf">PDF 다운로드</button>
       </div>
     </div>
     ${renderFieldSteps("report")}
@@ -884,6 +886,8 @@ function renderEstimate(job) {
         <button class="btn primary" data-action="toggle-estimate-vat">${vatMode === "inclusive" ? "부가세포함" : "부가세별도"}</button>
         <button class="btn ghost" data-action="add-estimate">품명 추가</button>
         <button class="btn primary" data-action="save">저장 및 수정</button>
+        <span class="toolbar-break"></span>
+        <button class="btn warn" data-action="delete-estimate">삭제</button>
         <button class="btn ghost" data-action="download-estimate-pdf">PDF 다운로드</button>
       </div>
     </div>
@@ -1612,6 +1616,7 @@ function handleAction(action, data) {
   if (action === "generate-report") updateJob({ report: reportContentForDocument(generateReport(job)) });
   if (action === "download-report-pdf") openPdfPrintWindow("report");
   if (action === "clear-report" || action === "delete-report") updateJob({ report: "" });
+  if (action === "open-chatgpt-report") openChatGptReport(job);
   if (action === "generate-blog") updateJob({ blog: buildBlogPrompt(job) });
   if (action === "copy-blog-prompt") copyBlogPrompt(job);
   if (action === "open-chatgpt") openChatGptWithPrompt(job);
@@ -1653,6 +1658,7 @@ function handleAction(action, data) {
     saveState();
     render();
   }
+  if (action === "delete-estimate") clearEstimateData();
   if (action === "print") window.print();
   if (action === "download-estimate-pdf") openPdfPrintWindow("estimate");
   if (action === "select-job" || action === "edit-quick-job") openQuickJob(data.id);
@@ -3327,6 +3333,48 @@ function openChatGptWithPrompt(job, useCustom = false) {
     notify("프롬프트를 복사했습니다. ChatGPT 입력창에 붙여넣으세요.");
     window.open("https://chatgpt.com/", "_blank", "noopener");
   });
+}
+
+function buildReportPrompt(job = currentJob()) {
+  const baseReport = reportContentForDocument(job.report || generateReport(job));
+  return `전문 누수탐지 기사 현장 소견서를 다듬어줘.
+
+조건:
+- 기존 사실관계와 점검 결과를 바꾸지 말 것
+- 과장 광고 문구 금지
+- 고객에게 설명 가능한 전문적이고 차분한 문체
+- 출력은 바로 소견서에 붙여넣을 본문만 작성
+
+[현장정보]
+진단일자: ${job.date || ""}
+고객명: ${job.customerName || ""}
+주소: ${job.address || ""}
+연락처: ${job.phone || ""}
+
+[배관 누수 체크]
+${pipeLeakTypeSummary(job)}
+
+[현재 소견서 초안]
+${baseReport}`;
+}
+
+function openChatGptReport(job = currentJob()) {
+  navigator.clipboard.writeText(buildReportPrompt(job)).then(() => {
+    notify("소견서 프롬프트를 복사했습니다. ChatGPT에 붙여넣으세요.");
+    window.open("https://chatgpt.com/", "_blank", "noopener");
+  });
+}
+
+function clearEstimateData() {
+  const job = currentJob();
+  job.estimateItems = [];
+  job.estimateNote = "";
+  job.estimateNo = "";
+  job.estimateValidUntil = "";
+  job.updatedAt = new Date().toISOString();
+  saveState();
+  render();
+  notify("견적서 내용을 삭제했습니다.");
 }
 
 function summaryLines(checks) {
