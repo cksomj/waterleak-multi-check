@@ -671,7 +671,7 @@ function renderTrackerV2Workbench(job, leakPoints = []) {
             <input data-file-type="somersPhotos" type="file" accept="image/*" multiple />
           </label>
           <div class="v2-analyze-row">
-            <button class="btn primary" data-action="save-somers-photo" ${somersHasPhoto ? "" : "disabled"}>사진 저장</button>
+            <button class="btn somers-save photo" data-action="save-somers-photo" ${somersHasPhoto ? "" : "disabled"}>사진 저장</button>
             <span>${somersHasPhoto ? "소머즈 사진 원본을 AI 학습용 자료로 저장합니다." : "소머즈 사진 파일을 먼저 불러오세요."}</span>
           </div>
           <label class="v2-capture-box">
@@ -679,7 +679,7 @@ function renderTrackerV2Workbench(job, leakPoints = []) {
             <input data-import-recording data-target-kind="somersSound" type="file" accept="audio/*" />
           </label>
           <div class="v2-analyze-row sound">
-            <button class="btn primary" data-action="save-somers-sound" ${somersRecording ? "" : "disabled"}>소리 저장</button>
+            <button class="btn somers-save sound" data-action="save-somers-sound" ${somersRecording ? "" : "disabled"}>소리 저장</button>
             <span>${somersRecording ? `${escapeHtml(somersRecording.name || "소리 파일")} 저장됨` : "소머즈 현장 소리 파일을 먼저 불러오세요."}</span>
           </div>
         </div>
