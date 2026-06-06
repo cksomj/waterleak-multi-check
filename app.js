@@ -887,8 +887,9 @@ function renderEstimate(job) {
         <button class="btn ghost" data-action="add-estimate">품명 추가</button>
         <button class="btn primary" data-action="save">저장 및 수정</button>
         <span class="toolbar-break"></span>
-        <button class="btn warn" data-action="delete-estimate">삭제</button>
         <button class="btn ghost" data-action="download-estimate-pdf">PDF 다운로드</button>
+        <span class="toolbar-fill"></span>
+        <button class="btn warn" data-action="delete-estimate">삭제</button>
       </div>
     </div>
     ${renderFieldSteps("estimate")}
