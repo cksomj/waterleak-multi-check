@@ -786,7 +786,7 @@ function renderBlog(job) {
         <button class="btn primary" data-action="generate-blog">관련자료 가져오기</button>
         <button class="btn ghost" data-action="copy-blog-prompt">프롬프트 복사</button>
         <button class="btn ghost" data-action="open-chatgpt">ChatGPT 실행</button>
-        <button class="btn ghost" data-action="open-blog-editor">원고 수정하기</button>
+        <button class="btn ghost" data-action="open-blog-editor">원고 수정 및 새 원고쓰기</button>
         <button class="btn ghost" data-action="print-blog">PDF 인쇄</button>
         <button class="btn warn" data-action="clear-blog-data">자료 삭제</button>
       </div>
@@ -861,7 +861,7 @@ function renderBlogEditor(job) {
       <div class="emoji-picker" hidden>
         ${blogEmojis.map((emoji) => `<button class="emoji-btn" data-emoji="${emoji}" type="button">${emoji}</button>`).join("")}
       </div>
-      <main id="blogEditor" class="blog-editor-page" contenteditable="true"></main>
+      <main id="blogEditor" class="blog-editor-page" contenteditable="true">${formatBlogEditorContent(job.blog || "")}</main>
     </div>
   `;
 }
@@ -3283,6 +3283,8 @@ function buildBlogPrompt(job, custom = null) {
   const category = custom?.category || "누수탐지 및 설비 점검";
   const keyword = custom?.keyword || "누수진단";
   const isCustom = Boolean(custom);
+  const evidence = buildBlogEvidenceSection(job);
+  const hashtags = buildLocationHashtags(keyword);
   return `당신은 구글 애드센스 승인을 목표로 하는 블로그 글 작성 전문가입니다.
 아래 조건에 맞춰 블로그 글을 작성해 주십시오.
 
@@ -3294,29 +3296,85 @@ function buildBlogPrompt(job, custom = null) {
 - 문체: 합쇼체(~했습니다, ~합니다), 구어체 절대 금지
 - 본문: H2 소제목 3개 이상, 소제목당 500자 내외, 총 1,500자 이상
 - 사진 설명: 본문 중 적절한 위치에 [사진 삽입: 설명] 형태로 표시
-- 글 맨 아래에 "연관 해시태그:" 항목을 만들고, 메인 키워드와 관련된 해시태그를 되도록 많이 넣어 주십시오.
+- 글 맨 아래에 "연관 해시태그:" 항목을 만들고, 위치 기반 해시태그를 앞쪽에 먼저 배치해 주십시오.
+- 해시태그 시작 예시: ${hashtags.join(" ")}
 
-[${isCustom ? "작성 기준" : "현장 자료"}]
-- 날짜: ${job.date || ""}
-- 주소: ${job.address || ""}
-- 상황 기록: ${job.situation || "현장 상황 기록을 바탕으로 작성"}
-- 환경 기록: ${job.environment || ""}
-- 배관 누수 구분: ${pipeLeakTypeSummary(job)}
-- 소머즈 OCR: 레벨 ${job.somersLeakLevel || "미기록"}, 주파수 ${job.somersFrequency || "미기록"}, 주황 표시 ${job.somersOrangeMark || "미기록"}, 의심 위치 ${job.somersSuspectLocation || "미기록"}
-- 소머즈 촬영 자료: ${(job.somersPhotos || []).length ? `${job.somersPhotos.length}장 (${job.somersPhotos.join(", ")})` : "미기록"}
-- 소머즈 촬영 메모: ${job.somersCaptureMemo || "미기록"}
-- 최종 누수 위치: ${job.finalLeakLocation || "미기록"}
-- 실제 굴착 결과: ${job.excavationResult || "미기록"}
-- 소견서 요약: ${job.report || "소견서가 있으면 함께 반영"}
-- 점검 요약:
-${summaryLines([...job.plumbingChecks, ...job.waterproofChecks])}
-- 배관 누수 구분: ${pipeLeakTypeSummary(job)}
+${evidence ? `[${isCustom ? "참고 가능한 현장 자료" : "반영할 현장 자료"}]\n${evidence}\n` : ""}
 
 [출력 형식]
 제목:
 디스크립션:
 본문:
 연관 해시태그:`;
+}
+
+function buildBlogEvidenceSection(job = currentJob()) {
+  const sections = [];
+  const basics = blogBasicEvidenceLines(job);
+  const tracker = blogTrackerEvidenceLines(job);
+  if (basics.length) sections.push(`기본검사\n${basics.join("\n")}`);
+  if (tracker.length) sections.push(`누수추적\n${tracker.join("\n")}`);
+  return sections.join("\n\n");
+}
+
+function blogBasicEvidenceLines(job = currentJob()) {
+  const lines = [];
+  const checkLines = blogCheckLines([...(job.plumbingChecks || []), ...(job.waterproofChecks || [])]);
+  const pipeLine = pipeLeakTypeSummary(job);
+  if (!/미선택/.test(pipeLine)) lines.push(pipeLine);
+  lines.push(...checkLines);
+  return lines;
+}
+
+function blogCheckLines(checks = []) {
+  return checks
+    .filter((check) => check && (check.done || (check.result && check.result !== "대기") || String(check.memo || "").trim()))
+    .map((check) => {
+      const parts = [];
+      if (check.result && check.result !== "대기") parts.push(check.result);
+      if (check.done) parts.push("점검완료");
+      if (String(check.memo || "").trim()) parts.push(check.memo.trim());
+      return `- ${check.title}: ${parts.join(" / ")}`;
+    })
+    .filter((line) => !/: $/.test(line));
+}
+
+function blogTrackerEvidenceLines(job = currentJob()) {
+  const lines = [];
+  const leakPoints = (job.leakAudioPoints || []).filter((point) => point?.name || Number(point?.score || 0) > 0 || point?.risk);
+  leakPoints.forEach((point) => {
+    lines.push(`- 청음 측정: ${[point.name, point.score ? `${point.score}%` : "", point.risk].filter(Boolean).join(" / ")}`);
+  });
+  [
+    ["소머즈 누수 레벨", job.somersLeakLevel],
+    ["소머즈 주파수", job.somersFrequency],
+    ["소머즈 주황 표시", job.somersOrangeMark],
+    ["소머즈 의심 위치", job.somersSuspectLocation],
+    ["소머즈 촬영 메모", job.somersCaptureMemo],
+    ["최종 누수 위치", job.finalLeakLocation],
+    ["실제 굴착 결과", job.excavationResult],
+  ].forEach(([label, value]) => {
+    if (String(value || "").trim()) lines.push(`- ${label}: ${String(value).trim()}`);
+  });
+  if ((job.somersPhotoFiles || []).some((photo) => photo?.dataUrl) || (job.somersPhotos || []).length) {
+    lines.push(`- 소머즈 사진 자료: ${(job.somersPhotoFiles || []).length || (job.somersPhotos || []).length}장`);
+  }
+  const recordings = job.recordings || [];
+  if (recordings.some((recording) => recording.targetKey === "somers:sound")) lines.push("- 소머즈 소리 자료: 저장됨");
+  if (recordings.some((recording) => recording.targetKey === "tracker")) lines.push("- 대성 청음 소리 자료: 저장됨");
+  return lines;
+}
+
+function buildLocationHashtags(keyword = "누수진단") {
+  const rawKeyword = String(keyword || "누수진단").replace(/\s+/g, "");
+  const locations = ["속초", "강원", "양양", "강릉", "고성"];
+  const services = ["누수", "방수", "누수탐지"];
+  const tags = [];
+  locations.forEach((location) => {
+    services.forEach((service) => tags.push(`#${location}${service}`));
+  });
+  tags.push(`#${rawKeyword}`, `#${rawKeyword}전문`, "#누수진단", "#누수탐지", "#방수공사");
+  return [...new Set(tags)];
 }
 
 function copyBlogPrompt(job, useCustom = false) {
