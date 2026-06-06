@@ -1353,22 +1353,21 @@ textarea[data-job-field="report"] {
 }
 
 .somers-save {
-  background: #071014;
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.05);
+  background: linear-gradient(180deg, #ff9b3d, #f97316);
+  box-shadow: 0 0 0 2px rgba(7, 16, 20, 0.9), 0 8px 18px rgba(249, 115, 22, 0.24);
+  color: #160d05;
 }
 
 .somers-save.photo {
-  border-color: #ff8a1c;
-  color: #ff8a1c;
+  border-color: #ffd0a1;
 }
 
 .somers-save.sound {
-  border-color: #38bdf8;
-  color: #38bdf8;
+  border-color: #ffd0a1;
 }
 
 .somers-save:not(:disabled):hover {
-  background: #111a20;
+  background: #e45f0f;
 }
 
 .v2-analyze-row.sound {
