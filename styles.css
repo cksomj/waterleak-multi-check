@@ -1316,7 +1316,7 @@ textarea[data-job-field="report"] {
   border-color: #ffd0a1;
   box-shadow: 0 0 0 2px rgba(7, 16, 20, 0.95), 0 8px 18px rgba(255, 122, 0, 0.34);
   color: #160d05;
-  min-width: 140px;
+  width: 100%;
 }
 
 .somers-action:disabled {
