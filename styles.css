@@ -1305,10 +1305,29 @@ textarea[data-job-field="report"] {
 }
 
 .v2-save-line {
-  align-items: stretch;
-  display: grid;
-  gap: 8px;
-  grid-template-columns: minmax(0, 1fr) minmax(116px, auto);
+  align-items: center;
+  display: flex;
+  justify-content: flex-start;
+  min-height: 62px;
+}
+
+.somers-action {
+  background: #ff7a00;
+  border-color: #ffd0a1;
+  box-shadow: 0 0 0 2px rgba(7, 16, 20, 0.95), 0 8px 18px rgba(255, 122, 0, 0.34);
+  color: #160d05;
+  min-width: 140px;
+}
+
+.somers-action:disabled {
+  background: #ff7a00;
+  border-color: #ffd0a1;
+  color: #160d05;
+  opacity: 1;
+}
+
+.somers-action:not(:disabled):hover {
+  background: #ff8f24;
 }
 
 .v2-capture-status {
