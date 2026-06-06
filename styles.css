@@ -723,6 +723,11 @@ textarea[data-job-field="report"] {
   justify-content: flex-end;
 }
 
+.toolbar-break {
+  flex-basis: 100%;
+  height: 0;
+}
+
 .mini-actions {
   display: flex;
   flex-wrap: wrap;
@@ -2465,6 +2470,10 @@ canvas {
     gap: 6px;
     grid-template-columns: repeat(auto-fit, minmax(118px, 1fr));
     justify-content: stretch;
+  }
+
+  .toolbar-break {
+    grid-column: 1 / -1;
   }
 
   .toolbar .btn,
