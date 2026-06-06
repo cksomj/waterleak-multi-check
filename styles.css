@@ -728,6 +728,10 @@ textarea[data-job-field="report"] {
   height: 0;
 }
 
+.toolbar-fill {
+  flex: 1 1 auto;
+}
+
 .mini-actions {
   display: flex;
   flex-wrap: wrap;
@@ -2474,6 +2478,10 @@ canvas {
 
   .toolbar-break {
     grid-column: 1 / -1;
+  }
+
+  .toolbar-fill {
+    display: none;
   }
 
   .toolbar .btn,
