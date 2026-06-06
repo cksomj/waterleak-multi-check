@@ -1304,6 +1304,13 @@ textarea[data-job-field="report"] {
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
+.v2-save-line {
+  align-items: stretch;
+  display: grid;
+  gap: 8px;
+  grid-template-columns: minmax(0, 1fr) minmax(116px, auto);
+}
+
 .v2-capture-status {
   display: grid;
   gap: 8px;
@@ -1341,7 +1348,7 @@ textarea[data-job-field="report"] {
   border-radius: 8px;
   display: grid;
   gap: 8px;
-  grid-template-columns: minmax(140px, auto) 1fr;
+  grid-template-columns: 1fr;
   padding: 10px;
 }
 
@@ -1350,24 +1357,6 @@ textarea[data-job-field="report"] {
   font-size: 12px;
   font-weight: 800;
   line-height: 1.45;
-}
-
-.somers-save {
-  background: linear-gradient(180deg, #ff9b3d, #f97316);
-  box-shadow: 0 0 0 2px rgba(7, 16, 20, 0.9), 0 8px 18px rgba(249, 115, 22, 0.24);
-  color: #160d05;
-}
-
-.somers-save.photo {
-  border-color: #ffd0a1;
-}
-
-.somers-save.sound {
-  border-color: #ffd0a1;
-}
-
-.somers-save:not(:disabled):hover {
-  background: #e45f0f;
 }
 
 .v2-analyze-row.sound {
