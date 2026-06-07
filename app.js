@@ -93,6 +93,7 @@ let pendingViewAnimation = "";
 let savedBlogSelection = null;
 let storageEstimate = { percent: null, text: "Google 저장 전용" };
 let audioInputDevices = [];
+const AI_ASSISTANT_URL = "https://www.genspark.ai/";
 
 const app = document.querySelector("#app");
 
@@ -436,7 +437,7 @@ function renderDashboardCommandDeck(job) {
   const cards = [
     ["basic", "01", "기본검사 계속", `${done}/${checks.length} 완료`, "밸브, 방수, 우수관, 유가 상태를 빠르게 확인합니다."],
     ["tracker", "02", "누수추적 시작", `${pointCount}개 지점`, "실시간 그래프와 청음 점수로 의심 위치를 좁힙니다."],
-    ["blog", "03", "블로그 자료 정리", job.blog ? "자료 있음" : "대기", "현장 자료를 ChatGPT용 프롬프트와 원고로 정리합니다."],
+    ["blog", "03", "블로그 자료 정리", job.blog ? "자료 있음" : "대기", "현장 자료를 Genspark용 프롬프트와 원고로 정리합니다."],
     ["estimate", "04", "견적서 작성", `${(job.estimateItems || []).length}개 항목`, "공급가액, 부가세, 합계를 현장에서 바로 계산합니다."],
     ["report", "05", "AI 소견서 작성", job.report ? "작성됨" : "미작성", "현장 기록과 점검 결과를 소견서 초안으로 만듭니다."],
   ];
@@ -742,7 +743,7 @@ function renderReport(job) {
       </div>
       <div class="toolbar">
         <button class="btn primary" data-action="generate-report">소견서 만들기</button>
-        <button class="btn primary" data-action="open-chatgpt-report">ChatGPT</button>
+        <button class="btn primary" data-action="open-chatgpt-report">Genspark</button>
         <span class="toolbar-break"></span>
         <button class="btn ghost" data-action="clear-report">새로만들기</button>
         <button class="btn ghost" data-action="download-report-pdf">PDF 다운로드</button>
@@ -780,12 +781,12 @@ function renderBlog(job) {
     <div class="section-head">
       <div>
         <h1>블로그 글 작성</h1>
-        <p class="muted">현장 자료를 정리해 ChatGPT에 붙여넣을 프롬프트를 만듭니다.</p>
+        <p class="muted">현장 자료를 정리해 Genspark에 붙여넣을 프롬프트를 만듭니다.</p>
       </div>
       <div class="toolbar blog-main-toolbar">
         <button class="btn primary" data-action="generate-blog">관련자료 가져오기</button>
         <button class="btn ghost" data-action="copy-blog-prompt">프롬프트 복사</button>
-        <button class="btn ghost" data-action="open-chatgpt">ChatGPT 실행</button>
+        <button class="btn ghost" data-action="open-chatgpt">Genspark 실행</button>
         <button class="btn ghost" data-action="open-blog-editor">원고 수정 및 새 원고쓰기</button>
         <button class="btn ghost" data-action="print-blog">PDF 인쇄</button>
         <button class="btn warn" data-action="clear-blog-data">자료 삭제</button>
@@ -797,7 +798,7 @@ function renderBlog(job) {
       <div class="section-head compact">
         <div>
           <h2>프롬프트/원고 미리보기</h2>
-          <p class="muted">ChatGPT에서 작성한 글은 원고 수정하기 화면에 붙여넣고 저장합니다.</p>
+          <p class="muted">Genspark에서 작성한 글은 원고 수정 및 새 원고쓰기 화면에 붙여넣고 저장합니다.</p>
         </div>
         <button class="btn primary" data-action="save">앱에 저장</button>
       </div>
@@ -813,7 +814,7 @@ function renderCustomBlogPanel(job) {
       <div class="section-head compact">
         <div>
           <h2>새 블로그 주제 지정</h2>
-          <p class="muted">원하는 카테고리와 메인키워드로 ChatGPT용 프롬프트를 만듭니다.</p>
+          <p class="muted">원하는 카테고리와 메인키워드로 Genspark용 프롬프트를 만듭니다.</p>
         </div>
       </div>
       <div class="custom-blog-grid">
@@ -822,7 +823,7 @@ function renderCustomBlogPanel(job) {
       </div>
       <div class="toolbar custom-blog-actions">
         <button class="btn primary" data-action="copy-custom-blog-prompt">프롬프트 복사</button>
-        <button class="btn ghost" data-action="open-chatgpt-custom">ChatGPT 실행</button>
+        <button class="btn ghost" data-action="open-chatgpt-custom">Genspark 실행</button>
       </div>
     </details>
   `;
@@ -3387,8 +3388,8 @@ function openChatGptWithPrompt(job, useCustom = false) {
   const custom = useCustom ? validateCustomBlog(job) : null;
   if (useCustom && !custom) return;
   navigator.clipboard.writeText(buildBlogPrompt(job, custom)).then(() => {
-    notify("프롬프트를 복사했습니다. ChatGPT 입력창에 붙여넣으세요.");
-    window.open("https://chatgpt.com/", "_blank", "noopener");
+    notify("프롬프트를 복사했습니다. Genspark 입력창에 붙여넣으세요.");
+    window.open(AI_ASSISTANT_URL, "_blank", "noopener");
   });
 }
 
@@ -3417,8 +3418,8 @@ ${baseReport}`;
 
 function openChatGptReport(job = currentJob()) {
   navigator.clipboard.writeText(buildReportPrompt(job)).then(() => {
-    notify("소견서 프롬프트를 복사했습니다. ChatGPT에 붙여넣으세요.");
-    window.open("https://chatgpt.com/", "_blank", "noopener");
+    notify("소견서 프롬프트를 복사했습니다. Genspark에 붙여넣으세요.");
+    window.open(AI_ASSISTANT_URL, "_blank", "noopener");
   });
 }
 
