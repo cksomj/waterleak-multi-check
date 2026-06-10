@@ -732,6 +732,16 @@ textarea[data-job-field="report"] {
   flex: 1 1 auto;
 }
 
+.tracker-toolbar {
+  display: grid;
+  grid-template-columns: minmax(220px, 1fr) minmax(180px, auto) auto auto auto auto;
+  width: 100%;
+}
+
+.tracker-analysis-btn {
+  width: 100%;
+}
+
 .mini-actions {
   display: flex;
   flex-wrap: wrap;
@@ -2515,6 +2525,16 @@ canvas {
     min-width: 0;
     padding-left: 8px;
     padding-right: 8px;
+    width: 100%;
+  }
+
+  .tracker-toolbar {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .tracker-analysis-btn,
+  .tracker-toolbar .audio-input-status {
+    grid-column: 1 / -1;
     width: 100%;
   }
 

@@ -93,6 +93,7 @@ let pendingViewAnimation = "";
 let savedBlogSelection = null;
 let storageEstimate = { percent: null, text: "Google 저장 전용" };
 let audioInputDevices = [];
+let spectrumInputDetected = false;
 const AI_ASSISTANT_URL = "https://www.genspark.ai/";
 
 const app = document.querySelector("#app");
@@ -592,8 +593,8 @@ function renderTracker(job) {
         <h1>누수추적기</h1>
         <p class="muted">마이크 입력을 실시간 주파수 그래프로 표시하고 필요한 소리를 녹음합니다.</p>
       </div>
-      <div class="toolbar">
-        <button class="btn primary" data-action="start-spectrum">USB-C / 3.5파이 입력 분석</button>
+      <div class="toolbar tracker-toolbar">
+        <button class="btn primary tracker-analysis-btn" data-action="start-spectrum">입력 분석 시작</button>
         <span class="audio-input-status ${audioInputStatusClass()}">${escapeHtml(state.audioInputStatus || "외부 입력 자동선택")}</span>
         <button class="btn ghost record-btn ${trackerRecordingActive ? "recording" : ""} ${trackerRecording ? "saved" : ""}" data-action="record-tracker">
           <span class="voice-icon ${trackerRecordingActive && !trackerRecordingPaused ? "blue pulse" : trackerRecording ? "blue" : "idle"}"></span>${trackerRecordingActive ? "녹음멈춤" : trackerRecording ? "저장완료" : "녹음"}
@@ -622,7 +623,7 @@ function renderTracker(job) {
       <div class="leak-ai-head">
         <div>
           <h2>AI 청음 누수 분석</h2>
-          <p class="muted">청음기 3.5파이 출력 또는 USB-C 오디오 캡처 입력을 실시간 주파수 그래프로 분석합니다.</p>
+          <p class="muted">청음기 출력이나 마이크 입력을 실시간 주파수 그래프로 분석합니다.</p>
         </div>
       </div>
       <div class="leak-metrics-grid">
@@ -2209,7 +2210,7 @@ async function toggleRecording(target = { kind: "situation" }) {
     render();
     notify(target.kind === "tracker" ? "그래프를 보면서 녹음 중입니다." : "녹음 중입니다.");
   } catch (error) {
-    notify("마이크 권한이 필요합니다. 브라우저 권한 허용, USB-C 오디오 캡처 연결, HTTPS/로컬 실행 상태를 확인하세요.");
+    notify("마이크 권한이 필요합니다. 브라우저 권한 허용, 입력 장치, HTTPS 실행 상태를 확인하세요.");
   }
 }
 
@@ -2823,10 +2824,11 @@ async function startSpectrum() {
     if (audioContext) await audioContext.close();
     leakAudioHistory = [];
     lastLeakAudioMetrics = null;
-    state.audioInputStatus = "외부 입력 확인 중";
+    spectrumInputDetected = false;
+    state.audioInputStatus = "입력 대기 중";
     saveState();
     render();
-    const selectedDeviceId = await resolveUsbAudioInputDeviceId();
+    const selectedDeviceId = await resolveAudioInputDeviceId();
     const audioConstraints = {
       echoCancellation: false,
       noiseSuppression: false,
@@ -2855,7 +2857,7 @@ async function startSpectrum() {
     state.audioInputStatus = "입력 확인 실패";
     saveState();
     render();
-    notify("마이크/오디오 입력 권한이 필요합니다. USB-C 오디오 캡처 연결, 브라우저 권한, 입력 장치를 확인한 뒤 다시 실행하세요.");
+    notify("마이크/오디오 입력 권한이 필요합니다. 브라우저 권한과 입력 장치를 확인한 뒤 다시 실행하세요.");
   }
 }
 
@@ -2868,6 +2870,9 @@ function stopSpectrum() {
   audioContext = null;
   analyser = null;
   lastLeakAudioMetrics = null;
+  spectrumInputDetected = false;
+  state.audioInputStatus = "분석 정지";
+  saveState();
   drawIdleSpectrum();
   updateLeakAudioPanel(null);
 }
@@ -2878,6 +2883,12 @@ function renderSpectrum() {
   const ctx = canvas.getContext("2d");
   const data = new Float32Array(analyser.frequencyBinCount);
   analyser.getFloatFrequencyData(data);
+  if (!spectrumInputDetected && hasMeaningfulAudioInput(data)) {
+    spectrumInputDetected = true;
+    state.audioInputStatus = "입력 감지 · 분석 중";
+    saveState();
+    updateAudioInputStatusElement();
+  }
   const currentMetrics = calculateLeakAudioScore({
     frequencyData: data,
     sampleRate: audioContext.sampleRate,
@@ -2961,7 +2972,7 @@ async function refreshAudioInputDevices(options = {}) {
     }
     if (!options.silent && options.notifyResult) {
       const label = audioInputDevices.find((device) => device.deviceId === state.audioInputDeviceId)?.label || state.audioInputLabel || "";
-      notify(label ? `현재 오디오 입력: ${label}` : "입력장치 이름은 권한 허용 후 확인됩니다. USB-C 장치를 연결한 뒤 입력 분석을 눌러주세요.");
+      notify(label ? `현재 오디오 입력: ${label}` : "입력장치 이름은 권한 허용 후 확인됩니다. 입력 분석을 눌러주세요.");
     }
     if (!options.skipRender) render();
     return audioInputDevices;
@@ -2971,7 +2982,7 @@ async function refreshAudioInputDevices(options = {}) {
   }
 }
 
-async function resolveUsbAudioInputDeviceId() {
+async function resolveAudioInputDeviceId() {
   await refreshAudioInputDevices({ silent: true, skipRender: true });
   let selectedDeviceId = pickPreferredAudioInputDeviceId();
   const hasLabels = audioInputDevices.some((device) => device.label);
@@ -2999,8 +3010,7 @@ async function resolveUsbAudioInputDeviceId() {
 function pickPreferredAudioInputDeviceId() {
   if (state.audioInputDeviceId && audioInputDevices.some((device) => device.deviceId === state.audioInputDeviceId)) return state.audioInputDeviceId;
   const externalPattern = /(usb|type-c|type c|capture|adapter|external|usb-c|외부|캡처|어댑터)/i;
-  const internalPattern = /(built-in|internal|mic|microphone|내장|마이크)/i;
-  const external = audioInputDevices.find((device) => externalPattern.test(device.label || "") && !internalPattern.test(device.label || ""));
+  const external = audioInputDevices.find((device) => externalPattern.test(device.label || ""));
   return external?.deviceId || "";
 }
 
@@ -3008,29 +3018,31 @@ function markSelectedAudioInput() {
   const track = micStream?.getAudioTracks?.()[0];
   const label = track?.label || state.audioInputLabel || "";
   state.audioInputLabel = label;
-  const external = looksLikeExternalAudioInput(label);
-  state.audioInputStatus = label ? `${external ? "USB-C 입력" : "USB-C 아님"}: ${label}` : "USB-C 입력 확인 불가";
+  state.audioInputStatus = label ? `입력 연결됨: ${label}` : "입력 연결됨";
   saveState();
-  if (!external) {
-    notify("USB-C 입력으로 확인되지 않습니다. 내장 마이크일 수 있으니 USB-C 오디오 캡처를 연결한 뒤 다시 분석을 누르세요.");
-  } else if (label) {
-    notify(`오디오 입력 사용 중: ${label}`);
-  }
+  if (label) notify(`오디오 입력 사용 중: ${label}`);
   render();
 }
 
-function looksLikeExternalAudioInput(label = "") {
-  return /(usb|usb-c|type-c|type c|capture|adapter|external|외부|캡처|어댑터)/i.test(label);
+function hasMeaningfulAudioInput(frequencyData) {
+  let peak = -Infinity;
+  for (const value of frequencyData) {
+    if (Number.isFinite(value) && value > peak) peak = value;
+  }
+  return peak > -92;
 }
 
-function looksLikeInternalAudioInput(label = "") {
-  return /(built-in|internal|내장|phone|휴대폰)/i.test(label) || (!looksLikeExternalAudioInput(label) && /mic|microphone|마이크/i.test(label));
+function updateAudioInputStatusElement() {
+  const status = document.querySelector(".audio-input-status");
+  if (!status) return;
+  status.textContent = state.audioInputStatus;
+  status.className = `audio-input-status ${audioInputStatusClass()}`;
 }
 
 function audioInputStatusClass() {
   const status = state.audioInputStatus || "";
-  if (/^USB-C 입력/i.test(status)) return "ready";
-  if (/확인 중|자동선택/i.test(status)) return "";
+  if (/감지|분석 중|연결됨/i.test(status)) return "ready";
+  if (/대기|확인 중|자동선택/i.test(status)) return "";
   return "warn";
 }
 
@@ -3138,7 +3150,7 @@ function updateLeakAudioPanel(metrics) {
 
 function saveLeakAudioPoint() {
   if (!lastLeakAudioMetrics) {
-    notify("USB-C / 3.5파이 입력 분석을 먼저 시작한 뒤 저장하세요.");
+    notify("입력 분석을 먼저 시작한 뒤 저장하세요.");
     return;
   }
   const job = currentJob();
