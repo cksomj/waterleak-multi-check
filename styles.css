@@ -752,13 +752,13 @@ textarea[data-job-field="report"] {
 }
 
 .pipe-material-btn span {
-  color: var(--muted);
+  color: #bfdbfe;
   font-size: 11px;
   font-weight: 700;
 }
 
 .pipe-material-btn strong {
-  color: var(--ink);
+  color: #eff6ff;
   font-size: 14px;
 }
 
@@ -783,18 +783,25 @@ textarea[data-job-field="report"] {
 .voice-icon {
   border-radius: 50%;
   display: inline-block;
-  height: 9px;
-  width: 9px;
+  height: 11px;
+  width: 11px;
 }
 
 .voice-icon.red {
   background: #dc2626;
-  box-shadow: 0 0 0 3px rgba(220, 38, 38, 0.14);
+  box-shadow: 0 0 0 4px rgba(220, 38, 38, 0.18);
+  height: 13px;
+  width: 13px;
 }
 
 .voice-icon.blue {
   background: #2563eb;
   box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.16);
+}
+
+.voice-icon.green {
+  background: #16a34a;
+  box-shadow: 0 0 0 3px rgba(22, 163, 74, 0.18);
 }
 
 .voice-icon.pulse {
@@ -824,12 +831,14 @@ textarea[data-job-field="report"] {
 }
 
 .record-btn.saved {
-  border-color: #bfdbfe;
-  color: #1d4ed8;
+  border-color: #bbf7d0;
+  color: #15803d;
 }
 
 .record-btn.recording {
-  background: #fff1f2;
+  background: #eff6ff;
+  border-color: #93c5fd;
+  color: #1d4ed8;
 }
 
 .listen-btn {
@@ -954,6 +963,25 @@ textarea[data-job-field="report"] {
   background: #2a1511;
   border-color: #9a3412;
   color: var(--danger);
+}
+
+.btn.blue,
+.btn.baseline-save {
+  background: #0d2a55;
+  border-color: #2563eb;
+  color: #dbeafe;
+  box-shadow: inset 0 0 0 1px rgba(147, 197, 253, 0.16);
+}
+
+.btn.blue:hover,
+.btn.baseline-save:hover {
+  background: #123a73;
+  border-color: #60a5fa;
+  color: #eff6ff;
+}
+
+.btn.baseline-save {
+  font-weight: 900;
 }
 
 .status-pill {
@@ -1122,6 +1150,13 @@ textarea[data-job-field="report"] {
   right: 12px;
   top: 12px;
   z-index: 2;
+}
+
+.leak-audio-detail {
+  color: #9fc2c8;
+  font-size: 12px;
+  font-weight: 800;
+  margin-top: 6px;
 }
 
 .leak-ai-panel {
