@@ -2912,19 +2912,36 @@ function renderSpectrum() {
     ctx.lineTo(width, y);
     ctx.stroke();
   }
-  const maxHz = 18000;
-  const maxBin = Math.min(binFromHz(maxHz, audioContext.sampleRate, analyser.fftSize), data.length - 1);
+  const maxHz = Math.min(18000, audioContext.sampleRate / 2);
+  const maxBin = Math.max(1, Math.min(binFromHz(maxHz, audioContext.sampleRate, analyser.fftSize), data.length - 1));
   const leakStartBin = binFromHz(3500, audioContext.sampleRate, analyser.fftSize);
   const leakX = (leakStartBin / maxBin) * width;
-  ctx.fillStyle = "rgba(249,115,22,0.12)";
+  ctx.fillStyle = "rgba(249,115,22,0.16)";
   ctx.fillRect(leakX, 0, width - leakX, height);
+  drawLeakFrequencyBands(ctx, width, height, maxBin, audioContext.sampleRate, analyser.fftSize);
+  const peakHz = Number(lastLeakAudioMetrics.peakHz || 0);
+  const peakBin = binFromHz(peakHz, audioContext.sampleRate, analyser.fftSize);
+  const peakX = clamp((peakBin / maxBin) * width, 0, width);
+  const peakBandWidth = clamp(width * 0.055, 34, 82);
+  if (peakHz >= 3500) {
+    ctx.fillStyle = "rgba(249,115,22,0.34)";
+    ctx.fillRect(clamp(peakX - peakBandWidth / 2, 0, width), 0, peakBandWidth, height);
+    ctx.strokeStyle = "#fb923c";
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.moveTo(peakX, 0);
+    ctx.lineTo(peakX, height);
+    ctx.stroke();
+  }
   const barWidth = width / Math.max(1, maxBin);
   for (let i = 0; i < maxBin; i += 1) {
     const db = data[i];
     const normalized = clamp((db + 110) / 90, 0, 1);
     const barHeight = normalized * height;
     const hz = (i * audioContext.sampleRate) / analyser.fftSize;
-    if (hz >= 3500 && smoothedScore >= 85) ctx.fillStyle = "#ef4444";
+    const isPeakBand = peakHz >= 3500 && Math.abs(hz - peakHz) <= 450;
+    if (isPeakBand && smoothedScore >= 85) ctx.fillStyle = "#ef4444";
+    else if (isPeakBand) ctx.fillStyle = "#fb923c";
     else if (hz >= 3500 && smoothedScore >= 70) ctx.fillStyle = "#f97316";
     else if (hz >= 3500) ctx.fillStyle = "#38bdf8";
     else ctx.fillStyle = "#64748b";
@@ -2934,11 +2951,42 @@ function renderSpectrum() {
   ctx.font = "14px sans-serif";
   ctx.fillText("저주파", 12, 24);
   ctx.fillText("누수 의심 고주파 대역", leakX + 12, 24);
+  if (peakHz >= 3500) {
+    ctx.fillStyle = "#fed7aa";
+    ctx.font = "bold 15px sans-serif";
+    ctx.fillText(`높은 피크 ${peakHz}Hz`, clamp(peakX + 10, 12, width - 170), 52);
+  }
   const status = document.querySelector("#peakStatus");
   const risk = getLeakAudioRisk(smoothedScore);
   if (status) status.textContent = `${risk.label} ${lastLeakAudioMetrics.peakHz}Hz ${smoothedScore}%`;
   updateLeakAudioPanel(lastLeakAudioMetrics);
   animationFrame = requestAnimationFrame(renderSpectrum);
+}
+
+function drawLeakFrequencyBands(ctx, width, height, maxBin, sampleRate, fftSize) {
+  const bands = [
+    { from: 3500, to: 8000, label: "누수 의심" },
+    { from: 8000, to: 12000, label: "고주파 피크" },
+    { from: 12000, to: 18000, label: "초고주파" },
+  ];
+  bands.forEach((band, index) => {
+    const startBin = binFromHz(band.from, sampleRate, fftSize);
+    const endBin = binFromHz(Math.min(band.to, sampleRate / 2), sampleRate, fftSize);
+    const x = clamp((startBin / maxBin) * width, 0, width);
+    const bandWidth = clamp(((endBin - startBin) / maxBin) * width, 0, width - x);
+    if (bandWidth <= 0) return;
+    ctx.fillStyle = index % 2 ? "rgba(249,115,22,0.09)" : "rgba(249,115,22,0.05)";
+    ctx.fillRect(x, 0, bandWidth, height);
+    ctx.strokeStyle = "rgba(251,146,60,0.32)";
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(x, 0);
+    ctx.lineTo(x, height);
+    ctx.stroke();
+    ctx.fillStyle = "rgba(255,237,213,0.84)";
+    ctx.font = "12px sans-serif";
+    ctx.fillText(band.label, x + 8, height - 12);
+  });
 }
 
 function drawIdleSpectrum() {
