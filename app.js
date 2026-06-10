@@ -2969,6 +2969,13 @@ function renderSpectrum() {
     history: leakAudioHistory,
     profile: currentPipeProfile(),
   });
+  if (currentMetrics.silent) {
+    leakAudioHistory = [];
+    leakDisplayScore = 0;
+    audioActivityDisplayScore = 0;
+    stablePeakHz = null;
+    stablePeakConfidence = 0;
+  }
   leakAudioHistory.push(currentMetrics);
   if (leakAudioHistory.length > 150) leakAudioHistory.shift();
   const recentAverage = Math.round(leakAudioHistory.reduce((sum, item) => sum + item.score, 0) / leakAudioHistory.length);
@@ -3035,7 +3042,11 @@ function renderSpectrum() {
   }
   const status = document.querySelector("#peakStatus");
   const risk = getStableLeakAudioRisk(smoothedScore);
-  if (status) status.textContent = `${risk.label} ${peakInfo.visible ? `${peakHz}Hz` : "피크 안정화 중"} ${smoothedScore}%`;
+  if (status) {
+    status.textContent = lastLeakAudioMetrics.silent
+      ? "정상 범위 · 입력 대기"
+      : `${risk.label} ${peakInfo.visible ? `${peakHz}Hz` : "피크 안정화 중"} ${smoothedScore}%`;
+  }
   updateLeakAudioPanel(lastLeakAudioMetrics);
   animationFrame = requestAnimationFrame(renderSpectrum);
 }
@@ -3246,6 +3257,7 @@ function getLeakAudioRisk(score) {
 }
 
 function getStableLeakAudioRisk(score) {
+  if (score <= 5) leakRiskState = "green";
   if (leakRiskState === "red") {
     if (score <= 78) leakRiskState = "orange";
   } else if (leakRiskState === "orange") {
@@ -3282,6 +3294,19 @@ function calculateLeakAudioScore({ frequencyData, sampleRate, fftSize, history, 
   const peak = maxFrequencyRange(frequencyData, leakStart, ultraEnd);
   const inputPeak = maxFrequencyRange(frequencyData, lowStart, ultraEnd);
   const activityScore = Math.round(clamp((inputPeak.max + 95) * 2.2, 0, 39));
+  if (inputPeak.max < -92) {
+    return {
+      score: 0,
+      rawScore: 0,
+      activityScore: 0,
+      peakHz: 0,
+      lowAvg: Math.round(lowAvg),
+      midAvg: Math.round(midAvg),
+      leakAvg: Math.round(leakAvg),
+      ultraAvg: Math.round(ultraAvg),
+      silent: true,
+    };
+  }
   const highVsLow = leakAvg - lowAvg;
   const highVsMid = leakAvg - midAvg;
   const peakStrength = peak.max - Math.max(lowAvg, midAvg);
