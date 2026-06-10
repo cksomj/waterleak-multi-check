@@ -138,6 +138,8 @@ function createJob() {
     blogCategory: "",
     blogKeyword: "",
     leakAudioPoints: [],
+    leakComparePoints: {},
+    leakAudioBaseline: null,
     pipeMaterial: "pvc",
     pipeLeakTypes: { cold: false, hot: false, heating: false },
     somersLeakLevel: "",
@@ -272,6 +274,8 @@ function normalizeV2Fields(job) {
   });
   if (!Array.isArray(job.somersPhotos)) job.somersPhotos = [];
   if (!Array.isArray(job.somersPhotoFiles)) job.somersPhotoFiles = [];
+  if (!job.leakComparePoints || typeof job.leakComparePoints !== "object") job.leakComparePoints = {};
+  if (job.leakAudioBaseline && typeof job.leakAudioBaseline !== "object") job.leakAudioBaseline = null;
 }
 
 function updateJob(patch) {
@@ -604,6 +608,7 @@ function renderTracker(job) {
   const trackerRecordingPaused = trackerRecordingActive && wavRecorder?.paused;
   const leakPoints = job.leakAudioPoints || [];
   return `
+    ${renderFieldSteps("tracker")}
     <div class="section-head">
       <div>
         <h1>누수추적기</h1>
@@ -623,7 +628,6 @@ function renderTracker(job) {
         <button class="btn warn" data-action="stop-spectrum">정지</button>
       </div>
     </div>
-    ${renderFieldSteps("tracker")}
     <section class="audio-panel">
       <div class="audio-panel-head">
         <h2>실시간 주파수 그래프</h2>
@@ -644,16 +648,24 @@ function renderTracker(job) {
           <h2>AI 청음 누수 분석</h2>
           <p class="muted">청음기 출력이나 마이크 입력을 실시간 주파수 그래프로 분석합니다.</p>
         </div>
+        <div class="leak-baseline-actions">
+          <button class="btn ghost" data-action="save-leak-baseline">정상 기준 저장</button>
+          <button class="btn ghost clear-btn" data-action="clear-leak-baseline" ${job.leakAudioBaseline ? "" : "disabled"}>기준 삭제</button>
+        </div>
       </div>
-      <div class="leak-metrics-grid">
-        <div><span>피크 주파수</span><strong id="leakPeakHz">- Hz</strong></div>
-        <div><span>저주파 평균</span><strong id="leakLowAvg">- dB</strong></div>
-        <div><span>중역 평균</span><strong id="leakMidAvg">- dB</strong></div>
-        <div><span>누수대역 평균</span><strong id="leakBandAvg">- dB</strong></div>
+      <div class="leak-baseline-status ${job.leakAudioBaseline ? "active" : ""}">
+        ${job.leakAudioBaseline
+          ? `정상 기준 적용 중 · ${escapeHtml(job.leakAudioBaseline.pipeLabel || "배관")} · ${escapeHtml(new Date(job.leakAudioBaseline.createdAt || Date.now()).toLocaleString())}`
+          : "정상 기준 없음 · 조용한 상태에서 입력 분석 후 정상 기준 저장을 누르세요."}
       </div>
       <div class="leak-save-row">
         <input id="leakPointName" placeholder="예: 욕실 앞, 보일러실, 주방 싱크대" />
         <button class="btn primary" data-action="save-leak-point">현재 지점 저장</button>
+      </div>
+      <div class="leak-abcd-save-row">
+        ${["A", "B", "C", "D"].map((label) => `
+          <button class="btn ghost" data-action="save-leak-compare-point" data-slot="${label}">${label} 지점 저장</button>
+        `).join("")}
       </div>
       <div class="leak-point-list">
         <h3>저장된 측정 지점</h3>
@@ -674,15 +686,39 @@ function renderTracker(job) {
 }
 
 function renderTrackerV2Workbench(job, leakPoints = []) {
-  const topPoints = [...leakPoints].sort((a, b) => Number(b.score || 0) - Number(a.score || 0)).slice(0, 4);
+  const comparePoints = job.leakComparePoints || {};
+  const compareList = ["A", "B", "C", "D"].map((label) => comparePoints[label]).filter(Boolean);
+  const highestCompareScore = Math.max(0, ...compareList.map((point) => Number(point.score || 0)));
   const somersPreview = (job.somersPhotoFiles || [])[0];
   const somersHasPhoto = Boolean((job.somersPhotoFiles || []).some((photo) => photo?.dataUrl));
   const somersRecording = getLastRecordingForTarget({ kind: "somersSound" });
   return `
     <section class="tracker-v2-workbench">
-      <article class="v2-screen somers-screen">
+      <article class="v2-screen compare-screen compact">
         <div>
           <span class="v2-kicker">SCREEN 01</span>
+          <h3>다지점 비교</h3>
+          <p>A/B/C/D 지점의 점수와 위험도를 비교합니다.</p>
+        </div>
+        <div class="v2-compare-table">
+          ${["A", "B", "C", "D"].map((label) => {
+            const point = comparePoints[label];
+            const isHighest = point && Number(point.score || 0) === highestCompareScore && highestCompareScore > 0;
+            return `
+              <div class="${point ? `filled ${escapeAttr(point.color || "green")}` : ""} ${isHighest ? "best" : ""}">
+                <strong>${label}</strong>
+                <span>${escapeHtml(point?.name || "측정 대기")}</span>
+                <b>${point ? `${Number(point.score || 0)}%` : "- %"}</b>
+                <small>${point?.metrics?.peakHz ? `${Number(point.metrics.peakHz).toLocaleString()} Hz` : "피크 대기"}</small>
+                ${isHighest ? `<em>최고 의심</em>` : ""}
+              </div>
+            `;
+          }).join("")}
+        </div>
+      </article>
+      <article class="v2-screen somers-screen">
+        <div>
+          <span class="v2-kicker">SCREEN 02</span>
           <h3>소머즈 사진 / 소리 자료 저장</h3>
           <p>소머즈가 표시한 의심 지점의 사진과 현장 소리 원본을 저장해 추후 AI 학습 자료로 남깁니다.</p>
         </div>
@@ -713,25 +749,6 @@ function renderTrackerV2Workbench(job, leakPoints = []) {
           <label>주황 표시<input data-job-field="somersOrangeMark" value="${escapeAttr(job.somersOrangeMark || "")}" placeholder="예: 강함 / 우측" /></label>
           <label>의심 위치<input data-job-field="somersSuspectLocation" value="${escapeAttr(job.somersSuspectLocation || "")}" placeholder="예: 욕실 앞 배관" /></label>
           <label>촬영 메모<textarea data-job-field="somersCaptureMemo" placeholder="촬영 각도, 화면 밝기, 소머즈 그래프 특징을 기록합니다.">${escapeHtml(job.somersCaptureMemo || "")}</textarea></label>
-        </div>
-      </article>
-      <article class="v2-screen compare-screen">
-        <div>
-          <span class="v2-kicker">SCREEN 02</span>
-          <h3>다지점 비교 화면</h3>
-          <p>A/B/C/D 지점의 점수와 위험도를 비교해 현장에서 바로 의심 위치를 좁히는 화면입니다.</p>
-        </div>
-        <div class="v2-compare-table">
-          ${["A", "B", "C", "D"].map((label, index) => {
-            const point = topPoints[index];
-            return `
-              <div class="${point ? "filled" : ""}">
-                <strong>${label}</strong>
-                <span>${escapeHtml(point?.name || "측정 대기")}</span>
-                <b>${point ? `${Number(point.score || 0)}%` : "- %"}</b>
-              </div>
-            `;
-          }).join("")}
         </div>
       </article>
       <article class="v2-screen save-screen">
@@ -1301,6 +1318,7 @@ function mergeImportedJobs(importedJobs) {
       somersPhotos: Array.isArray(job.somersPhotos) ? job.somersPhotos : [],
       somersPhotoFiles: Array.isArray(job.somersPhotoFiles) ? job.somersPhotoFiles : [],
       leakAudioPoints: Array.isArray(job.leakAudioPoints) ? job.leakAudioPoints : [],
+      leakComparePoints: job.leakComparePoints && typeof job.leakComparePoints === "object" ? job.leakComparePoints : {},
     };
     normalizePipeLeakTypes(normalizedJob);
     normalizeV2Fields(normalizedJob);
@@ -1637,6 +1655,9 @@ function handleAction(action, data) {
   if (action === "cycle-pipe-material") cyclePipeMaterial(Number(data.direction || 1));
   if (action === "stop-spectrum") stopSpectrum();
   if (action === "save-leak-point") saveLeakAudioPoint();
+  if (action === "save-leak-compare-point") saveLeakComparePoint(data.slot);
+  if (action === "save-leak-baseline") saveLeakAudioBaseline();
+  if (action === "clear-leak-baseline") clearLeakAudioBaseline();
   if (action === "delete-leak-point") deleteLeakAudioPoint(data.id);
   if (action === "save-tracker") notify("추적 데이터가 현재 작업에 저장되었습니다.");
   if (action === "clear-tracker") notify("화면 그래프 로그를 삭제했습니다.");
@@ -2968,6 +2989,7 @@ function renderSpectrum() {
     fftSize: analyser.fftSize,
     history: leakAudioHistory,
     profile: currentPipeProfile(),
+    baseline: currentJob().leakAudioBaseline,
   });
   if (currentMetrics.silent) {
     leakAudioHistory = [];
@@ -3278,7 +3300,7 @@ function getStableLeakAudioRisk(score) {
   return riskByState[leakRiskState] || riskByState.green;
 }
 
-function calculateLeakAudioScore({ frequencyData, sampleRate, fftSize, history, profile = currentPipeProfile() }) {
+function calculateLeakAudioScore({ frequencyData, sampleRate, fftSize, history, profile = currentPipeProfile(), baseline = null }) {
   const lowStart = binFromHz(80, sampleRate, fftSize);
   const lowEnd = binFromHz(900, sampleRate, fftSize);
   const midStart = binFromHz(900, sampleRate, fftSize);
@@ -3304,6 +3326,9 @@ function calculateLeakAudioScore({ frequencyData, sampleRate, fftSize, history, 
       midAvg: Math.round(midAvg),
       leakAvg: Math.round(leakAvg),
       ultraAvg: Math.round(ultraAvg),
+      peakDb: Math.round(peak.max),
+      inputPeakDb: Math.round(inputPeak.max),
+      baselineDelta: 0,
       silent: true,
     };
   }
@@ -3318,6 +3343,19 @@ function calculateLeakAudioScore({ frequencyData, sampleRate, fftSize, history, 
   const stableCount = recent.filter((item) => item.rawScore >= 55).length;
   const stableScore = clamp((stableCount / 24) * 12, 0, 12);
   let rawScore = highScore + midCompareScore + peakScore + ultraScore + stableScore;
+  let baselineDelta = 0;
+  if (baseline) {
+    const leakRise = leakAvg - Number(baseline.leakAvg ?? leakAvg);
+    const ultraRise = ultraAvg - Number(baseline.ultraAvg ?? ultraAvg);
+    const peakRise = peak.max - Number(baseline.peakDb ?? peak.max);
+    baselineDelta = Math.round(Math.max(leakRise, ultraRise, peakRise));
+    const baselineScore =
+      clamp((leakRise - 3) * 2.1, 0, 24) +
+      clamp((ultraRise - 3) * 1.5, 0, 16) +
+      clamp((peakRise - 4) * 1.7, 0, 26);
+    rawScore = (highScore * 0.5) + (midCompareScore * 0.55) + (peakScore * 0.45) + (ultraScore * 0.5) + baselineScore + stableScore;
+    if (leakRise < 4 && ultraRise < 4 && peakRise < 5) rawScore *= 0.45;
+  }
   if (lowAvg > leakAvg + 12) rawScore -= 15;
   const score = Math.round(clamp(rawScore, 0, 100));
   const peakHz = Math.round((peak.index * sampleRate) / fftSize);
@@ -3330,6 +3368,9 @@ function calculateLeakAudioScore({ frequencyData, sampleRate, fftSize, history, 
     midAvg: Math.round(midAvg),
     leakAvg: Math.round(leakAvg),
     ultraAvg: Math.round(ultraAvg),
+    peakDb: Math.round(peak.max),
+    inputPeakDb: Math.round(inputPeak.max),
+    baselineDelta,
   };
 }
 
@@ -3358,6 +3399,8 @@ function updateLeakAudioPanel(metrics) {
   if (midAvg) midAvg.textContent = metrics ? `${metrics.midAvg} dB` : "- dB";
   const bandAvg = document.querySelector("#leakBandAvg");
   if (bandAvg) bandAvg.textContent = metrics ? `${metrics.leakAvg} dB` : "- dB";
+  const baselineDelta = document.querySelector("#leakBaselineDelta");
+  if (baselineDelta) baselineDelta.textContent = metrics ? `${Math.max(0, Number(metrics.baselineDelta || 0))} dB` : "- dB";
 }
 
 function leakScoreColor(color) {
@@ -3391,9 +3434,103 @@ function saveLeakAudioPoint() {
   notify("현재 측정 지점을 저장했습니다.");
 }
 
+function buildLeakAudioPoint(name) {
+  const risk = getLeakAudioRisk(lastLeakAudioMetrics.score);
+  return {
+    id: `leak-${Date.now()}`,
+    name,
+    score: lastLeakAudioMetrics.score,
+    risk: risk.label,
+    color: risk.color,
+    pipeMaterial: currentPipeProfile(currentJob()).label,
+    metrics: lastLeakAudioMetrics,
+    createdAt: new Date().toISOString(),
+  };
+}
+
+function saveLeakComparePoint(slot) {
+  if (!lastLeakAudioMetrics) {
+    notify("입력 분석을 먼저 시작한 뒤 저장하세요.");
+    return;
+  }
+  const normalizedSlot = String(slot || "").toUpperCase();
+  if (!["A", "B", "C", "D"].includes(normalizedSlot)) return;
+  const job = currentJob();
+  const input = document.querySelector("#leakPointName");
+  const baseName = input?.value.trim();
+  const point = buildLeakAudioPoint(baseName || `${normalizedSlot} 지점`);
+  point.slot = normalizedSlot;
+  job.leakComparePoints = {
+    ...(job.leakComparePoints || {}),
+    [normalizedSlot]: point,
+  };
+  job.leakAudioPoints = [point, ...(job.leakAudioPoints || [])];
+  job.updatedAt = new Date().toISOString();
+  saveState();
+  render();
+  notify(`${normalizedSlot} 지점을 저장했습니다.`);
+}
+
+function averageLeakMetrics(metricsList) {
+  const valid = metricsList.filter((item) => item && !item.silent);
+  if (!valid.length) return null;
+  const average = (field) => valid.reduce((sum, item) => sum + Number(item[field] || 0), 0) / valid.length;
+  return {
+    lowAvg: Math.round(average("lowAvg")),
+    midAvg: Math.round(average("midAvg")),
+    leakAvg: Math.round(average("leakAvg")),
+    ultraAvg: Math.round(average("ultraAvg")),
+    peakDb: Math.round(average("peakDb")),
+    inputPeakDb: Math.round(average("inputPeakDb")),
+    activityScore: Math.round(average("activityScore")),
+  };
+}
+
+function saveLeakAudioBaseline() {
+  const recentBaseline = averageLeakMetrics(leakAudioHistory.slice(-45)) || averageLeakMetrics([lastLeakAudioMetrics]);
+  if (!recentBaseline) {
+    notify("입력 분석을 먼저 켜고 조용한 상태에서 기준을 저장하세요.");
+    return;
+  }
+  const job = currentJob();
+  const profile = currentPipeProfile(job);
+  job.leakAudioBaseline = {
+    ...recentBaseline,
+    pipeMaterial: profile.id,
+    pipeLabel: profile.label,
+    createdAt: new Date().toISOString(),
+  };
+  leakAudioHistory = [];
+  leakDisplayScore = null;
+  audioActivityDisplayScore = null;
+  leakRiskState = "green";
+  job.updatedAt = new Date().toISOString();
+  saveState();
+  render();
+  notify("정상 기준을 저장했습니다. 이제 기준보다 튀는 소리를 중심으로 분석합니다.");
+}
+
+function clearLeakAudioBaseline() {
+  const job = currentJob();
+  job.leakAudioBaseline = null;
+  leakAudioHistory = [];
+  leakDisplayScore = null;
+  audioActivityDisplayScore = null;
+  leakRiskState = "green";
+  job.updatedAt = new Date().toISOString();
+  saveState();
+  render();
+  notify("정상 기준을 삭제했습니다.");
+}
+
 function deleteLeakAudioPoint(id) {
   const job = currentJob();
   job.leakAudioPoints = (job.leakAudioPoints || []).filter((point) => point.id !== id);
+  if (job.leakComparePoints) {
+    Object.entries(job.leakComparePoints).forEach(([slot, point]) => {
+      if (point?.id === id) delete job.leakComparePoints[slot];
+    });
+  }
   job.updatedAt = new Date().toISOString();
   saveState();
   render();
