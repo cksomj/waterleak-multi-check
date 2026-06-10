@@ -734,12 +734,32 @@ textarea[data-job-field="report"] {
 
 .tracker-toolbar {
   display: grid;
-  grid-template-columns: minmax(220px, 1fr) minmax(180px, auto) auto auto auto auto;
+  grid-template-columns: minmax(180px, 1fr) minmax(160px, 0.8fr) minmax(180px, auto) auto auto auto auto;
   width: 100%;
 }
 
 .tracker-analysis-btn {
   width: 100%;
+}
+
+.pipe-material-btn {
+  align-content: center;
+  display: grid;
+  gap: 1px;
+  line-height: 1.1;
+  min-height: 42px;
+  width: 100%;
+}
+
+.pipe-material-btn span {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.pipe-material-btn strong {
+  color: var(--ink);
+  font-size: 14px;
 }
 
 .mini-actions {
@@ -1158,7 +1178,7 @@ textarea[data-job-field="report"] {
 
 .leak-score-circle {
   align-items: center;
-  background: conic-gradient(#f97316 0deg, #f97316 var(--score-deg, 0deg), #e2e8f0 var(--score-deg, 0deg));
+  background: conic-gradient(var(--score-color, #22c55e) 0deg, var(--score-color, #22c55e) var(--score-deg, 0deg), #e2e8f0 var(--score-deg, 0deg));
   border-radius: 50%;
   color: #0f172a;
   display: flex;
@@ -1167,6 +1187,14 @@ textarea[data-job-field="report"] {
   justify-content: center;
   position: relative;
   width: 96px;
+}
+
+.leak-score-circle[data-risk="orange"] {
+  box-shadow: 0 0 0 5px rgba(249, 115, 22, 0.18), 0 0 26px rgba(249, 115, 22, 0.22);
+}
+
+.leak-score-circle[data-risk="red"] {
+  box-shadow: 0 0 0 5px rgba(239, 68, 68, 0.18), 0 0 30px rgba(239, 68, 68, 0.28);
 }
 
 .leak-score-circle::before {
@@ -2536,6 +2564,10 @@ canvas {
   .tracker-toolbar .audio-input-status {
     grid-column: 1 / -1;
     width: 100%;
+  }
+
+  .pipe-material-btn {
+    grid-column: 1 / -1;
   }
 
   .custom-blog-grid {

@@ -22,6 +22,16 @@ const baseWaterproofChecks = [
   ["toilet_body", "변기상태", "변기 정심, 백시멘트, 배관 연결부 흔들림과 누수 흔적을 확인합니다."],
 ];
 
+const PIPE_MATERIALS = [
+  { id: "pvc", label: "PVC", leakStart: 2500, leakMid: 6500, leakEnd: 10500, ultraEnd: 14500, peakStrength: 8, stableScore: 38 },
+  { id: "cast_iron", label: "주철관", leakStart: 900, leakMid: 3200, leakEnd: 7200, ultraEnd: 11000, peakStrength: 7, stableScore: 38 },
+  { id: "copper", label: "동관", leakStart: 4200, leakMid: 8500, leakEnd: 14000, ultraEnd: 18000, peakStrength: 10, stableScore: 44 },
+  { id: "xl_pe", label: "XL/PE 배관", leakStart: 1800, leakMid: 5200, leakEnd: 9800, ultraEnd: 13500, peakStrength: 8, stableScore: 40 },
+  { id: "insulated", label: "보온재 커버 배관", leakStart: 1200, leakMid: 4200, leakEnd: 8500, ultraEnd: 12000, peakStrength: 6, stableScore: 34 },
+  { id: "heating", label: "난방 배관", leakStart: 1500, leakMid: 4800, leakEnd: 9200, ultraEnd: 13000, peakStrength: 7, stableScore: 38 },
+  { id: "other", label: "기타", leakStart: 2500, leakMid: 7000, leakEnd: 12000, ultraEnd: 16000, peakStrength: 9, stableScore: 42 },
+];
+
 const blogEmojis = [
   "😀","😃","😄","😁","😆","😅","😂","🤣","🙂","🙃","😉","😊","😇","🥰","😍","🤩","😘","😗","😚","😙",
   "😋","😛","😜","🤪","😝","🤑","🤗","🤭","🫢","🫣","🤫","🤔","🫡","🤐","🤨","😐","😑","😶","🫥","😶‍🌫️",
@@ -127,6 +137,7 @@ function createJob() {
     blogCategory: "",
     blogKeyword: "",
     leakAudioPoints: [],
+    pipeMaterial: "pvc",
     pipeLeakTypes: { cold: false, hot: false, heating: false },
     somersLeakLevel: "",
     somersFrequency: "",
@@ -599,6 +610,9 @@ function renderTracker(job) {
       </div>
       <div class="toolbar tracker-toolbar">
         <button class="btn primary tracker-analysis-btn" data-action="start-spectrum">입력 분석 시작</button>
+        <button class="btn ghost pipe-material-btn" data-action="cycle-pipe-material" data-direction="1">
+          <span>배관 종류</span><strong>${escapeHtml(currentPipeProfile(job).label)}</strong>
+        </button>
         <span class="audio-input-status ${audioInputStatusClass()}">${escapeHtml(state.audioInputStatus || "외부 입력 자동선택")}</span>
         <button class="btn ghost record-btn ${trackerRecordingActive ? "recording" : ""} ${trackerRecording ? "saved" : ""}" data-action="record-tracker">
           <span class="voice-icon ${trackerRecordingActive && !trackerRecordingPaused ? "blue pulse" : trackerRecording ? "blue" : "idle"}"></span>${trackerRecordingActive ? "녹음멈춤" : trackerRecording ? "저장완료" : "녹음"}
@@ -1386,6 +1400,13 @@ function bindEvents() {
     });
   });
 
+  app.querySelectorAll(".pipe-material-btn").forEach((button) => {
+    button.addEventListener("wheel", (event) => {
+      event.preventDefault();
+      cyclePipeMaterial(event.deltaY > 0 ? 1 : -1);
+    }, { passive: false });
+  });
+
   app.querySelectorAll("[data-estimate]").forEach((input) => {
     input.addEventListener("input", () => {
       const job = currentJob();
@@ -1611,6 +1632,7 @@ function handleAction(action, data) {
     render();
   }
   if (action === "start-spectrum") startSpectrum();
+  if (action === "cycle-pipe-material") cyclePipeMaterial(Number(data.direction || 1));
   if (action === "stop-spectrum") stopSpectrum();
   if (action === "save-leak-point") saveLeakAudioPoint();
   if (action === "delete-leak-point") deleteLeakAudioPoint(data.id);
@@ -2906,6 +2928,7 @@ function renderSpectrum() {
     sampleRate: audioContext.sampleRate,
     fftSize: analyser.fftSize,
     history: leakAudioHistory,
+    profile: currentPipeProfile(),
   });
   leakAudioHistory.push(currentMetrics);
   if (leakAudioHistory.length > 150) leakAudioHistory.shift();
@@ -2928,25 +2951,20 @@ function renderSpectrum() {
   }
   const maxHz = Math.min(18000, audioContext.sampleRate / 2);
   const maxBin = Math.max(1, Math.min(binFromHz(maxHz, audioContext.sampleRate, analyser.fftSize), data.length - 1));
-  const leakStartBin = binFromHz(3500, audioContext.sampleRate, analyser.fftSize);
+  const pipeProfile = currentPipeProfile();
+  const leakStartBin = binFromHz(pipeProfile.leakStart, audioContext.sampleRate, analyser.fftSize);
   const leakX = (leakStartBin / maxBin) * width;
   ctx.fillStyle = "rgba(249,115,22,0.16)";
   ctx.fillRect(leakX, 0, width - leakX, height);
-  drawLeakFrequencyBands(ctx, width, height, maxBin, audioContext.sampleRate, analyser.fftSize);
+  drawLeakFrequencyBands(ctx, width, height, maxBin, audioContext.sampleRate, analyser.fftSize, pipeProfile);
   const peakInfo = updateStablePeakMarker(lastLeakAudioMetrics, data);
   const peakHz = peakInfo.visible ? peakInfo.hz : 0;
   const peakBin = binFromHz(peakHz, audioContext.sampleRate, analyser.fftSize);
   const peakX = peakInfo.visible ? clamp((peakBin / maxBin) * width, 0, width) : 0;
   const peakBandWidth = clamp(width * 0.055, 34, 82);
   if (peakInfo.visible) {
-    ctx.fillStyle = "rgba(249,115,22,0.24)";
+    ctx.fillStyle = "rgba(249,115,22,0.18)";
     ctx.fillRect(clamp(peakX - peakBandWidth / 2, 0, width), 0, peakBandWidth, height);
-    ctx.strokeStyle = "#fb923c";
-    ctx.lineWidth = 2;
-    ctx.beginPath();
-    ctx.moveTo(peakX, 0);
-    ctx.lineTo(peakX, height);
-    ctx.stroke();
   }
   const barWidth = width / Math.max(1, maxBin);
   for (let i = 0; i < maxBin; i += 1) {
@@ -2957,18 +2975,20 @@ function renderSpectrum() {
     const isPeakBand = peakInfo.visible && Math.abs(hz - peakHz) <= 450;
     if (isPeakBand && smoothedScore >= 85) ctx.fillStyle = "#ef4444";
     else if (isPeakBand) ctx.fillStyle = "#fb923c";
-    else if (hz >= 3500 && smoothedScore >= 70) ctx.fillStyle = "#f97316";
-    else if (hz >= 3500) ctx.fillStyle = "#38bdf8";
+    else if (hz >= pipeProfile.leakStart && smoothedScore >= 70) ctx.fillStyle = "#f97316";
+    else if (hz >= pipeProfile.leakStart) ctx.fillStyle = "#38bdf8";
     else ctx.fillStyle = "#64748b";
     ctx.fillRect(i * barWidth, height - barHeight, Math.max(1, barWidth), barHeight);
   }
   ctx.fillStyle = "#ffffff";
-  ctx.font = "14px sans-serif";
+  ctx.font = "600 14px Arial, 'Malgun Gothic', sans-serif";
+  ctx.textBaseline = "top";
   ctx.fillText("저주파", 12, 24);
-  ctx.fillText("누수 의심 고주파 대역", leakX + 12, 24);
+  ctx.fillStyle = "#ffedd5";
+  ctx.fillText(`${pipeProfile.label} 누수 의심 대역`, leakX + 12, 24);
   if (peakInfo.visible) {
     ctx.fillStyle = "#fed7aa";
-    ctx.font = "bold 15px sans-serif";
+    ctx.font = "700 15px Arial, 'Malgun Gothic', sans-serif";
     ctx.fillText(`높은 피크 ${peakHz}Hz`, clamp(peakX + 10, 12, width - 170), 52);
   }
   const status = document.querySelector("#peakStatus");
@@ -2978,11 +2998,11 @@ function renderSpectrum() {
   animationFrame = requestAnimationFrame(renderSpectrum);
 }
 
-function drawLeakFrequencyBands(ctx, width, height, maxBin, sampleRate, fftSize) {
+function drawLeakFrequencyBands(ctx, width, height, maxBin, sampleRate, fftSize, profile = currentPipeProfile()) {
   const bands = [
-    { from: 3500, to: 8000, label: "누수 의심" },
-    { from: 8000, to: 12000, label: "고주파 피크" },
-    { from: 12000, to: 18000, label: "초고주파" },
+    { from: profile.leakStart, to: profile.leakMid, label: "누수 의심" },
+    { from: profile.leakMid, to: profile.leakEnd, label: "피크 범위" },
+    { from: profile.leakEnd, to: profile.ultraEnd, label: "강한 피크" },
   ];
   bands.forEach((band, index) => {
     const startBin = binFromHz(band.from, sampleRate, fftSize);
@@ -2999,18 +3019,19 @@ function drawLeakFrequencyBands(ctx, width, height, maxBin, sampleRate, fftSize)
     ctx.lineTo(x, height);
     ctx.stroke();
     ctx.fillStyle = "rgba(255,237,213,0.84)";
-    ctx.font = "12px sans-serif";
+    ctx.font = "600 12px Arial, 'Malgun Gothic', sans-serif";
     ctx.fillText(band.label, x + 8, height - 12);
   });
 }
 
 function updateStablePeakMarker(metrics, frequencyData) {
+  const profile = currentPipeProfile();
   const candidateHz = Number(metrics?.peakHz || 0);
   const peakBin = binFromHz(candidateHz, audioContext.sampleRate, analyser.fftSize);
   const peakDb = Number.isFinite(frequencyData[peakBin]) ? frequencyData[peakBin] : -110;
   const baseline = Math.max(Number(metrics?.lowAvg ?? -110), Number(metrics?.midAvg ?? -110));
   const strength = peakDb - baseline;
-  const strongEnough = candidateHz >= 3500 && strength >= 9 && Number(metrics?.score || 0) >= 42;
+  const strongEnough = candidateHz >= profile.leakStart && candidateHz <= profile.ultraEnd && strength >= profile.peakStrength && Number(metrics?.score || 0) >= profile.stableScore;
   if (!strongEnough) {
     stablePeakConfidence = Math.max(0, stablePeakConfidence - 0.08);
     if (stablePeakConfidence <= 0.08) stablePeakHz = null;
@@ -3198,15 +3219,15 @@ function getStableLeakAudioRisk(score) {
   return riskByState[leakRiskState] || riskByState.green;
 }
 
-function calculateLeakAudioScore({ frequencyData, sampleRate, fftSize, history }) {
+function calculateLeakAudioScore({ frequencyData, sampleRate, fftSize, history, profile = currentPipeProfile() }) {
   const lowStart = binFromHz(80, sampleRate, fftSize);
   const lowEnd = binFromHz(900, sampleRate, fftSize);
   const midStart = binFromHz(900, sampleRate, fftSize);
-  const midEnd = binFromHz(3500, sampleRate, fftSize);
-  const leakStart = binFromHz(3500, sampleRate, fftSize);
-  const leakEnd = binFromHz(12000, sampleRate, fftSize);
-  const ultraStart = binFromHz(12000, sampleRate, fftSize);
-  const ultraEnd = binFromHz(18000, sampleRate, fftSize);
+  const midEnd = binFromHz(profile.leakStart, sampleRate, fftSize);
+  const leakStart = binFromHz(profile.leakStart, sampleRate, fftSize);
+  const leakEnd = binFromHz(profile.leakEnd, sampleRate, fftSize);
+  const ultraStart = binFromHz(profile.leakEnd, sampleRate, fftSize);
+  const ultraEnd = binFromHz(Math.min(profile.ultraEnd, sampleRate / 2), sampleRate, fftSize);
   const lowAvg = averageFrequencyRange(frequencyData, lowStart, lowEnd);
   const midAvg = averageFrequencyRange(frequencyData, midStart, midEnd);
   const leakAvg = averageFrequencyRange(frequencyData, leakStart, leakEnd);
@@ -3246,7 +3267,11 @@ function updateLeakAudioPanel(metrics) {
     badge.textContent = risk.label;
   }
   const circle = document.querySelector("#leakScoreCircle");
-  if (circle) circle.style.setProperty("--score-deg", `${score * 3.6}deg`);
+  if (circle) {
+    circle.style.setProperty("--score-deg", `${score * 3.6}deg`);
+    circle.style.setProperty("--score-color", leakScoreColor(risk.color));
+    circle.dataset.risk = risk.color;
+  }
   const scoreValue = document.querySelector("#leakScoreValue");
   if (scoreValue) scoreValue.textContent = score;
   const peakHz = document.querySelector("#leakPeakHz");
@@ -3257,6 +3282,13 @@ function updateLeakAudioPanel(metrics) {
   if (midAvg) midAvg.textContent = metrics ? `${metrics.midAvg} dB` : "- dB";
   const bandAvg = document.querySelector("#leakBandAvg");
   if (bandAvg) bandAvg.textContent = metrics ? `${metrics.leakAvg} dB` : "- dB";
+}
+
+function leakScoreColor(color) {
+  if (color === "red") return "#ef4444";
+  if (color === "orange") return "#f97316";
+  if (color === "yellow") return "#eab308";
+  return "#22c55e";
 }
 
 function saveLeakAudioPoint() {
@@ -3571,6 +3603,26 @@ function pipeLeakTypeSummary(job = currentJob()) {
   ];
   const selected = labels.filter(([key]) => types[key]).map(([, label]) => label);
   return selected.length ? `- 누수 체크박스: ${selected.join(", ")}` : "- 누수 체크박스: 미선택";
+}
+
+function currentPipeProfile(job = currentJob()) {
+  return PIPE_MATERIALS.find((item) => item.id === job.pipeMaterial) || PIPE_MATERIALS[0];
+}
+
+function cyclePipeMaterial(direction = 1) {
+  const job = currentJob();
+  const currentIndex = Math.max(0, PIPE_MATERIALS.findIndex((item) => item.id === job.pipeMaterial));
+  const nextIndex = (currentIndex + direction + PIPE_MATERIALS.length) % PIPE_MATERIALS.length;
+  job.pipeMaterial = PIPE_MATERIALS[nextIndex].id;
+  job.updatedAt = new Date().toISOString();
+  leakAudioHistory = [];
+  leakDisplayScore = null;
+  stablePeakHz = null;
+  stablePeakConfidence = 0;
+  saveState();
+  render();
+  if (analyser && audioContext) requestAnimationFrame(renderSpectrum);
+  notify(`배관 종류: ${PIPE_MATERIALS[nextIndex].label}`);
 }
 
 function countDone(checks) {
