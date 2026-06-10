@@ -96,6 +96,8 @@ let audioInputDevices = [];
 let spectrumInputDetected = false;
 let leakDisplayScore = null;
 let leakRiskState = "green";
+let stablePeakHz = null;
+let stablePeakConfidence = 0;
 const AI_ASSISTANT_URL = "https://www.genspark.ai/";
 
 const app = document.querySelector("#app");
@@ -2829,6 +2831,8 @@ async function startSpectrum() {
     spectrumInputDetected = false;
     leakDisplayScore = null;
     leakRiskState = "green";
+    stablePeakHz = null;
+    stablePeakConfidence = 0;
     state.audioInputStatus = "입력 대기 중";
     saveState();
     render();
@@ -2877,6 +2881,8 @@ function stopSpectrum() {
   spectrumInputDetected = false;
   leakDisplayScore = null;
   leakRiskState = "green";
+  stablePeakHz = null;
+  stablePeakConfidence = 0;
   state.audioInputStatus = "분석 정지";
   saveState();
   drawIdleSpectrum();
@@ -2927,15 +2933,16 @@ function renderSpectrum() {
   ctx.fillStyle = "rgba(249,115,22,0.16)";
   ctx.fillRect(leakX, 0, width - leakX, height);
   drawLeakFrequencyBands(ctx, width, height, maxBin, audioContext.sampleRate, analyser.fftSize);
-  const peakHz = Number(lastLeakAudioMetrics.peakHz || 0);
+  const peakInfo = updateStablePeakMarker(lastLeakAudioMetrics, data);
+  const peakHz = peakInfo.visible ? peakInfo.hz : 0;
   const peakBin = binFromHz(peakHz, audioContext.sampleRate, analyser.fftSize);
-  const peakX = clamp((peakBin / maxBin) * width, 0, width);
+  const peakX = peakInfo.visible ? clamp((peakBin / maxBin) * width, 0, width) : 0;
   const peakBandWidth = clamp(width * 0.055, 34, 82);
-  if (peakHz >= 3500) {
-    ctx.fillStyle = "rgba(249,115,22,0.34)";
+  if (peakInfo.visible) {
+    ctx.fillStyle = "rgba(249,115,22,0.24)";
     ctx.fillRect(clamp(peakX - peakBandWidth / 2, 0, width), 0, peakBandWidth, height);
     ctx.strokeStyle = "#fb923c";
-    ctx.lineWidth = 3;
+    ctx.lineWidth = 2;
     ctx.beginPath();
     ctx.moveTo(peakX, 0);
     ctx.lineTo(peakX, height);
@@ -2947,7 +2954,7 @@ function renderSpectrum() {
     const normalized = clamp((db + 110) / 90, 0, 1);
     const barHeight = normalized * height;
     const hz = (i * audioContext.sampleRate) / analyser.fftSize;
-    const isPeakBand = peakHz >= 3500 && Math.abs(hz - peakHz) <= 450;
+    const isPeakBand = peakInfo.visible && Math.abs(hz - peakHz) <= 450;
     if (isPeakBand && smoothedScore >= 85) ctx.fillStyle = "#ef4444";
     else if (isPeakBand) ctx.fillStyle = "#fb923c";
     else if (hz >= 3500 && smoothedScore >= 70) ctx.fillStyle = "#f97316";
@@ -2959,14 +2966,14 @@ function renderSpectrum() {
   ctx.font = "14px sans-serif";
   ctx.fillText("저주파", 12, 24);
   ctx.fillText("누수 의심 고주파 대역", leakX + 12, 24);
-  if (peakHz >= 3500) {
+  if (peakInfo.visible) {
     ctx.fillStyle = "#fed7aa";
     ctx.font = "bold 15px sans-serif";
     ctx.fillText(`높은 피크 ${peakHz}Hz`, clamp(peakX + 10, 12, width - 170), 52);
   }
   const status = document.querySelector("#peakStatus");
   const risk = getStableLeakAudioRisk(smoothedScore);
-  if (status) status.textContent = `${risk.label} ${lastLeakAudioMetrics.peakHz}Hz ${smoothedScore}%`;
+  if (status) status.textContent = `${risk.label} ${peakInfo.visible ? `${peakHz}Hz` : "피크 안정화 중"} ${smoothedScore}%`;
   updateLeakAudioPanel(lastLeakAudioMetrics);
   animationFrame = requestAnimationFrame(renderSpectrum);
 }
@@ -2995,6 +3002,33 @@ function drawLeakFrequencyBands(ctx, width, height, maxBin, sampleRate, fftSize)
     ctx.font = "12px sans-serif";
     ctx.fillText(band.label, x + 8, height - 12);
   });
+}
+
+function updateStablePeakMarker(metrics, frequencyData) {
+  const candidateHz = Number(metrics?.peakHz || 0);
+  const peakBin = binFromHz(candidateHz, audioContext.sampleRate, analyser.fftSize);
+  const peakDb = Number.isFinite(frequencyData[peakBin]) ? frequencyData[peakBin] : -110;
+  const baseline = Math.max(Number(metrics?.lowAvg ?? -110), Number(metrics?.midAvg ?? -110));
+  const strength = peakDb - baseline;
+  const strongEnough = candidateHz >= 3500 && strength >= 9 && Number(metrics?.score || 0) >= 42;
+  if (!strongEnough) {
+    stablePeakConfidence = Math.max(0, stablePeakConfidence - 0.08);
+    if (stablePeakConfidence <= 0.08) stablePeakHz = null;
+    return { visible: false, hz: Math.round(stablePeakHz || candidateHz || 0) };
+  }
+  if (stablePeakHz === null) {
+    stablePeakHz = candidateHz;
+    stablePeakConfidence = 0.18;
+  } else {
+    const diff = Math.abs(candidateHz - stablePeakHz);
+    const follow = diff > 2600 ? 0.025 : diff > 1200 ? 0.055 : 0.11;
+    stablePeakHz = stablePeakHz * (1 - follow) + candidateHz * follow;
+    stablePeakConfidence = Math.min(1, stablePeakConfidence + 0.045);
+  }
+  return {
+    visible: stablePeakConfidence >= 0.38,
+    hz: Math.round(stablePeakHz),
+  };
 }
 
 function drawIdleSpectrum() {
