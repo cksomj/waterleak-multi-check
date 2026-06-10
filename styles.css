@@ -1270,27 +1270,12 @@ textarea[data-job-field="report"] {
 .leak-save-row {
   display: grid;
   gap: 8px;
-  grid-template-columns: minmax(160px, 1fr) auto;
   margin-bottom: 14px;
 }
 
-.leak-save-row input {
-  border: 1px solid var(--line);
-  border-radius: 6px;
-  min-height: 38px;
-  padding: 8px 10px;
-}
-
-.leak-abcd-save-row {
-  display: grid;
-  gap: 8px;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  margin: -4px 0 14px;
-}
-
-.leak-abcd-save-row .btn {
-  min-height: 38px;
-  padding-inline: 8px;
+.leak-save-row .btn {
+  min-height: 44px;
+  width: 100%;
 }
 
 .leak-point-list {
@@ -2816,9 +2801,6 @@ canvas {
     grid-template-columns: 1fr;
   }
 
-  .leak-abcd-save-row {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
 }
 
 @media (max-width: 520px) {
