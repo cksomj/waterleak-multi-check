@@ -82,12 +82,14 @@ const defaultState = {
   deletedJobIds: [],
   audioInputDeviceId: "",
   audioInputLabel: "",
-  audioInputStatus: "외부 입력 자동선택",
+  audioInputStatus: "분석 준비",
+  leakPipeCalibrations: {},
   jobs: [],
 };
 
 let state = loadState();
 state.activeView = "dashboard";
+if (!state.leakPipeCalibrations || typeof state.leakPipeCalibrations !== "object") state.leakPipeCalibrations = {};
 let wavRecorder = null;
 let audioContext = null;
 let analyser = null;
@@ -109,6 +111,7 @@ let leakRiskState = "green";
 let stablePeakHz = null;
 let stablePeakConfidence = 0;
 let audioActivityDisplayScore = null;
+let leakSilenceFrames = 0;
 const AI_ASSISTANT_URL = "https://www.genspark.ai/";
 
 const app = document.querySelector("#app");
@@ -140,6 +143,8 @@ function createJob() {
     leakAudioPoints: [],
     leakComparePoints: {},
     leakAudioBaseline: null,
+    leakGraphSnapshots: [],
+    leakPipeCalibration: null,
     pipeMaterial: "pvc",
     pipeLeakTypes: { cold: false, hot: false, heating: false },
     somersLeakLevel: "",
@@ -274,6 +279,8 @@ function normalizeV2Fields(job) {
   });
   if (!Array.isArray(job.somersPhotos)) job.somersPhotos = [];
   if (!Array.isArray(job.somersPhotoFiles)) job.somersPhotoFiles = [];
+  if (!Array.isArray(job.leakGraphSnapshots)) job.leakGraphSnapshots = [];
+  if (job.leakPipeCalibration && typeof job.leakPipeCalibration !== "object") job.leakPipeCalibration = null;
   if (!job.leakComparePoints || typeof job.leakComparePoints !== "object") job.leakComparePoints = {};
   const legacySlots = [["A", "1"], ["B", "2"], ["C", "3"], ["D", "4"]];
   legacySlots.forEach(([legacy, next]) => {
@@ -622,12 +629,12 @@ function renderTracker(job) {
       </div>
       <div class="toolbar tracker-toolbar">
         <button class="btn primary tracker-analysis-btn" data-action="start-spectrum">입력 분석 시작</button>
-        <button class="btn ghost pipe-material-btn" data-action="cycle-pipe-material" data-direction="1">
+        <button class="btn blue pipe-material-btn" data-action="cycle-pipe-material" data-direction="1">
           <span>배관 종류</span><strong>${escapeHtml(currentPipeProfile(job).label)}</strong>
         </button>
-        <span class="audio-input-status ${audioInputStatusClass()}">${escapeHtml(state.audioInputStatus || "외부 입력 자동선택")}</span>
-        <button class="btn ghost record-btn ${trackerRecordingActive ? "recording" : ""} ${trackerRecording ? "saved" : ""}" data-action="record-tracker">
-          <span class="voice-icon ${trackerRecordingActive && !trackerRecordingPaused ? "blue pulse" : trackerRecording ? "blue" : "idle"}"></span>${trackerRecordingActive ? "녹음멈춤" : trackerRecording ? "저장완료" : "녹음"}
+        <span class="audio-input-status ${audioInputStatusClass()}">${escapeHtml(state.audioInputStatus || "분석 준비")}</span>
+        <button class="btn ghost record-btn tracker-record-btn ${trackerRecordingActive ? "recording" : ""} ${trackerRecording ? "saved" : ""}" data-action="record-tracker">
+          <span class="voice-icon ${trackerRecordingActive && !trackerRecordingPaused ? "blue pulse" : trackerRecording ? "green" : "red"}"></span>${trackerRecordingActive ? "녹음중" : trackerRecording ? "저장완료" : "소리녹음"}
         </button>
         <button class="btn ghost listen-btn" data-action="play-recording" data-recording-id="${escapeAttr(trackerRecording?.id || "")}" ${trackerRecording ? "" : "disabled"}>재생</button>
         <button class="btn ghost clear-btn" data-action="delete-recording" data-recording-id="${escapeAttr(trackerRecording?.id || "")}" ${trackerRecording ? "" : "disabled"}>삭제</button>
@@ -647,6 +654,7 @@ function renderTracker(job) {
         </div>
       </div>
       <p class="muted" style="color:#9fc2c8;margin-top:10px">높은 피크 대역은 주황색으로 표시됩니다. 녹음은 WAV 파일로 저장됩니다.</p>
+      <p class="muted leak-audio-detail" id="leakAudioDetail">RMS 입력세기 대기 · 반복 피크 대기</p>
     </section>
     <section class="panel leak-ai-panel">
       <div class="leak-ai-head">
@@ -655,14 +663,18 @@ function renderTracker(job) {
           <p class="muted">청음기 출력이나 마이크 입력을 실시간 주파수 그래프로 분석합니다.</p>
         </div>
         <div class="leak-baseline-actions">
-          <button class="btn ghost" data-action="save-leak-baseline">정상 기준 저장</button>
+          <button class="btn baseline-save" data-action="save-leak-baseline">정상기준소리저장</button>
+          <button class="btn ghost" data-action="save-graph-snapshot">그래프 저장</button>
+          <button class="btn ghost" data-action="calibrate-pipe-profile">배관 기준 보정</button>
           <button class="btn ghost clear-btn" data-action="clear-leak-baseline" ${job.leakAudioBaseline ? "" : "disabled"}>기준 삭제</button>
         </div>
       </div>
       <div class="leak-baseline-status ${job.leakAudioBaseline ? "active" : ""}">
         ${job.leakAudioBaseline
           ? `정상 기준 적용 중 · ${escapeHtml(job.leakAudioBaseline.pipeLabel || "배관")} · ${escapeHtml(new Date(job.leakAudioBaseline.createdAt || Date.now()).toLocaleString())}`
-          : "정상 기준 없음 · 조용한 상태에서 입력 분석 후 정상 기준 저장을 누르세요."}
+          : "정상 기준 없음 · 조용한 상태에서 입력 분석 후 정상기준소리저장을 누르세요."}
+        ${(job.leakGraphSnapshots || []).length ? ` · 그래프 ${(job.leakGraphSnapshots || []).length}장 저장됨` : ""}
+        ${currentPipeProfile(job).calibrated ? " · 배관 보정 적용" : ""}
       </div>
       <div class="leak-save-row">
         <button class="btn primary" data-action="save-leak-point">현재 지점 저장</button>
@@ -1320,6 +1332,8 @@ function mergeImportedJobs(importedJobs) {
       somersPhotoFiles: Array.isArray(job.somersPhotoFiles) ? job.somersPhotoFiles : [],
       leakAudioPoints: Array.isArray(job.leakAudioPoints) ? job.leakAudioPoints : [],
       leakComparePoints: job.leakComparePoints && typeof job.leakComparePoints === "object" ? job.leakComparePoints : {},
+      leakGraphSnapshots: Array.isArray(job.leakGraphSnapshots) ? job.leakGraphSnapshots : [],
+      leakPipeCalibration: job.leakPipeCalibration && typeof job.leakPipeCalibration === "object" ? job.leakPipeCalibration : null,
     };
     normalizePipeLeakTypes(normalizedJob);
     normalizeV2Fields(normalizedJob);
@@ -1589,6 +1603,7 @@ function handleAction(action, data) {
     state.currentJobId = next.id;
     state.activeView = "dashboard";
     state.quickListOpen = false;
+    state.audioInputStatus = "분석 준비";
     saveState();
     render();
   }
@@ -1657,6 +1672,8 @@ function handleAction(action, data) {
   if (action === "stop-spectrum") stopSpectrum();
   if (action === "save-leak-point") saveLeakAudioPoint();
   if (action === "save-leak-baseline") saveLeakAudioBaseline();
+  if (action === "save-graph-snapshot") saveLeakGraphSnapshot();
+  if (action === "calibrate-pipe-profile") calibrateCurrentPipeProfile();
   if (action === "clear-leak-baseline") clearLeakAudioBaseline();
   if (action === "delete-leak-point") deleteLeakAudioPoint(data.id);
   if (action === "save-tracker") notify("추적 데이터가 현재 작업에 저장되었습니다.");
@@ -2950,7 +2967,8 @@ async function startSpectrum() {
   }
 }
 
-function stopSpectrum() {
+async function stopSpectrum() {
+  await resetTrackerRecordingState();
   if (animationFrame) cancelAnimationFrame(animationFrame);
   if (micStream) micStream.getTracks().forEach((track) => track.stop());
   if (audioContext) audioContext.close();
@@ -2965,10 +2983,34 @@ function stopSpectrum() {
   stablePeakHz = null;
   stablePeakConfidence = 0;
   audioActivityDisplayScore = null;
+  leakSilenceFrames = 0;
   state.audioInputStatus = "분석 정지";
   saveState();
   drawIdleSpectrum();
   updateLeakAudioPanel(null);
+}
+
+async function resetTrackerRecordingState() {
+  if (wavRecorder?.recording && targetKey(recordingTarget) === "tracker") {
+    const recorder = wavRecorder;
+    recorder.recording = false;
+    try {
+      recorder.processor.disconnect();
+      recorder.source.disconnect();
+      recorder.stream.getTracks().forEach((track) => track.stop());
+      await recorder.context.close();
+    } catch (error) {
+      console.warn(error);
+    }
+    recordingTarget = null;
+    wavRecorder = null;
+  }
+  const job = currentJob();
+  const trackerRecordings = (job.recordings || []).filter((item) => item.targetKey === "tracker");
+  if (trackerRecordings.length) {
+    job.recordings = (job.recordings || []).filter((item) => item.targetKey !== "tracker");
+    await Promise.all(trackerRecordings.map((item) => deleteRecordingBlob(item.id)));
+  }
 }
 
 function renderSpectrum() {
@@ -2976,7 +3018,9 @@ function renderSpectrum() {
   if (!canvas || !analyser || !audioContext) return;
   const ctx = canvas.getContext("2d");
   const data = new Float32Array(analyser.frequencyBinCount);
+  const timeData = new Float32Array(analyser.fftSize);
   analyser.getFloatFrequencyData(data);
+  analyser.getFloatTimeDomainData(timeData);
   if (!spectrumInputDetected && hasMeaningfulAudioInput(data)) {
     spectrumInputDetected = true;
     state.audioInputStatus = "입력 감지 · 분석 중";
@@ -2990,13 +3034,19 @@ function renderSpectrum() {
     history: leakAudioHistory,
     profile: currentPipeProfile(),
     baseline: currentJob().leakAudioBaseline,
+    timeDomainData: timeData,
   });
   if (currentMetrics.silent) {
-    leakAudioHistory = [];
-    leakDisplayScore = 0;
-    audioActivityDisplayScore = 0;
-    stablePeakHz = null;
-    stablePeakConfidence = 0;
+    leakSilenceFrames += 1;
+    if (leakSilenceFrames >= 8) {
+      leakAudioHistory = [];
+      leakDisplayScore = 0;
+      audioActivityDisplayScore = 0;
+      stablePeakHz = null;
+      stablePeakConfidence = 0;
+    }
+  } else {
+    leakSilenceFrames = 0;
   }
   leakAudioHistory.push(currentMetrics);
   if (leakAudioHistory.length > 150) leakAudioHistory.shift();
@@ -3227,7 +3277,8 @@ function updateAudioInputStatusElement() {
 
 function audioInputStatusClass() {
   const status = state.audioInputStatus || "";
-  if (/감지|분석 중|연결됨/i.test(status)) return "ready";
+  if (/정지|실패/i.test(status)) return "warn";
+  if (/준비|감지|분석 중|연결됨|대기|확인 중|자동선택/i.test(status)) return "ready";
   if (/대기|확인 중|자동선택/i.test(status)) return "";
   return "warn";
 }
@@ -3271,6 +3322,22 @@ function binFromHz(hz, sampleRate, fftSize) {
   return Number.isFinite(value) ? Math.floor(value) : 0;
 }
 
+function rmsFromTimeDomain(timeDomainData) {
+  if (!timeDomainData?.length) return { rms: 0, rmsDb: -120, rmsScore: 0 };
+  let sum = 0;
+  for (const value of timeDomainData) {
+    const centered = Number(value) || 0;
+    sum += centered * centered;
+  }
+  const rms = Math.sqrt(sum / timeDomainData.length);
+  const rmsDb = 20 * Math.log10(Math.max(rms, 0.000001));
+  return {
+    rms,
+    rmsDb: Math.round(rmsDb),
+    rmsScore: Math.round(clamp((rmsDb + 62) * 1.9, 0, 39)),
+  };
+}
+
 function getLeakAudioRisk(score) {
   if (score >= 85) return { label: "강한 누수 의심", className: "risk-danger", color: "red" };
   if (score >= 70) return { label: "누수 의심", className: "risk-orange", color: "orange" };
@@ -3300,7 +3367,7 @@ function getStableLeakAudioRisk(score) {
   return riskByState[leakRiskState] || riskByState.green;
 }
 
-function calculateLeakAudioScore({ frequencyData, sampleRate, fftSize, history, profile = currentPipeProfile(), baseline = null }) {
+function calculateLeakAudioScore({ frequencyData, sampleRate, fftSize, history, profile = currentPipeProfile(), baseline = null, timeDomainData = null }) {
   const lowStart = binFromHz(80, sampleRate, fftSize);
   const lowEnd = binFromHz(900, sampleRate, fftSize);
   const midStart = binFromHz(900, sampleRate, fftSize);
@@ -3315,12 +3382,17 @@ function calculateLeakAudioScore({ frequencyData, sampleRate, fftSize, history, 
   const ultraAvg = averageFrequencyRange(frequencyData, ultraStart, ultraEnd);
   const peak = maxFrequencyRange(frequencyData, leakStart, ultraEnd);
   const inputPeak = maxFrequencyRange(frequencyData, lowStart, ultraEnd);
-  const activityScore = Math.round(clamp((inputPeak.max + 95) * 2.2, 0, 39));
-  if (inputPeak.max < -92) {
+  const rmsMetrics = rmsFromTimeDomain(timeDomainData);
+  const activityScore = Math.round(clamp(Math.max((inputPeak.max + 95) * 2.2, rmsMetrics.rmsScore), 0, 39));
+  const quietInput = inputPeak.max < -92 && rmsMetrics.rmsDb < -56;
+  if (quietInput) {
     return {
       score: 0,
       rawScore: 0,
       activityScore: 0,
+      rmsDb: rmsMetrics.rmsDb,
+      rmsScore: 0,
+      repeatedPeakScore: 0,
       peakHz: 0,
       lowAvg: Math.round(lowAvg),
       midAvg: Math.round(midAvg),
@@ -3339,10 +3411,14 @@ function calculateLeakAudioScore({ frequencyData, sampleRate, fftSize, history, 
   const midCompareScore = clamp((highVsMid + 18) * 1.6, 0, 25);
   const peakScore = clamp((peakStrength + 16) * 1.5, 0, 20);
   const ultraScore = clamp((ultraAvg - lowAvg + 24) * 0.55, 0, 10);
+  const peakHz = Math.round((peak.index * sampleRate) / fftSize);
   const recent = history.slice(-24);
   const stableCount = recent.filter((item) => item.rawScore >= 55).length;
   const stableScore = clamp((stableCount / 24) * 12, 0, 12);
-  let rawScore = highScore + midCompareScore + peakScore + ultraScore + stableScore;
+  const repeatedPeaks = recent.filter((item) => item.peakHz && Math.abs(Number(item.peakHz) - peakHz) <= 450 && !item.silent).length;
+  const repeatRatio = recent.length ? repeatedPeaks / recent.length : 0;
+  const repeatedPeakScore = peakStrength >= profile.peakStrength ? clamp((repeatRatio - 0.22) * 30, 0, 18) : 0;
+  let rawScore = highScore + midCompareScore + peakScore + ultraScore + stableScore + repeatedPeakScore;
   let baselineDelta = 0;
   if (baseline) {
     const leakRise = leakAvg - Number(baseline.leakAvg ?? leakAvg);
@@ -3353,16 +3429,21 @@ function calculateLeakAudioScore({ frequencyData, sampleRate, fftSize, history, 
       clamp((leakRise - 3) * 2.1, 0, 24) +
       clamp((ultraRise - 3) * 1.5, 0, 16) +
       clamp((peakRise - 4) * 1.7, 0, 26);
-    rawScore = (highScore * 0.5) + (midCompareScore * 0.55) + (peakScore * 0.45) + (ultraScore * 0.5) + baselineScore + stableScore;
+    rawScore = (highScore * 0.5) + (midCompareScore * 0.55) + (peakScore * 0.45) + (ultraScore * 0.5) + baselineScore + stableScore + repeatedPeakScore;
     if (leakRise < 4 && ultraRise < 4 && peakRise < 5) rawScore *= 0.45;
   }
   if (lowAvg > leakAvg + 12) rawScore -= 15;
+  const weakLeakShape = Boolean(baseline) && peakStrength < profile.peakStrength && highVsMid < 7 && baselineDelta < 7;
+  if (weakLeakShape) rawScore = Math.min(rawScore, 38);
+  if (activityScore <= 5) rawScore = 0;
   const score = Math.round(clamp(rawScore, 0, 100));
-  const peakHz = Math.round((peak.index * sampleRate) / fftSize);
   return {
     score,
     rawScore: score,
     activityScore,
+    rmsDb: rmsMetrics.rmsDb,
+    rmsScore: rmsMetrics.rmsScore,
+    repeatedPeakScore: Math.round(repeatedPeakScore),
     peakHz,
     lowAvg: Math.round(lowAvg),
     midAvg: Math.round(midAvg),
@@ -3401,6 +3482,12 @@ function updateLeakAudioPanel(metrics) {
   if (bandAvg) bandAvg.textContent = metrics ? `${metrics.leakAvg} dB` : "- dB";
   const baselineDelta = document.querySelector("#leakBaselineDelta");
   if (baselineDelta) baselineDelta.textContent = metrics ? `${Math.max(0, Number(metrics.baselineDelta || 0))} dB` : "- dB";
+  const detail = document.querySelector("#leakAudioDetail");
+  if (detail) {
+    detail.textContent = metrics
+      ? `RMS 입력세기 ${Number(metrics.rmsDb ?? -120)} dB · 반복 피크 +${Number(metrics.repeatedPeakScore || 0)}점 · 활동 ${Number(metrics.activityScore || 0)}%`
+      : "RMS 입력세기 대기 · 반복 피크 대기";
+  }
 }
 
 function leakScoreColor(color) {
@@ -3461,6 +3548,8 @@ function averageLeakMetrics(metricsList) {
     peakDb: Math.round(average("peakDb")),
     inputPeakDb: Math.round(average("inputPeakDb")),
     activityScore: Math.round(average("activityScore")),
+    rmsDb: Math.round(average("rmsDb")),
+    repeatedPeakScore: Math.round(average("repeatedPeakScore")),
   };
 }
 
@@ -3501,6 +3590,77 @@ function clearLeakAudioBaseline() {
   notify("정상 기준을 삭제했습니다.");
 }
 
+function saveLeakGraphSnapshot() {
+  const canvas = document.querySelector("#spectrum");
+  if (!canvas || !lastLeakAudioMetrics) {
+    notify("입력 분석을 먼저 시작한 뒤 그래프를 저장하세요.");
+    return;
+  }
+  const job = currentJob();
+  const profile = currentPipeProfile(job);
+  const snapshot = {
+    id: `graph-${Date.now()}`,
+    name: `그래프 ${new Date().toLocaleTimeString()}`,
+    dataUrl: canvas.toDataURL("image/jpeg", 0.86),
+    metrics: lastLeakAudioMetrics,
+    pipeMaterial: profile.id,
+    pipeLabel: profile.label,
+    createdAt: new Date().toISOString(),
+  };
+  job.leakGraphSnapshots = [snapshot, ...(job.leakGraphSnapshots || [])].slice(0, 12);
+  job.updatedAt = new Date().toISOString();
+  saveState();
+  render();
+  notify("현재 주파수 그래프를 저장했습니다.");
+}
+
+function calibrateCurrentPipeProfile() {
+  const job = currentJob();
+  const profile = currentPipeProfile(job);
+  const pointMetrics = (job.leakAudioPoints || []).map((point) => point.metrics);
+  const snapshotMetrics = (job.leakGraphSnapshots || []).map((snapshot) => snapshot.metrics);
+  const samples = [...pointMetrics, ...snapshotMetrics].filter((metrics) =>
+    metrics &&
+    !metrics.silent &&
+    Number(metrics.peakHz || 0) > 0 &&
+    Number(metrics.score || 0) >= 35
+  );
+  if (samples.length < 2) {
+    notify("배관 기준 보정에는 저장된 지점 또는 그래프가 2개 이상 필요합니다.");
+    return;
+  }
+  const avg = (field) => samples.reduce((sum, item) => sum + Number(item[field] || 0), 0) / samples.length;
+  const avgPeak = avg("peakHz");
+  const variance = samples.reduce((sum, item) => sum + Math.pow(Number(item.peakHz || avgPeak) - avgPeak, 2), 0) / samples.length;
+  const spread = clamp(Math.sqrt(variance) * 1.8, 900, 3600);
+  const avgStrength = samples.reduce((sum, item) => {
+    const base = Math.max(Number(item.lowAvg ?? -110), Number(item.midAvg ?? -110));
+    return sum + (Number(item.peakDb ?? base) - base);
+  }, 0) / samples.length;
+  const calibration = {
+    leakStart: Math.round(clamp(avgPeak - spread, 300, 17000)),
+    leakMid: Math.round(clamp(avgPeak, 500, 18000)),
+    leakEnd: Math.round(clamp(avgPeak + spread, 900, 19000)),
+    ultraEnd: Math.round(clamp(avgPeak + spread * 1.7, 1400, 20000)),
+    peakStrength: Math.round(clamp(avgStrength * 0.75, 5, 18)),
+    stableScore: Math.round(clamp(avg("score") * 0.65, 30, 62)),
+    samples: samples.length,
+    updatedAt: new Date().toISOString(),
+  };
+  state.leakPipeCalibrations = {
+    ...(state.leakPipeCalibrations || {}),
+    [profile.id]: calibration,
+  };
+  job.leakPipeCalibration = { pipeMaterial: profile.id, pipeLabel: profile.label, ...calibration };
+  job.updatedAt = new Date().toISOString();
+  leakAudioHistory = [];
+  stablePeakHz = null;
+  stablePeakConfidence = 0;
+  saveState();
+  render();
+  notify(`${profile.label} 기준을 현장 데이터 ${samples.length}개로 보정했습니다.`);
+}
+
 function deleteLeakAudioPoint(id) {
   const job = currentJob();
   job.leakAudioPoints = (job.leakAudioPoints || []).filter((point) => point.id !== id);
@@ -3523,8 +3683,13 @@ function generateReport(job) {
   const plumbingIssues = job.plumbingChecks.filter((check) => check.done && check.result !== "정상");
   const waterproofIssues = job.waterproofChecks.filter((check) => check.done && check.result !== "정상");
   const leakAudioSummary = (job.leakAudioPoints || [])
-    .map((point) => `- ${point.name}: ${point.score}% / ${point.risk} / 피크 ${point.metrics?.peakHz || "-"} Hz`)
+    .map((point) => `- ${point.name}: ${point.score}% / ${point.risk} / 피크 ${point.metrics?.peakHz || "-"} Hz / RMS ${point.metrics?.rmsDb ?? "-"} dB / 반복피크 +${point.metrics?.repeatedPeakScore ?? 0}`)
     .join("\n") || "저장된 AI 청음 측정 지점이 없습니다.";
+  const profile = currentPipeProfile(job);
+  const trackerDataSummary = [
+    `- 그래프 스냅샷: ${(job.leakGraphSnapshots || []).length ? `${job.leakGraphSnapshots.length}장` : "없음"}`,
+    `- 배관 기준 보정: ${profile.calibrated ? `${profile.label} 보정 적용` : "기본 기준 사용"}`,
+  ].join("\n");
   const v2EvidenceSummary = [
     `- 소머즈 누수 레벨: ${job.somersLeakLevel || "미기록"}`,
     `- 소머즈 주파수: ${job.somersFrequency || "미기록"}`,
@@ -3558,6 +3723,7 @@ ${summaryLines(job.waterproofChecks)}
 
 4. AI 청음 누수 분석
 ${leakAudioSummary}
+${trackerDataSummary}
 
 5. 누수추적기 V2 기록
 ${v2EvidenceSummary}
@@ -3797,7 +3963,9 @@ function pipeLeakTypeSummary(job = currentJob()) {
 }
 
 function currentPipeProfile(job = currentJob()) {
-  return PIPE_MATERIALS.find((item) => item.id === job.pipeMaterial) || PIPE_MATERIALS[0];
+  const base = PIPE_MATERIALS.find((item) => item.id === job.pipeMaterial) || PIPE_MATERIALS[0];
+  const calibration = state.leakPipeCalibrations?.[base.id] || (job.leakPipeCalibration?.pipeMaterial === base.id ? job.leakPipeCalibration : null);
+  return calibration ? { ...base, ...calibration, calibrated: true } : base;
 }
 
 function cyclePipeMaterial(direction = 1) {
