@@ -1212,6 +1212,12 @@ textarea[data-job-field="report"] {
   z-index: 1;
 }
 
+.leak-score-circle span,
+.leak-score-circle small {
+  color: var(--score-color, #22c55e);
+  transition: color 0.18s ease;
+}
+
 .leak-score-circle span {
   font-size: 30px;
 }

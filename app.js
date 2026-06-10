@@ -2975,8 +2975,8 @@ function renderSpectrum() {
   const recentActivity = Math.round(leakAudioHistory.reduce((sum, item) => sum + Number(item.activityScore || 0), 0) / leakAudioHistory.length);
   leakDisplayScore = leakDisplayScore === null ? recentAverage : Math.round(leakDisplayScore * 0.9 + recentAverage * 0.1);
   audioActivityDisplayScore = audioActivityDisplayScore === null ? recentActivity : Math.round(audioActivityDisplayScore * 0.75 + recentActivity * 0.25);
-  const smoothedScore = leakDisplayScore;
-  const displayScore = Math.max(smoothedScore, Math.min(39, audioActivityDisplayScore || 0));
+  const smoothedScore = clamp(leakDisplayScore, 0, 100);
+  const displayScore = clamp(Math.max(smoothedScore, Math.min(39, audioActivityDisplayScore || 0)), 0, 100);
   lastLeakAudioMetrics = { ...currentMetrics, score: smoothedScore, displayScore };
   const width = canvas.width;
   const height = canvas.height;
@@ -3200,37 +3200,42 @@ function audioInputStatusClass() {
 }
 
 function clamp(value, min, max) {
-  return Math.min(max, Math.max(min, value));
+  const number = Number(value);
+  if (!Number.isFinite(number)) return min;
+  return Math.min(max, Math.max(min, number));
 }
 
 function averageFrequencyRange(data, startBin, endBin) {
   let sum = 0;
   let count = 0;
-  const start = clamp(startBin, 0, data.length - 1);
-  const end = clamp(endBin, start, data.length - 1);
+  const start = Math.round(clamp(startBin, 0, data.length - 1));
+  const end = Math.round(clamp(endBin, start, data.length - 1));
   for (let i = start; i <= end; i += 1) {
-    sum += data[i];
-    count += 1;
+    if (Number.isFinite(data[i])) {
+      sum += data[i];
+      count += 1;
+    }
   }
   return count ? sum / count : -110;
 }
 
 function maxFrequencyRange(data, startBin, endBin) {
   let max = -Infinity;
-  const start = clamp(startBin, 0, data.length - 1);
-  const end = clamp(endBin, start, data.length - 1);
+  const start = Math.round(clamp(startBin, 0, data.length - 1));
+  const end = Math.round(clamp(endBin, start, data.length - 1));
   let index = start;
   for (let i = start; i <= end; i += 1) {
-    if (data[i] > max) {
+    if (Number.isFinite(data[i]) && data[i] > max) {
       max = data[i];
       index = i;
     }
   }
-  return { max, index };
+  return { max: Number.isFinite(max) ? max : -110, index };
 }
 
 function binFromHz(hz, sampleRate, fftSize) {
-  return Math.floor((hz * fftSize) / sampleRate);
+  const value = (Number(hz) * Number(fftSize)) / Number(sampleRate);
+  return Number.isFinite(value) ? Math.floor(value) : 0;
 }
 
 function getLeakAudioRisk(score) {
@@ -3304,8 +3309,8 @@ function calculateLeakAudioScore({ frequencyData, sampleRate, fftSize, history, 
 }
 
 function updateLeakAudioPanel(metrics) {
-  const score = metrics?.score || 0;
-  const displayScore = Math.round(metrics?.displayScore ?? score);
+  const score = clamp(metrics?.score || 0, 0, 100);
+  const displayScore = Math.round(clamp(metrics?.displayScore ?? score, 0, 100));
   const risk = getStableLeakAudioRisk(score);
   const badge = document.querySelector("#leakRiskBadge");
   if (badge) {
