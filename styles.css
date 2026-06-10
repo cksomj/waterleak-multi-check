@@ -1141,6 +1141,30 @@ textarea[data-job-field="report"] {
   margin-bottom: 14px;
 }
 
+.leak-baseline-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+.leak-baseline-status {
+  background: #0a1014;
+  border: 1px solid #2b3b45;
+  border-radius: 8px;
+  color: #9fb1b8;
+  font-size: 12px;
+  font-weight: 700;
+  margin: -4px 0 12px;
+  padding: 9px 10px;
+}
+
+.leak-baseline-status.active {
+  background: rgba(34, 197, 94, 0.12);
+  border-color: rgba(34, 197, 94, 0.42);
+  color: #bbf7d0;
+}
+
 .leak-ai-head h2,
 .leak-point-list h3 {
   margin: 0 0 4px;
@@ -1225,7 +1249,7 @@ textarea[data-job-field="report"] {
 .leak-metrics-grid {
   display: grid;
   gap: 10px;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(5, minmax(0, 1fr));
   margin-bottom: 12px;
 }
 
@@ -1255,6 +1279,18 @@ textarea[data-job-field="report"] {
   border-radius: 6px;
   min-height: 38px;
   padding: 8px 10px;
+}
+
+.leak-abcd-save-row {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  margin: -4px 0 14px;
+}
+
+.leak-abcd-save-row .btn {
+  min-height: 38px;
+  padding-inline: 8px;
 }
 
 .leak-point-list {
@@ -1312,6 +1348,22 @@ textarea[data-job-field="report"] {
   gap: 12px;
   min-height: 238px;
   padding: 16px;
+}
+
+.v2-screen.compact {
+  align-content: start;
+  gap: 10px;
+  min-height: 150px;
+  padding: 12px;
+}
+
+.v2-screen.compact h3 {
+  font-size: 16px;
+}
+
+.v2-screen.compact p {
+  font-size: 12px;
+  line-height: 1.4;
 }
 
 .v2-screen h3 {
@@ -1494,9 +1546,61 @@ textarea[data-job-field="report"] {
   text-align: center;
 }
 
+.compare-screen.compact .v2-compare-table {
+  gap: 6px;
+}
+
+.compare-screen.compact .v2-compare-table div {
+  gap: 2px;
+  min-height: 72px;
+  padding: 7px 6px;
+}
+
+.compare-screen.compact .v2-compare-table strong {
+  font-size: 18px;
+}
+
+.compare-screen.compact .v2-compare-table span,
+.compare-screen.compact .v2-compare-table small {
+  font-size: 10px;
+}
+
+.compare-screen.compact .v2-compare-table b {
+  font-size: 14px;
+}
+
+.compare-screen.compact .v2-compare-table em {
+  font-size: 10px;
+  padding: 2px 6px;
+}
+
 .v2-compare-table div.filled {
   background: rgba(249, 115, 22, 0.14);
   border-color: rgba(249, 115, 22, 0.62);
+}
+
+.v2-compare-table div.filled.green {
+  background: rgba(34, 197, 94, 0.13);
+  border-color: rgba(34, 197, 94, 0.45);
+}
+
+.v2-compare-table div.filled.yellow {
+  background: rgba(234, 179, 8, 0.14);
+  border-color: rgba(234, 179, 8, 0.5);
+}
+
+.v2-compare-table div.filled.orange {
+  background: rgba(249, 115, 22, 0.17);
+  border-color: rgba(249, 115, 22, 0.72);
+}
+
+.v2-compare-table div.filled.red {
+  background: rgba(239, 68, 68, 0.17);
+  border-color: rgba(239, 68, 68, 0.7);
+}
+
+.v2-compare-table div.best {
+  box-shadow: inset 0 0 0 2px rgba(255, 177, 95, 0.62), 0 0 22px rgba(249, 115, 22, 0.16);
 }
 
 .v2-compare-table strong {
@@ -1511,6 +1615,21 @@ textarea[data-job-field="report"] {
 
 .v2-compare-table b {
   color: #fff7ed;
+}
+
+.v2-compare-table small {
+  color: #9fc2c8;
+  font-size: 11px;
+}
+
+.v2-compare-table em {
+  background: #f97316;
+  border-radius: 999px;
+  color: #160d05;
+  font-size: 11px;
+  font-style: normal;
+  font-weight: 900;
+  padding: 3px 8px;
 }
 
 canvas {
@@ -2519,6 +2638,20 @@ canvas {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
+  .leak-ai-head {
+    align-items: stretch;
+    display: grid;
+    grid-template-columns: 1fr;
+  }
+
+  .leak-baseline-actions {
+    justify-content: stretch;
+  }
+
+  .leak-baseline-actions .btn {
+    flex: 1 1 130px;
+  }
+
   .leak-save-row {
     grid-template-columns: 1fr;
   }
@@ -2681,6 +2814,10 @@ canvas {
   .v2-ocr-grid,
   .v2-compare-table {
     grid-template-columns: 1fr;
+  }
+
+  .leak-abcd-save-row {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
 
