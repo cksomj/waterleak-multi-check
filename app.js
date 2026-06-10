@@ -108,6 +108,7 @@ let leakDisplayScore = null;
 let leakRiskState = "green";
 let stablePeakHz = null;
 let stablePeakConfidence = 0;
+let audioActivityDisplayScore = null;
 const AI_ASSISTANT_URL = "https://www.genspark.ai/";
 
 const app = document.querySelector("#app");
@@ -2855,6 +2856,7 @@ async function startSpectrum() {
     leakRiskState = "green";
     stablePeakHz = null;
     stablePeakConfidence = 0;
+    audioActivityDisplayScore = null;
     state.audioInputStatus = "입력 대기 중";
     saveState();
     render();
@@ -2905,6 +2907,7 @@ function stopSpectrum() {
   leakRiskState = "green";
   stablePeakHz = null;
   stablePeakConfidence = 0;
+  audioActivityDisplayScore = null;
   state.audioInputStatus = "분석 정지";
   saveState();
   drawIdleSpectrum();
@@ -2933,9 +2936,12 @@ function renderSpectrum() {
   leakAudioHistory.push(currentMetrics);
   if (leakAudioHistory.length > 150) leakAudioHistory.shift();
   const recentAverage = Math.round(leakAudioHistory.reduce((sum, item) => sum + item.score, 0) / leakAudioHistory.length);
+  const recentActivity = Math.round(leakAudioHistory.reduce((sum, item) => sum + Number(item.activityScore || 0), 0) / leakAudioHistory.length);
   leakDisplayScore = leakDisplayScore === null ? recentAverage : Math.round(leakDisplayScore * 0.9 + recentAverage * 0.1);
+  audioActivityDisplayScore = audioActivityDisplayScore === null ? recentActivity : Math.round(audioActivityDisplayScore * 0.75 + recentActivity * 0.25);
   const smoothedScore = leakDisplayScore;
-  lastLeakAudioMetrics = { ...currentMetrics, score: smoothedScore };
+  const displayScore = Math.max(smoothedScore, Math.min(39, audioActivityDisplayScore || 0));
+  lastLeakAudioMetrics = { ...currentMetrics, score: smoothedScore, displayScore };
   const width = canvas.width;
   const height = canvas.height;
   ctx.clearRect(0, 0, width, height);
@@ -3233,6 +3239,8 @@ function calculateLeakAudioScore({ frequencyData, sampleRate, fftSize, history, 
   const leakAvg = averageFrequencyRange(frequencyData, leakStart, leakEnd);
   const ultraAvg = averageFrequencyRange(frequencyData, ultraStart, ultraEnd);
   const peak = maxFrequencyRange(frequencyData, leakStart, ultraEnd);
+  const inputPeak = maxFrequencyRange(frequencyData, lowStart, ultraEnd);
+  const activityScore = Math.round(clamp((inputPeak.max + 95) * 2.2, 0, 39));
   const highVsLow = leakAvg - lowAvg;
   const highVsMid = leakAvg - midAvg;
   const peakStrength = peak.max - Math.max(lowAvg, midAvg);
@@ -3250,6 +3258,7 @@ function calculateLeakAudioScore({ frequencyData, sampleRate, fftSize, history, 
   return {
     score,
     rawScore: score,
+    activityScore,
     peakHz,
     lowAvg: Math.round(lowAvg),
     midAvg: Math.round(midAvg),
@@ -3260,6 +3269,7 @@ function calculateLeakAudioScore({ frequencyData, sampleRate, fftSize, history, 
 
 function updateLeakAudioPanel(metrics) {
   const score = metrics?.score || 0;
+  const displayScore = Math.round(metrics?.displayScore ?? score);
   const risk = getStableLeakAudioRisk(score);
   const badge = document.querySelector("#leakRiskBadge");
   if (badge) {
@@ -3268,12 +3278,12 @@ function updateLeakAudioPanel(metrics) {
   }
   const circle = document.querySelector("#leakScoreCircle");
   if (circle) {
-    circle.style.setProperty("--score-deg", `${score * 3.6}deg`);
+    circle.style.setProperty("--score-deg", `${displayScore * 3.6}deg`);
     circle.style.setProperty("--score-color", leakScoreColor(risk.color));
     circle.dataset.risk = risk.color;
   }
   const scoreValue = document.querySelector("#leakScoreValue");
-  if (scoreValue) scoreValue.textContent = score;
+  if (scoreValue) scoreValue.textContent = displayScore;
   const peakHz = document.querySelector("#leakPeakHz");
   if (peakHz) peakHz.textContent = metrics ? `${metrics.peakHz} Hz` : "- Hz";
   const lowAvg = document.querySelector("#leakLowAvg");
