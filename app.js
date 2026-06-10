@@ -893,6 +893,7 @@ function renderEstimate(job) {
   const totals = estimateTotals(job);
   const estimateNo = job.estimateNo || `WL-${(job.date || "").replaceAll("-", "") || "00000000"}`;
   const docTitle = job.estimateDocTitle || "견 적 서";
+  const labels = estimateDocumentLabels(job);
   const vatMode = estimateVatMode(job);
   return `
     <div class="section-head">
@@ -915,8 +916,8 @@ function renderEstimate(job) {
     <section class="print-area estimate-form">
       <h2 class="estimate-title">${escapeHtml(docTitle)}</h2>
       <div class="estimate-meta">
-        ${field("estimateNo", "견적번호", "text", estimateNo)}
-        ${field("date", "견적일자", "date", job.date)}
+        ${field("estimateNo", labels.noLabel, "text", estimateNo)}
+        ${field("date", labels.dateLabel, "date", job.date)}
         ${field("estimateValidUntil", "유효기간", "date", job.estimateValidUntil || "")}
       </div>
       <div class="estimate-party-edit">
@@ -1005,14 +1006,14 @@ function renderEstimate(job) {
         </tbody>
       </table>
       <div class="estimate-note">
-        ${textarea("estimateNote", "비고", job.estimateNote || "상기 견적은 현장 상황 및 추가 작업 범위에 따라 변경될 수 있습니다.", "비고")}
+        ${textarea("estimateNote", "비고", estimateNoteText(job), "비고")}
       </div>
       <div class="estimate-sign">공급자 확인: ${escapeHtml(PROVIDER.owner)} ${stampSealImage("stamp-seal")}</div>
     </section>
     <section class="panel pdf-preview-panel estimate-preview-panel">
       <div class="section-head compact">
         <div>
-          <h2>견적서 출력 미리보기</h2>
+          <h2>${escapeHtml(labels.previewTitle)} 출력 미리보기</h2>
           <p class="muted">현장 화면에서 인쇄 결과를 확인하고 PDF 다운로드를 다시 실행할 수 있습니다.</p>
         </div>
         <button class="btn ghost" data-action="download-estimate-pdf">인쇄창 다시 열기</button>
@@ -2092,10 +2093,11 @@ function buildReportPdfPages(job) {
 function buildEstimatePdfPages(job) {
   const items = estimatePrintableItems(job);
   const totals = estimateTotals(job);
+  const labels = estimateDocumentLabels(job);
   return paginatePdfLines([
     { text: job.estimateDocTitle || "견 적 서", size: 32, bold: true, align: "center", gap: 18 },
-    { text: `견적일자: ${job.date || ""}`, size: 16 },
-    { text: `견적번호: ${job.estimateNo || `WL-${(job.date || "").replaceAll("-", "")}`}`, size: 16 },
+    { text: `${labels.dateLabel}: ${job.date || ""}`, size: 16 },
+    { text: `${labels.noLabel}: ${job.estimateNo || `WL-${(job.date || "").replaceAll("-", "")}`}`, size: 16 },
     { text: `수신: ${job.customerName || ""}`, size: 16 },
     { text: `수신 주소: ${job.address || ""}`, size: 16 },
     { text: `전화번호: ${job.phone || ""}`, size: 16 },
@@ -2110,7 +2112,7 @@ function buildEstimatePdfPages(job) {
     { text: `공급가액: ${totals.supplyTotal.toLocaleString()}원`, size: 17, align: "right" },
     { text: `부가세: ${totals.tax.toLocaleString()}원`, size: 17, align: "right" },
     { text: `합계금액: ${totals.total.toLocaleString()}원`, size: 20, bold: true, align: "right", gap: 16 },
-    { text: `비고: ${job.estimateNote || "상기 견적은 현장 상황 및 추가 작업 범위에 따라 변경될 수 있습니다."}`, size: 15 },
+    { text: `비고: ${estimateNoteText(job)}`, size: 15 },
     { text: `공급자 확인: ${PROVIDER.owner} (인)`, size: 17, align: "right", gap: 18 },
   ]);
 }
@@ -2603,10 +2605,43 @@ function loadImage(src) {
 
 function toggleEstimateTitle() {
   const job = currentJob();
+  const previousNote = estimateNoteText(job);
   job.estimateDocTitle = job.estimateDocTitle === "거래명세서" ? "견 적 서" : "거래명세서";
+  if (!job.estimateNote || isDefaultEstimateNote(previousNote)) {
+    job.estimateNote = estimateDefaultNote(job);
+  }
   job.updatedAt = new Date().toISOString();
   saveState();
   render();
+}
+
+function isStatementDocument(job = currentJob()) {
+  return (job.estimateDocTitle || "견 적 서") === "거래명세서";
+}
+
+function estimateDocumentLabels(job = currentJob()) {
+  const statement = isStatementDocument(job);
+  return {
+    dateLabel: statement ? "일자" : "견적일자",
+    noLabel: statement ? "명세서번호" : "견적번호",
+    previewTitle: statement ? "거래명세서" : "견적서",
+  };
+}
+
+function estimateDefaultNote(job = currentJob()) {
+  return isStatementDocument(job)
+    ? "상기 거래명세서는 현장 상황 및 추가 작업 범위에 따라 변경될 수 있습니다."
+    : "상기 견적은 현장 상황 및 추가 작업 범위에 따라 변경될 수 있습니다.";
+}
+
+function isDefaultEstimateNote(note = "") {
+  const normalized = String(note || "").trim();
+  return normalized === "상기 견적은 현장 상황 및 추가 작업 범위에 따라 변경될 수 있습니다."
+    || normalized === "상기 거래명세서는 현장 상황 및 추가 작업 범위에 따라 변경될 수 있습니다.";
+}
+
+function estimateNoteText(job = currentJob()) {
+  return job.estimateNote || estimateDefaultNote(job);
 }
 
 function estimateLineTotal(item) {
@@ -2803,11 +2838,12 @@ function buildReportPhotoPages(job) {
 function buildEstimatePrintHtml(job) {
   const items = estimatePrintableItems(job);
   const totals = estimateTotals(job);
+  const labels = estimateDocumentLabels(job);
   return `
     <h1>${escapeHtml(job.estimateDocTitle || "견 적 서")}</h1>
     <table>
       <tbody>
-        <tr><th>견적일자</th><td>${escapeHtml(job.date || "")}</td><th>견적번호</th><td>${escapeHtml(job.estimateNo || `WL-${(job.date || "").replaceAll("-", "")}`)}</td></tr>
+        <tr><th>${escapeHtml(labels.dateLabel)}</th><td>${escapeHtml(job.date || "")}</td><th>${escapeHtml(labels.noLabel)}</th><td>${escapeHtml(job.estimateNo || `WL-${(job.date || "").replaceAll("-", "")}`)}</td></tr>
         <tr><th colspan="2">수신</th><th colspan="2">공급자</th></tr>
         <tr><th>고객명</th><td>${escapeHtml(job.customerName || "")}</td><th>상호</th><td>${escapeHtml(PROVIDER.name)}</td></tr>
         <tr><th>주소</th><td>${escapeHtml(job.address || "")}</td><th>사업자번호</th><td>${escapeHtml(PROVIDER.bizNo)}</td></tr>
@@ -2831,7 +2867,7 @@ function buildEstimatePrintHtml(job) {
       </tbody>
     </table>
     <h2>비고</h2>
-    <p class="pre">${escapeHtml(job.estimateNote || "상기 견적은 현장 상황 및 추가 작업 범위에 따라 변경될 수 있습니다.")}</p>
+    <p class="pre">${escapeHtml(estimateNoteText(job))}</p>
     <div class="stamp-wrap">
       <span>공급자 확인: ${escapeHtml(PROVIDER.owner)}</span>
       ${stampSealImage("stamp-svg")}
