@@ -65,6 +65,10 @@ button {
   backdrop-filter: blur(14px);
 }
 
+.topbar.compact {
+  display: none;
+}
+
 .brand {
   align-items: center;
   display: flex;
@@ -327,6 +331,14 @@ button {
   grid-template-columns: var(--sidebar-w) 1fr;
 }
 
+.layout.workflow-layout {
+  display: block;
+}
+
+.layout.workflow-layout .sidebar {
+  display: none;
+}
+
 .sidebar {
   background: rgba(17, 22, 27, 0.96);
   border-right: 1px solid var(--line);
@@ -463,10 +475,15 @@ button {
 }
 
 .field-step-strip {
+  background: var(--bg);
   display: grid;
   gap: 8px;
   grid-template-columns: repeat(6, minmax(0, 1fr));
   margin: -4px 0 16px;
+  padding: 8px 0;
+  position: sticky;
+  top: 0;
+  z-index: 45;
 }
 
 .field-step-strip button {
@@ -963,6 +980,140 @@ textarea[data-job-field="report"] {
   background: #2a1511;
   border-color: #9a3412;
   color: var(--danger);
+}
+
+.general-work-bar {
+  margin: -6px 0 14px;
+}
+
+.general-work-btn {
+  background: #0ea5e9;
+  border-color: #7dd3fc;
+  color: #03131d;
+  font-weight: 900;
+  min-height: 46px;
+  width: 100%;
+}
+
+.field-capture-panel {
+  margin-bottom: 14px;
+}
+
+.field-photo-capture,
+.field-photo-view {
+  border-color: transparent;
+  font-weight: 900;
+}
+
+.field-photo-capture {
+  background: #0ea5e9;
+  color: #03131d;
+  position: relative;
+}
+
+.field-photo-capture input {
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
+  position: absolute;
+  width: 1px;
+}
+
+.field-photo-view {
+  background: #7f1d1d;
+  color: #fee2e2;
+}
+
+.field-photo-viewer {
+  background: #0b1217;
+  border: 1px solid #263943;
+  border-radius: 8px;
+  display: grid;
+  gap: 10px;
+  grid-template-columns: minmax(220px, 0.9fr) minmax(0, 1.1fr);
+  margin-top: 10px;
+  padding: 10px;
+}
+
+.field-photo-list {
+  display: grid;
+  gap: 8px;
+  max-height: 320px;
+  overflow: auto;
+}
+
+.field-photo-list button,
+.report-photo-selector label {
+  align-items: center;
+  background: #101920;
+  border: 1px solid #2b3d47;
+  border-radius: 8px;
+  color: var(--ink);
+  display: grid;
+  gap: 8px;
+  grid-template-columns: 1fr 58px;
+  min-height: 58px;
+  padding: 8px;
+  text-align: left;
+}
+
+.field-photo-list button.active {
+  border-color: #f97316;
+}
+
+.field-photo-list img,
+.report-photo-selector img {
+  aspect-ratio: 1 / 1;
+  border-radius: 6px;
+  object-fit: cover;
+  width: 58px;
+}
+
+.field-photo-list b,
+.report-photo-selector b {
+  align-items: center;
+  background: #1f2937;
+  border-radius: 6px;
+  color: #d1d5db;
+  display: inline-flex;
+  font-size: 12px;
+  height: 58px;
+  justify-content: center;
+  width: 58px;
+}
+
+.field-photo-preview {
+  align-items: center;
+  background: #05080a;
+  border: 1px solid #263943;
+  border-radius: 8px;
+  color: var(--muted);
+  display: flex;
+  justify-content: center;
+  min-height: 220px;
+  overflow: hidden;
+}
+
+.field-photo-preview img {
+  height: 100%;
+  object-fit: contain;
+  width: 100%;
+}
+
+.report-photo-selector {
+  display: grid;
+  gap: 8px;
+}
+
+.report-photo-selector label {
+  cursor: pointer;
+  grid-template-columns: auto 58px 1fr;
+}
+
+.report-photo-selector input {
+  accent-color: #f97316;
+  height: 18px;
+  width: 18px;
 }
 
 .btn.blue,
@@ -2673,6 +2824,10 @@ canvas {
   }
 
   .leak-save-row {
+    grid-template-columns: 1fr;
+  }
+
+  .field-photo-viewer {
     grid-template-columns: 1fr;
   }
 
