@@ -1,0 +1,352 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <title>콤프레셔 전자식 압력조절기 제작 작업지시서</title>
+    <style>
+      @page { size: A4; margin: 14mm; }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        color: #17242b;
+        font-family: "Malgun Gothic", "Apple SD Gothic Neo", Arial, sans-serif;
+        line-height: 1.55;
+      }
+      h1, h2, h3 { margin: 0; line-height: 1.25; }
+      h1 { font-size: 30px; }
+      h2 {
+        border-bottom: 2px solid #174a54;
+        color: #174a54;
+        font-size: 20px;
+        margin: 22px 0 10px;
+        padding-bottom: 5px;
+      }
+      h3 { font-size: 15px; margin: 12px 0 6px; }
+      p { margin: 6px 0; }
+      ul, ol { margin: 6px 0 8px 22px; padding: 0; }
+      li { margin: 3px 0; }
+      table { border-collapse: collapse; margin: 8px 0 14px; width: 100%; }
+      th, td { border: 1px solid #cdd9dd; padding: 7px 8px; vertical-align: top; }
+      th { background: #eaf4f2; color: #163d44; font-size: 12px; }
+      td { font-size: 12px; }
+      .cover {
+        background: linear-gradient(135deg, #113f48, #0f766e);
+        color: white;
+        min-height: 245mm;
+        padding: 28mm 18mm;
+        page-break-after: always;
+      }
+      .cover small { color: #cdeae7; display: block; font-size: 13px; margin-top: 12px; }
+      .cover .box {
+        border: 1px solid rgba(255,255,255,.45);
+        border-radius: 10px;
+        margin-top: 28px;
+        padding: 16px;
+      }
+      .warning {
+        background: #fff4ed;
+        border: 2px solid #f97316;
+        border-radius: 8px;
+        color: #7c2d12;
+        font-weight: 700;
+        margin: 10px 0;
+        padding: 10px 12px;
+      }
+      .ok {
+        background: #ecfdf5;
+        border: 1px solid #86efac;
+        border-radius: 8px;
+        color: #14532d;
+        padding: 10px 12px;
+      }
+      .note {
+        background: #f7fafb;
+        border-left: 4px solid #0f766e;
+        margin: 8px 0;
+        padding: 8px 10px;
+      }
+      .page-break { page-break-before: always; }
+      .diagram {
+        background: #f8fbfc;
+        border: 1px solid #cdd9dd;
+        border-radius: 8px;
+        margin: 10px 0 14px;
+        padding: 10px;
+      }
+      svg { display: block; height: auto; width: 100%; }
+      .tag { border-radius: 999px; display: inline-block; font-size: 11px; font-weight: 700; padding: 2px 8px; }
+      .tag.safe { background: #d1fae5; color: #14532d; }
+      .tag.danger { background: #ffedd5; color: #9a3412; }
+      .tag.buy { background: #dbeafe; color: #1e3a8a; }
+      .small { color: #5f6f78; font-size: 11px; }
+      .checklist li::marker { color: #0f766e; font-weight: 700; }
+      .two { display: grid; gap: 10px; grid-template-columns: 1fr 1fr; }
+      .card { border: 1px solid #cdd9dd; border-radius: 8px; padding: 10px; }
+      .footer { color: #66757c; font-size: 10px; margin-top: 14px; }
+      code { background: #edf2f4; border-radius: 4px; padding: 1px 4px; }
+    </style>
+  </head>
+  <body>
+    <section class="cover">
+      <h1>콤프레셔 전자식 압력조절기<br />제작 작업지시서</h1>
+      <small>누수진단 앱 연동용 · 초보자 납땜 가능 단계 기준 · 2026-05-14 작성</small>
+      <div class="box">
+        <h2 style="border:0;color:white;margin-top:0">작업반장 판단</h2>
+        <p>지금 가진 리모컨은 아주 도움이 된다. 콤프레셔 내부 220V 전원을 뜯지 말고, 리모컨 버튼을 ESP32가 대신 눌러주는 방식으로 가자.</p>
+        <p>압력 조절은 산업용 전공 레귤레이터가 맡고, ESP32는 목표압 지시, 실제압 확인, 앱 통신, 기록만 담당한다.</p>
+      </div>
+      <div class="box">
+        <p><b>완성 목표</b></p>
+        <p>태블릿 앱에서 콤프레셔 ON/OFF, 목표압 입력, 실시간 압력 표시, 누수검사용 압력 하락 그래프 저장.</p>
+      </div>
+    </section>
+
+    <h2>1. 먼저 결론</h2>
+    <div class="warning">
+      초보자가 직접 만질 구간은 리모컨 버튼 접점, ESP32, 센서, 24V DC 저전압 배선까지만이다. 콤프레셔 모터 전원, 220V 배선, 탱크 안전밸브, 압력스위치는 건드리지 않는다.
+    </div>
+    <p>가장 좋은 구조는 아래와 같다.</p>
+    <div class="diagram">
+      <svg viewBox="0 0 1000 360" role="img" aria-label="전체 시스템 구조">
+        <defs>
+          <marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto">
+            <path d="M0,0 L0,6 L9,3 z" fill="#174a54" />
+          </marker>
+          <style>
+            .box{fill:#fff;stroke:#174a54;stroke-width:2;rx:10}
+            .safe{fill:#e8f7f3;stroke:#0f766e;stroke-width:2;rx:10}
+            .danger{fill:#fff0e7;stroke:#e47c24;stroke-width:2;rx:10}
+            .t{font:700 18px Malgun Gothic,Arial;fill:#17242b}
+            .s{font:13px Malgun Gothic,Arial;fill:#52646c}
+            .line{stroke:#174a54;stroke-width:3;marker-end:url(#arrow)}
+          </style>
+        </defs>
+        <rect x="30" y="40" width="160" height="80" class="box" />
+        <text x="110" y="76" text-anchor="middle" class="t">태블릿 앱</text>
+        <text x="110" y="100" text-anchor="middle" class="s">목표압/ON/OFF</text>
+        <line x1="190" y1="80" x2="285" y2="80" class="line" />
+        <rect x="285" y="35" width="170" height="90" class="safe" />
+        <text x="370" y="72" text-anchor="middle" class="t">ESP32 제어박스</text>
+        <text x="370" y="98" text-anchor="middle" class="s">Wi-Fi · 센서 · 명령</text>
+        <line x1="455" y1="80" x2="555" y2="80" class="line" />
+        <rect x="555" y="35" width="185" height="90" class="safe" />
+        <text x="648" y="70" text-anchor="middle" class="t">전공 레귤레이터</text>
+        <text x="648" y="98" text-anchor="middle" class="s">0-10V로 압력 조절</text>
+        <line x1="740" y1="80" x2="830" y2="80" class="line" />
+        <rect x="830" y="35" width="140" height="90" class="box" />
+        <text x="900" y="73" text-anchor="middle" class="t">검사 호스</text>
+        <text x="900" y="98" text-anchor="middle" class="s">배관 연결</text>
+        <rect x="90" y="220" width="170" height="80" class="danger" />
+        <text x="175" y="254" text-anchor="middle" class="t">기존 리모컨</text>
+        <text x="175" y="278" text-anchor="middle" class="s">버튼 접점만 납땜</text>
+        <line x1="285" y1="125" x2="230" y2="220" class="line" />
+        <rect x="380" y="220" width="170" height="80" class="box" />
+        <text x="465" y="254" text-anchor="middle" class="t">콤프레셔</text>
+        <text x="465" y="278" text-anchor="middle" class="s">기존 안전차단 유지</text>
+        <line x1="260" y1="260" x2="380" y2="260" class="line" />
+        <rect x="630" y="220" width="170" height="80" class="safe" />
+        <text x="715" y="254" text-anchor="middle" class="t">압력센서</text>
+        <text x="715" y="278" text-anchor="middle" class="s">실제 bar 피드백</text>
+        <line x1="715" y1="220" x2="685" y2="125" class="line" />
+      </svg>
+    </div>
+
+    <h2>2. 공압 배관 구조</h2>
+    <p>콤프레셔 탱크 압력은 기존 콤프레셔가 관리하고, 검사에 보내는 압력만 전자식으로 조절한다.</p>
+    <div class="diagram">
+      <svg viewBox="0 0 1000 260" role="img" aria-label="공압 배관 구조">
+        <defs>
+          <marker id="pArrow" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto"><path d="M0,0 L0,6 L9,3 z" fill="#0f766e"/></marker>
+          <style>
+            .pbox{fill:#fff;stroke:#0f766e;stroke-width:2;rx:8}
+            .warn{fill:#fff4ed;stroke:#f97316;stroke-width:2;rx:8}
+            .txt{font:700 17px Malgun Gothic,Arial;fill:#17242b}
+            .sub{font:12px Malgun Gothic,Arial;fill:#56676f}
+            .pipe{stroke:#0f766e;stroke-width:5;marker-end:url(#pArrow)}
+          </style>
+        </defs>
+        <rect x="25" y="70" width="130" height="80" class="warn"/><text x="90" y="105" text-anchor="middle" class="txt">콤프레셔</text><text x="90" y="130" text-anchor="middle" class="sub">기존 안전장치</text>
+        <line x1="155" y1="110" x2="235" y2="110" class="pipe"/>
+        <rect x="235" y="70" width="130" height="80" class="pbox"/><text x="300" y="105" text-anchor="middle" class="txt">수분필터</text><text x="300" y="130" text-anchor="middle" class="sub">물/오일 제거</text>
+        <line x1="365" y1="110" x2="445" y2="110" class="pipe"/>
+        <rect x="445" y="70" width="145" height="80" class="warn"/><text x="518" y="105" text-anchor="middle" class="txt">수동 감압밸브</text><text x="518" y="130" text-anchor="middle" class="sub">최대압 1차 제한</text>
+        <line x1="590" y1="110" x2="670" y2="110" class="pipe"/>
+        <rect x="670" y="70" width="145" height="80" class="pbox"/><text x="743" y="105" text-anchor="middle" class="txt">전공 레귤레이터</text><text x="743" y="130" text-anchor="middle" class="sub">앱 목표압 반영</text>
+        <line x1="815" y1="110" x2="905" y2="110" class="pipe"/>
+        <rect x="905" y="70" width="70" height="80" class="pbox"/><text x="940" y="105" text-anchor="middle" class="txt">호스</text><text x="940" y="130" text-anchor="middle" class="sub">검사</text>
+        <rect x="675" y="180" width="135" height="50" class="pbox"/><text x="742" y="211" text-anchor="middle" class="txt">압력센서</text>
+        <line x1="742" y1="180" x2="742" y2="150" class="pipe"/>
+      </svg>
+    </div>
+
+    <h2>3. 구매 부품표</h2>
+    <p class="note">가격은 2026-05-14 검색 기준 대략가다. 전공 레귤레이터는 모델/포트/압력범위에 따라 가격 차이가 매우 크므로, 최종 구매 전 모델명을 판매처에 확인한다.</p>
+    <table>
+      <thead>
+        <tr><th>구분</th><th>정확한 명칭</th><th>권장 사양</th><th>수량</th><th>구매처 예</th><th>대략 금액</th><th>작업반장 메모</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>제어보드</td><td>ESP32 WROOM-32E 개발보드</td><td>Wi-Fi/Bluetooth, USB-C, 핀헤더 납땜형</td><td>1</td><td>디바이스마트 VND025</td><td>18,700원 VAT포함</td><td>앱과 통신하는 두뇌. 초보자는 USB-C 보드가 편하다.</td></tr>
+        <tr><td>압력조절</td><td>전공 레귤레이터, Electro-Pneumatic Regulator</td><td>SMC ITV1030/2030 또는 Festo VPPE/VPPM, 24V DC, 0-10V 입력, 출력 0-5bar 또는 0-9bar</td><td>1</td><td>SMC/Festo 대리점, RS, 중고 산업부품몰</td><td>신품 약 30만~80만원대, 중고 약 10만~40만원대</td><td>이 부품이 핵심이다. 직접 제작보다 이걸 사는 편이 안전하고 정확하다.</td></tr>
+        <tr><td>아날로그 출력</td><td>1채널 0-10V I2C DAC 모듈</td><td>MCP4725 기반 0-10V 출력 모듈</td><td>1</td><td>VCTEC, 디바이스마트</td><td>약 18,000~35,000원</td><td>ESP32의 디지털 명령을 전공 레귤레이터용 0-10V로 바꾼다.</td></tr>
+        <tr><td>압력센서</td><td>0-10bar 압력 트랜스듀서</td><td>0.5-4.5V 출력 또는 4-20mA, G1/4 나사</td><td>1</td><td>element14 SEN0257, RS, 네이버쇼핑</td><td>31,443원부터, 산업용은 10만~30만원대</td><td>검사용 실제 압력을 읽는다. 공기용이면 0-10bar 권장.</td></tr>
+        <tr><td>센서 입력</td><td>ADS1115 16비트 ADC 모듈</td><td>I2C, 3.3V 사용 가능</td><td>1</td><td>디바이스마트/쿠팡/네이버</td><td>약 5,000~15,000원</td><td>ESP32 내장 ADC보다 안정적으로 압력값을 읽는다.</td></tr>
+        <tr><td>리모컨 버튼</td><td>포토커플러 모듈 또는 1채널 릴레이 모듈</td><td>저전압 버튼 접점용, 2채널이면 ON/OFF 각각 가능</td><td>1~2</td><td>디바이스마트 릴레이 모듈</td><td>1채널 릴레이 약 3,960원</td><td>리모컨 버튼을 사람이 누르는 것처럼 잠깐 쇼트시킨다.</td></tr>
+        <tr><td>전원</td><td>24V DC SMPS</td><td>24V 2A 이상, 전공 레귤레이터 소비전류 확인</td><td>1</td><td>디바이스마트/네이버</td><td>소형 1~3만원대, 산업용 10만원대</td><td>전공 레귤레이터용. 220V 입력 배선은 전기기술자에게 맡긴다.</td></tr>
+        <tr><td>전원변환</td><td>DC-DC Buck Converter</td><td>24V to 5V, 2A 이상</td><td>1</td><td>디바이스마트/네이버</td><td>약 2,000~8,000원</td><td>ESP32와 센서 전원을 만든다.</td></tr>
+        <tr><td>안전</td><td>비상정지 스위치</td><td>누름 잠금형, NC 접점</td><td>1</td><td>전기자재몰/네이버</td><td>약 5,000~20,000원</td><td>문제가 생기면 즉시 제어전원을 끊는다.</td></tr>
+        <tr><td>공압</td><td>수분필터/레귤레이터/게이지 세트</td><td>G1/4, 사용압력 10bar 이상</td><td>1</td><td>공압자재몰/SMC/Festo</td><td>약 2만~8만원</td><td>전공 레귤레이터 앞단 보호용.</td></tr>
+        <tr><td>공압</td><td>안전밸브/릴리프 밸브</td><td>검사압보다 높은 값, 호스 허용압보다 낮은 값</td><td>1</td><td>공압자재몰</td><td>약 1만~5만원</td><td>전자제어 고장 시 압력을 빼주는 마지막 방어선.</td></tr>
+        <tr><td>공구</td><td>인두기, 납, 열수축튜브, 멀티미터</td><td>초보자용 세트 가능</td><td>1식</td><td>다이소/공구몰/디바이스마트</td><td>약 2만~7만원</td><td>리모컨 납땜과 전압 확인에 필요.</td></tr>
+      </tbody>
+    </table>
+
+    <h2 class="page-break">4. 리모컨 납땜 작업</h2>
+    <p>리모컨은 콤프레셔를 직접 제어하지 않고 이미 설치된 수신기에 명령만 보낸다. 우리는 버튼 양끝에 선을 붙여서 ESP32가 대신 누르게 만든다.</p>
+    <div class="diagram">
+      <svg viewBox="0 0 1000 360" role="img" aria-label="리모컨 납땜 포인트">
+        <style>
+          .pcb{fill:#d1fae5;stroke:#15803d;stroke-width:3;rx:16}
+          .btn{fill:#f8fafc;stroke:#334155;stroke-width:3}
+          .pad{fill:#f97316;stroke:#9a3412;stroke-width:2}
+          .wire{stroke:#2563eb;stroke-width:5;fill:none}
+          .wire2{stroke:#dc2626;stroke-width:5;fill:none}
+          .text{font:700 18px Malgun Gothic,Arial;fill:#17242b}
+          .sub{font:13px Malgun Gothic,Arial;fill:#52646c}
+        </style>
+        <rect x="45" y="45" width="365" height="250" class="pcb" />
+        <text x="228" y="83" text-anchor="middle" class="text">기존 리모컨 기판</text>
+        <circle cx="150" cy="170" r="42" class="btn" /><text x="150" y="176" text-anchor="middle" class="text">ON</text>
+        <circle cx="300" cy="170" r="42" class="btn" /><text x="300" y="176" text-anchor="middle" class="text">OFF</text>
+        <circle cx="122" cy="230" r="11" class="pad" /><circle cx="178" cy="230" r="11" class="pad" />
+        <circle cx="272" cy="230" r="11" class="pad" /><circle cx="328" cy="230" r="11" class="pad" />
+        <path d="M122 230 C170 310, 610 310, 650 205" class="wire" />
+        <path d="M178 230 C230 285, 620 285, 685 205" class="wire2" />
+        <path d="M272 230 C335 260, 625 260, 720 205" class="wire" />
+        <path d="M328 230 C410 235, 650 235, 755 205" class="wire2" />
+        <rect x="610" y="90" width="220" height="120" fill="#fff" stroke="#174a54" stroke-width="3" rx="10" />
+        <text x="720" y="130" text-anchor="middle" class="text">2채널 릴레이/포토커플러</text>
+        <text x="720" y="160" text-anchor="middle" class="sub">CH1 = ON 버튼</text>
+        <text x="720" y="184" text-anchor="middle" class="sub">CH2 = OFF 버튼</text>
+        <rect x="850" y="105" width="120" height="90" fill="#e0f2fe" stroke="#2563eb" stroke-width="3" rx="10" />
+        <text x="910" y="145" text-anchor="middle" class="text">ESP32</text>
+        <text x="910" y="172" text-anchor="middle" class="sub">GPIO 제어</text>
+      </svg>
+    </div>
+    <ol>
+      <li>리모컨 배터리를 뺀다.</li>
+      <li>리모컨을 열고 ON 버튼 양쪽 패드를 찾는다. 멀티미터 도통 모드로 버튼을 누르면 서로 연결되는 두 점이 정답이다.</li>
+      <li>그 두 점에 얇은 선 2가닥을 납땜한다. 선 끝은 릴레이 CH1의 COM/NO에 연결한다.</li>
+      <li>OFF 버튼도 같은 방법으로 CH2의 COM/NO에 연결한다.</li>
+      <li>ESP32는 릴레이 입력핀만 제어한다. 버튼 접점과 ESP32 전원을 직접 섞지 않는다.</li>
+    </ol>
+    <div class="ok">테스트 방법: ESP32 없이 릴레이 COM/NO 대신 선 두 가닥을 0.5초만 서로 대보면 버튼을 누른 것처럼 동작해야 한다. 이때 콤프레셔가 정상 반응하면 리모컨 접점 찾기는 성공이다.</div>
+
+    <h2>5. 전기 배선 표</h2>
+    <table>
+      <thead><tr><th>ESP32 핀</th><th>연결 대상</th><th>선 색 추천</th><th>설명</th></tr></thead>
+      <tbody>
+        <tr><td>GPIO 21</td><td>I2C SDA, 0-10V DAC + ADS1115</td><td>노랑</td><td>데이터선</td></tr>
+        <tr><td>GPIO 22</td><td>I2C SCL, 0-10V DAC + ADS1115</td><td>흰색</td><td>클럭선</td></tr>
+        <tr><td>GPIO 26</td><td>릴레이 CH1 IN</td><td>파랑</td><td>리모컨 ON 버튼 0.5초 누름</td></tr>
+        <tr><td>GPIO 27</td><td>릴레이 CH2 IN</td><td>보라</td><td>리모컨 OFF 버튼 0.5초 누름</td></tr>
+        <tr><td>5V</td><td>릴레이 모듈 VCC, 압력센서 VCC</td><td>빨강</td><td>DC-DC 컨버터 5V 출력</td></tr>
+        <tr><td>3.3V</td><td>ADS1115/DAC 로직전원, 모듈 사양 확인</td><td>주황</td><td>I2C 모듈이 3.3V 지원일 때만</td></tr>
+        <tr><td>GND</td><td>모든 저전압 GND 공통</td><td>검정</td><td>ESP32, DAC, ADC, 센서 기준점</td></tr>
+      </tbody>
+    </table>
+    <p class="warning">0-10V 출력선은 전공 레귤레이터의 신호 입력 단자에 연결한다. 24V 전원 +/-, 0-10V 신호 +/-, GND 배치는 모델마다 다르다. 반드시 해당 제품 매뉴얼 단자명을 보고 연결한다.</p>
+
+    <h2>6. 압력센서 연결</h2>
+    <p>0.5-4.5V 압력센서를 쓸 경우 ESP32 입력은 3.3V까지만 안전하므로 전압분배 또는 ADC 모듈을 사용한다.</p>
+    <div class="diagram">
+      <svg viewBox="0 0 1000 250" role="img" aria-label="압력센서 배선">
+        <style>
+          .b{fill:#fff;stroke:#174a54;stroke-width:2;rx:8}
+          .r{fill:#fee2e2;stroke:#dc2626;stroke-width:2;rx:8}
+          .g{fill:#dcfce7;stroke:#16a34a;stroke-width:2;rx:8}
+          .w{stroke:#174a54;stroke-width:4;marker-end:url(#arrow)}
+          .tx{font:700 17px Malgun Gothic,Arial;fill:#17242b}
+          .st{font:12px Malgun Gothic,Arial;fill:#52646c}
+        </style>
+        <rect x="40" y="75" width="155" height="90" class="b"/><text x="118" y="112" text-anchor="middle" class="tx">압력센서</text><text x="118" y="138" text-anchor="middle" class="st">0.5-4.5V</text>
+        <line x1="195" y1="120" x2="305" y2="120" class="w"/>
+        <rect x="305" y="75" width="190" height="90" class="r"/><text x="400" y="112" text-anchor="middle" class="tx">전압분배</text><text x="400" y="138" text-anchor="middle" class="st">10k 위 · 20k 아래</text>
+        <line x1="495" y1="120" x2="610" y2="120" class="w"/>
+        <rect x="610" y="75" width="160" height="90" class="g"/><text x="690" y="112" text-anchor="middle" class="tx">ADS1115</text><text x="690" y="138" text-anchor="middle" class="st">압력값 안정화</text>
+        <line x1="770" y1="120" x2="875" y2="120" class="w"/>
+        <rect x="875" y="75" width="100" height="90" class="b"/><text x="925" y="112" text-anchor="middle" class="tx">ESP32</text><text x="925" y="138" text-anchor="middle" class="st">I2C</text>
+      </svg>
+    </div>
+    <p>압력 계산식 예시: 센서 원래 전압이 0.5V일 때 0bar, 4.5V일 때 10bar라면, <code>bar = (전압 - 0.5) / 4.0 * 10</code> 이다. 전압분배를 쓰면 코드에서 원래 전압으로 환산해야 한다.</p>
+
+    <h2 class="page-break">7. 실행 순서</h2>
+    <ol class="checklist">
+      <li><b>1일차: 리모컨 자동 누름부터 성공</b><br />리모컨 ON/OFF 버튼 접점을 찾아 릴레이에 연결한다. 앱 없이 수동 테스트로 버튼 동작 확인.</li>
+      <li><b>2일차: ESP32가 리모컨을 누르게 만들기</b><br />GPIO 26, 27로 릴레이를 0.5초 켰다 끄는 코드 업로드. 콤프레셔 ON/OFF 확인.</li>
+      <li><b>3일차: 압력센서 읽기</b><br />압력센서를 공압 라인에 연결하고 앱 화면에 bar 표시. 실제 게이지와 비교해서 보정값 입력.</li>
+      <li><b>4일차: 전공 레귤레이터 수동 제어</b><br />0V, 2V, 5V, 8V를 넣어 출력압이 단계적으로 바뀌는지 확인. 처음에는 호스를 막지 말고 낮은 압력에서 테스트.</li>
+      <li><b>5일차: 앱 연동</b><br />목표압 입력 → ESP32 → 0-10V 출력 → 실제압 표시 흐름을 연결한다.</li>
+      <li><b>6일차: 안전 테스트</b><br />통신 끊김, 센서선 분리, 비상정지, 과압 조건에서 무조건 OFF 또는 배기되는지 확인한다.</li>
+      <li><b>7일차: 현장용 케이스 작업</b><br />배선 라벨, 케이블 글랜드, 방수케이스, 퓨즈, 단자대, 예비수동 리모컨을 정리한다.</li>
+    </ol>
+
+    <h2>8. 초보자용 작업 방법</h2>
+    <div class="two">
+      <div class="card">
+        <h3>납땜 요령</h3>
+        <ul>
+          <li>인두팁을 먼저 깨끗하게 닦고 납을 살짝 묻힌다.</li>
+          <li>버튼 패드와 선을 동시에 1~2초만 데운다.</li>
+          <li>납이 동그랗게 뭉치면 실패, 패드에 얇게 젖어야 성공이다.</li>
+          <li>작업 후 글루건이나 열수축튜브로 선이 흔들리지 않게 고정한다.</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h3>멀티미터 확인</h3>
+        <ul>
+          <li>도통 모드: 버튼을 누를 때만 삐 소리가 나야 한다.</li>
+          <li>전압 모드: 5V는 4.8~5.2V, 24V는 23~25V 정도면 정상.</li>
+          <li>저항 모드: 전압이 걸린 회로에서는 쓰지 않는다.</li>
+        </ul>
+      </div>
+    </div>
+
+    <h2>9. 첫 ESP32 코드 방향</h2>
+    <p>처음 코드는 복잡한 PID가 아니라 버튼 제어와 센서값 읽기부터 시작한다.</p>
+    <pre style="background:#0f172a;color:#e2e8f0;border-radius:8px;font-size:11px;line-height:1.45;padding:10px;white-space:pre-wrap;">
+GPIO26: 리모컨 ON 릴레이
+GPIO27: 리모컨 OFF 릴레이
+I2C: 0-10V DAC, ADS1115
+
+명령 예:
+/on       → ON 버튼 0.5초 누름
+/off      → OFF 버튼 0.5초 누름
+/set?bar=2.5 → 2.5bar에 해당하는 0-10V 출력
+/status   → 현재 압력, 목표압, 상태 반환
+    </pre>
+
+    <h2>10. 절대 규칙</h2>
+    <ul>
+      <li>콤프레셔의 기존 맥시멈 압력중단 기능은 유지한다.</li>
+      <li>탱크 안전밸브를 제거하지 않는다.</li>
+      <li>리모컨은 원래대로도 쓸 수 있게 선을 빼되 버튼 기능을 망가뜨리지 않는다.</li>
+      <li>앱이 멈추면 압력 유지가 아니라 안전 정지로 가게 만든다.</li>
+      <li>처음 현장 투입 전에는 물배관에 연결하지 말고 공기만 빼는 상태에서 30회 이상 반복 테스트한다.</li>
+    </ul>
+
+    <h2 class="page-break">11. 구매처와 근거</h2>
+    <table>
+      <thead><tr><th>항목</th><th>확인 내용</th><th>링크</th></tr></thead>
+      <tbody>
+        <tr><td>ESP32 보드</td><td>디바이스마트 ESP32 WROOM-32E N16 C타입 보드 VAT 포함 18,700원으로 확인.</td><td>https://www.devicemart.co.kr/goods/view?no=15028279</td></tr>
+        <tr><td>릴레이 모듈</td><td>디바이스마트 1채널 릴레이 모듈 VAT 포함 3,960원으로 확인.</td><td>https://www.devicemart.co.kr/goods/view?no=1313262</td></tr>
+        <tr><td>DAC 모듈</td><td>SparkFun MCP4725 DAC 보드는 VAT 포함 18,370원. 전공 레귤레이터용은 0-10V 출력 모듈을 우선 선택.</td><td>https://www.devicemart.co.kr/goods/view?no=1232518</td></tr>
+        <tr><td>압력센서</td><td>element14 DFRobot SEN0257 0.5~4.5V 출력, 0~1.6MPa, G1/4, VAT 전 가격 31,443원으로 확인.</td><td>https://kr.element14.com/dfrobot/sen0257/analog-water-press-sensor-arduino/dp/4308257</td></tr>
+        <tr><td>전공 레귤레이터</td><td>SMC ITV 시리즈는 전기신호에 비례해 공기압을 연속 제어하는 제품군. 24V DC, 0-10V 입력 모델 선택 필요.</td><td>https://www.smcusa.com/products/airline-equipment/pressure-regulators/electronic-regulator/itv~127733</td></tr>
+        <tr><td>Festo 대안</td><td>Festo는 비례 압력 레귤레이터 제품군을 제공하며 0-10V 또는 4-20mA 입력 모델이 있다.</td><td>https://www.festo.com/us/en/c/automation/industrial-automation/pneumatic-valves-and-valve-manifolds/proportional-valves-id_pim120/</td></tr>
+      </tbody>
+    </table>
+    <p class="footer">이 문서는 제작 방향과 초보자용 작업 순서를 설명한다. 압축공기와 220V 전원은 사고 위험이 있으므로, 최종 현장 장착 전 전기/공압 전문가에게 검수를 받는다.</p>
+  </body>
+</html>
