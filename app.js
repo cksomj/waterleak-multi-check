@@ -80,6 +80,8 @@ const defaultState = {
   quickListMonth: new Date().toISOString().slice(0, 7),
   quickListSelectedDate: "",
   deletedJobIds: [],
+  photoViewerOpen: false,
+  selectedFieldPhotoIndex: 0,
   audioInputDeviceId: "",
   audioInputLabel: "",
   audioInputStatus: "분석 준비",
@@ -141,6 +143,7 @@ function createJob() {
     blogCategory: "",
     blogKeyword: "",
     leakAudioPoints: [],
+    reportPhotoNames: [],
     leakComparePoints: {},
     leakAudioBaseline: null,
     leakGraphSnapshots: [],
@@ -279,6 +282,7 @@ function normalizeV2Fields(job) {
   });
   if (!Array.isArray(job.somersPhotos)) job.somersPhotos = [];
   if (!Array.isArray(job.somersPhotoFiles)) job.somersPhotoFiles = [];
+  if (!Array.isArray(job.reportPhotoNames)) job.reportPhotoNames = [];
   if (!Array.isArray(job.leakGraphSnapshots)) job.leakGraphSnapshots = [];
   if (job.leakPipeCalibration && typeof job.leakPipeCalibration !== "object") job.leakPipeCalibration = null;
   if (!job.leakComparePoints || typeof job.leakComparePoints !== "object") job.leakComparePoints = {};
@@ -336,7 +340,7 @@ function render() {
   pendingViewAnimation = "";
   app.innerHTML = `
     <div class="shell">
-      <header class="topbar">
+      <header class="topbar ${state.activeView === "dashboard" ? "" : "compact"}">
         <div class="brand">
           <span class="brand-mark">WL</span>
           <div>
@@ -352,7 +356,7 @@ function render() {
           <button class="btn ghost top-refresh" data-action="hard-refresh">새 버전 새로고침</button>
         </div>
       </header>
-      <div class="layout">
+      <div class="layout ${state.activeView === "dashboard" ? "" : "workflow-layout"}">
         <aside class="sidebar">${renderNav()}</aside>
         <main class="content"><div class="view-stage ${animationClass}">${renderView()}</div></main>
       </div>
@@ -414,8 +418,9 @@ function renderDashboard(job) {
         <button class="btn primary" data-action="google-drive-save">구글저장</button>
       </div>
     </div>
-    ${renderFieldSteps("dashboard")}
-    ${renderFieldReadinessPanel(job)}
+    <div class="general-work-bar">
+      <button class="btn general-work-btn" data-action="general-work" type="button">일반공사</button>
+    </div>
     <section class="panel grid">
       <div class="info-grid dashboard-info-grid">
         ${field("date", "날짜", "date", job.date, "", "", "info-date")}
@@ -428,11 +433,13 @@ function renderDashboard(job) {
       ${renderGoogleDriveInlineSetup()}
       ${renderDriveMediaPicker()}
     </section>
-    ${renderDashboardCommandDeck(job)}
-    <section class="meter-cards" style="margin-top:14px">
-      ${metric("점검 완료", countDone([...job.plumbingChecks, ...job.waterproofChecks]), `${job.plumbingChecks.length + job.waterproofChecks.length}개 중`)}
-      ${metric("소견서", job.report ? "작성됨" : "미작성", "AI 초안")}
-      ${metric("저장방식", "구글", "Drive 저장")}
+  `;
+}
+
+function renderFieldCapturePanel(job) {
+  return `
+    <section class="panel field-capture-panel">
+      ${textareaWithSituationRecording(job)}
     </section>
   `;
 }
@@ -506,9 +513,62 @@ function textareaWithSituationRecording(job) {
         <button class="btn ghost pause-btn" data-action="pause-recording" data-field="situation" ${active ? "" : "disabled"}>${paused ? "이어녹음" : "일시정지"}</button>
         <button class="btn ghost listen-btn" data-action="play-recording" data-recording-id="${escapeAttr(recording?.id || "")}" ${recording ? "" : "disabled"}>재생</button>
         <button class="btn ghost clear-btn" data-action="delete-recording" data-recording-id="${escapeAttr(recording?.id || "")}" ${recording ? "" : "disabled"}>삭제</button>
+        <label class="btn field-photo-capture">사진촬영<input data-file-type="photos" type="file" accept="image/*,video/*" capture="environment" multiple /></label>
+        <button class="btn field-photo-view" data-action="toggle-photo-viewer" type="button">사진보기</button>
         </div>
       </div>
       <textarea id="situation" data-job-field="situation" placeholder="누수 발생 위치, 시간, 피해상황, 고객 진술을 직접 입력합니다.">${escapeHtml(job.situation || "")}</textarea>
+      ${renderFieldPhotoViewer(job)}
+    </div>
+  `;
+}
+
+function renderFieldPhotoViewer(job) {
+  if (!state.photoViewerOpen) return "";
+  const names = job.photos || [];
+  const images = job.photoFiles || [];
+  const selectedIndex = Math.min(Number(state.selectedFieldPhotoIndex || 0), Math.max(0, names.length - 1));
+  const selectedName = names[selectedIndex];
+  const selectedImage = images.find((image) => image.name === selectedName) || images[0];
+  return `
+    <div class="field-photo-viewer">
+      <div class="field-photo-list">
+        ${names.length ? names.map((name, index) => {
+          const image = images.find((item) => item.name === name);
+          return `
+            <button class="${index === selectedIndex ? "active" : ""}" data-action="select-field-photo" data-index="${index}" type="button">
+              <span>${escapeHtml(name)}</span>
+              ${image?.dataUrl ? `<img src="${escapeAttr(image.dataUrl)}" alt="${escapeAttr(name)}" />` : `<b>영상/파일</b>`}
+            </button>
+          `;
+        }).join("") : `<p class="muted">저장된 사진이나 동영상이 없습니다.</p>`}
+      </div>
+      <div class="field-photo-preview">
+        ${selectedImage?.dataUrl ? `<img src="${escapeAttr(selectedImage.dataUrl)}" alt="선택 사진 미리보기" />` : `<span>리스트에서 사진을 선택하면 크게 표시됩니다.</span>`}
+      </div>
+    </div>
+  `;
+}
+
+function renderReportPhotoSelector(job) {
+  const names = job.photos || [];
+  const selected = new Set(job.reportPhotoNames || []);
+  if (!names.length) {
+    return `<p class="muted">현장정보 또는 기본검사 상단의 사진촬영으로 사진을 먼저 저장하세요.</p>`;
+  }
+  return `
+    <div class="report-photo-selector">
+      ${names.map((name) => {
+        const image = (job.photoFiles || []).find((item) => item.name === name);
+        const checked = selected.has(name);
+        return `
+          <label>
+            <input type="checkbox" data-report-photo-name="${escapeAttr(name)}" ${checked ? "checked" : ""} />
+            ${image?.dataUrl ? `<img src="${escapeAttr(image.dataUrl)}" alt="${escapeAttr(name)}" />` : `<b>파일</b>`}
+            <span>${escapeHtml(name)}</span>
+          </label>
+        `;
+      }).join("")}
     </div>
   `;
 }
@@ -517,10 +577,7 @@ function phoneField(job) {
   return `
     <div class="field info-phone">
       <label for="phone">전화번호</label>
-      <div class="phone-input-row">
-        <input id="phone" data-job-field="phone" type="tel" value="${escapeAttr(job.phone || "")}" placeholder="010-0000-0000" />
-        <button class="btn ghost" data-action="pick-contact-phone" type="button">번호 입력</button>
-      </div>
+      <input id="phone" data-job-field="phone" type="tel" value="${escapeAttr(job.phone || "")}" placeholder="010-0000-0000" />
     </div>
   `;
 }
@@ -569,6 +626,7 @@ function renderChecklist(title) {
       </div>
     </div>
     ${renderFieldSteps("basic")}
+    ${renderFieldCapturePanel(job)}
     <section class="panel check-list">
       ${groups.map(([type, groupTitle, checks]) => `
         <h2 class="check-group-title">${groupTitle}</h2>
@@ -622,6 +680,7 @@ function renderTracker(job) {
   const leakPoints = job.leakAudioPoints || [];
   return `
     ${renderFieldSteps("tracker")}
+    ${renderFieldCapturePanel(job)}
     <div class="section-head">
       <div>
         <h1>누수추적기</h1>
@@ -800,10 +859,11 @@ function renderReport(job) {
       </div>
     </div>
     ${renderFieldSteps("report")}
+    ${renderFieldCapturePanel(job)}
     <div class="grid two">
       <section class="panel grid">
         <h2>사진 업로드</h2>
-        ${fileBox("photos", "사진 앨범 열기")}
+        ${renderReportPhotoSelector(job)}
       </section>
       <section class="panel grid">
         ${textarea("report", "소견서 내용", reportDraft, "소견서 자동생성 후 수정할 수 있습니다.")}
@@ -843,6 +903,7 @@ function renderBlog(job) {
       </div>
     </div>
     ${renderFieldSteps("blog")}
+    ${renderFieldCapturePanel(job)}
     ${renderCustomBlogPanel(job)}
     <section class="panel blog-preview-panel">
       <div class="section-head compact">
@@ -943,6 +1004,7 @@ function renderEstimate(job) {
       </div>
     </div>
     ${renderFieldSteps("estimate")}
+    ${renderFieldCapturePanel(job)}
     <section class="print-area estimate-form">
       <h2 class="estimate-title">${escapeHtml(docTitle)}</h2>
       <div class="estimate-meta">
@@ -1435,6 +1497,20 @@ function bindEvents() {
     });
   });
 
+  app.querySelectorAll("[data-report-photo-name]").forEach((input) => {
+    input.addEventListener("change", () => {
+      const job = currentJob();
+      const name = input.dataset.reportPhotoName;
+      const selected = new Set(job.reportPhotoNames || []);
+      if (input.checked) selected.add(name);
+      else selected.delete(name);
+      job.reportPhotoNames = [...selected];
+      job.updatedAt = new Date().toISOString();
+      saveState();
+      refreshReportPreview(job);
+    });
+  });
+
   app.querySelectorAll(".pipe-material-btn").forEach((button) => {
     button.addEventListener("wheel", (event) => {
       event.preventDefault();
@@ -1462,12 +1538,17 @@ function bindEvents() {
       const job = currentJob();
       const files = Array.from(input.files || []);
       const fileType = input.dataset.fileType;
-      job[fileType] = files.map((file) => file.name);
       if (fileType === "photos") {
-        job.photoFiles = await filesToPrintableImages(files);
-      }
-      if (fileType === "somersPhotos") {
+        const printableImages = await filesToPrintableImages(files);
+        job.photos = [...(job.photos || []), ...files.map((file) => file.name)];
+        job.photoFiles = [...(job.photoFiles || []), ...printableImages];
+        state.photoViewerOpen = true;
+        state.selectedFieldPhotoIndex = Math.max(0, (job.photos || []).length - files.length);
+      } else if (fileType === "somersPhotos") {
+        job[fileType] = files.map((file) => file.name);
         job.somersPhotoFiles = await filesToPrintableImages(files);
+      } else {
+        job[fileType] = files.map((file) => file.name);
       }
       saveState();
       render();
@@ -1637,7 +1718,19 @@ function handleAction(action, data) {
   }
   if (action === "hard-refresh") hardRefreshApp();
   if (action === "show-app-map") openExternalMap(job.address, "kakao");
+  if (action === "general-work") notify("일반공사 탭 기능은 다음 단계에서 설계합니다.");
   if (action === "pick-contact-phone") pickContactPhone();
+  if (action === "toggle-photo-viewer") {
+    state.photoViewerOpen = !state.photoViewerOpen;
+    saveState();
+    render();
+  }
+  if (action === "select-field-photo") {
+    state.selectedFieldPhotoIndex = Number(data.index || 0);
+    state.photoViewerOpen = true;
+    saveState();
+    render();
+  }
   if (action === "google-drive-save") saveCurrentJobToGoogleDrive();
   if (action === "save-google-settings" && saveGoogleSettingsFromForm()) saveCurrentJobToGoogleDrive();
   if (action === "continue-google-drive-save") continueGoogleDriveSave();
@@ -2852,7 +2945,12 @@ function reportContentForDocument(report) {
 }
 
 function buildReportPhotoPages(job) {
-  const fieldPhotos = Array.isArray(job.photoFiles) ? job.photoFiles.filter((photo) => photo?.dataUrl).map((photo) => ({ ...photo, group: "현장 사진" })) : [];
+  const selectedNames = new Set(job.reportPhotoNames || []);
+  const fieldPhotos = Array.isArray(job.photoFiles)
+    ? job.photoFiles
+      .filter((photo) => photo?.dataUrl && selectedNames.has(photo.name))
+      .map((photo) => ({ ...photo, group: "현장 사진" }))
+    : [];
   const somersPhotos = Array.isArray(job.somersPhotoFiles) ? job.somersPhotoFiles.filter((photo) => photo?.dataUrl).map((photo) => ({ ...photo, group: "소머즈 촬영" })) : [];
   const photos = [...fieldPhotos, ...somersPhotos];
   if (!photos.length) return "";
