@@ -1,0 +1,5343 @@
+const STORAGE_KEY = "waterleak_multi_check_v1";
+const GOOGLE_CONFIG_KEY = "waterleak_google_drive_config_v1";
+const RECORDING_DB_NAME = "waterleak_recordings_v1";
+const PROVIDER = {
+  name: "최씨누수탐지종합설비",
+  bizNo: "381-26-00781",
+  address: "속초시 조양로 22번길7",
+  owner: "최규석",
+};
+
+const basePlumbingChecks = [
+  ["hot_water", "배관누수검사", "배관 밸브를 잠그고 열어 계량기 누수 변화를 확인합니다."],
+  ["toilet_parts", "화장실 변기부속 누수검사", "밸브를 잠그고 열어 계량기 움직임을 확인합니다. 물이 없으면 보충 후 재검사합니다."],
+  ["all_valves", "모든 밸브류 검사", "화장실, 싱크대, 개수대, 외부수도, 밸브고장 여부를 순차 확인합니다."],
+];
+
+const baseWaterproofChecks = [
+  ["window_frame", "창틀검사", "외부 빗물 유입, 실리콘 벌어짐, 하부 물길 상태를 확인합니다."],
+  ["rain_pipe", "우수관검사", "우수관 막힘, 파손, 역류 흔적과 주변 오염을 확인합니다."],
+  ["bathroom_waterproof", "화장실 방수상태", "바닥/벽체 방수층 의심 구간, 하부세대 피해 방향을 확인합니다."],
+  ["drain_trap", "유가상태", "유가 주변 크랙, 배수 불량, 악취 및 물고임 여부를 확인합니다."],
+  ["toilet_body", "변기상태", "변기 정심, 백시멘트, 배관 연결부 흔들림과 누수 흔적을 확인합니다."],
+];
+
+const PIPE_MATERIALS = [
+  { id: "pvc", label: "PVC", leakStart: 2500, leakMid: 6500, leakEnd: 10500, ultraEnd: 14500, peakStrength: 8, stableScore: 38 },
+  { id: "cast_iron", label: "주철관", leakStart: 900, leakMid: 3200, leakEnd: 7200, ultraEnd: 11000, peakStrength: 7, stableScore: 38 },
+  { id: "copper", label: "동관", leakStart: 4200, leakMid: 8500, leakEnd: 14000, ultraEnd: 18000, peakStrength: 10, stableScore: 44 },
+  { id: "xl_pe", label: "XL/PE 배관", leakStart: 1800, leakMid: 5200, leakEnd: 9800, ultraEnd: 13500, peakStrength: 8, stableScore: 40 },
+  { id: "insulated", label: "보온재 커버 배관", leakStart: 1200, leakMid: 4200, leakEnd: 8500, ultraEnd: 12000, peakStrength: 6, stableScore: 34 },
+  { id: "heating", label: "난방 배관", leakStart: 1500, leakMid: 4800, leakEnd: 9200, ultraEnd: 13000, peakStrength: 7, stableScore: 38 },
+  { id: "other", label: "기타", leakStart: 2500, leakMid: 7000, leakEnd: 12000, ultraEnd: 16000, peakStrength: 9, stableScore: 42 },
+];
+
+const blogEmojis = [
+  "😀","😃","😄","😁","😆","😅","😂","🤣","🙂","🙃","😉","😊","😇","🥰","😍","🤩","😘","😗","😚","😙",
+  "😋","😛","😜","🤪","😝","🤑","🤗","🤭","🫢","🫣","🤫","🤔","🫡","🤐","🤨","😐","😑","😶","🫥","😶‍🌫️",
+  "😏","😒","🙄","😬","😮‍💨","🤥","😌","😔","😪","🤤","😴","😷","🤒","🤕","🤢","🤮","🤧","🥵","🥶","🥴",
+  "😵","😵‍💫","🤯","🤠","🥳","🥸","😎","🤓","🧐","😕","🫤","😟","🙁","☹️","😮","😯","😲","😳","🥺","🥹",
+  "😦","😧","😨","😰","😥","😢","😭","😱","😖","😣","😞","😓","😩","😫","🥱","😤","😡","😠","🤬","😈",
+  "👿","💀","☠️","💩","🤡","👹","👺","👻","👽","🤖","😺","😸","😹","😻","😼","😽","🙀","😿","😾",
+  "🙈","🙉","🙊","💋","💌","💘","💝","💖","💗","💓","💞","💕","💟","❣️","💔","❤️","🩷","🧡","💛","💚","💙","🩵","💜","🤎","🖤","🩶","🤍",
+  "👋","🤚","🖐️","✋","🖖","👌","🤌","🤏","✌️","🤞","🫰","🤟","🤘","🤙","👈","👉","👆","🖕","👇","☝️","👍","👎","✊","👊","🤛","🤜","👏","🙌","🫶","🙏",
+  "💧","💦","🌊","🚰","🚿","🛁","🧽","🪣","🧴","🫧","❄️","🔥","☔","🌧️","🌦️",
+  "🔧","🛠️","🧰","🔩","⚙️","🪛","🔨","🪜","🧱","🧲","📏","📐","✂️","🧪","🧯",
+  "🏠","🏡","🏢","🏘️","🏚️","🚪","🪟","🧱","🚽","🍽️","🛋️","🛏️","🚗","🏗️","🏪",
+  "✅","☑️","✔️","❌","⭕","❗","❓","⚠️","🚨","⛔","🔴","🟠","🟡","🟢","🔵","🟣","⚪","⚫",
+  "📍","📌","📝","📄","📋","📁","📂","📎","🔖","🧾","📑","📊","📈","📉","🗂️","🗓️","⏱️","⏰","📞","☎️",
+  "🔍","🔎","🎧","🎙️","🔊","📢","📣","📸","🎥","💻","📱","🖨️","💾","☁️","🔐","🔗",
+  "➡️","⬅️","⬆️","⬇️","↗️","↘️","↙️","↖️","🔁","🔄","⏩","⏪","▶️","⏸️","⏹️",
+  "⭐","✨","💡","💬","🗯️","👍","👌","👏","🙏","💪","🙂","😊","😮","😅","😎","🙌",
+  "1️⃣","2️⃣","3️⃣","4️⃣","5️⃣","6️⃣","7️⃣","8️⃣","9️⃣","🔟","#️⃣","*️⃣","➕","➖","➗","✳️","✴️","🔶","🔷","▪️","▫️",
+  "가","나","다","A","B","C","Ⅰ","Ⅱ","Ⅲ","①","②","③","④","⑤","⑥","⑦","⑧","⑨","⑩",
+];
+
+const viewOrder = [
+  ["dashboard", "메인메뉴"],
+  ["basic", "기본검사"],
+  ["tracker", "누수추적기"],
+  ["blog", "블로그 작성"],
+  ["estimate", "견적서"],
+  ["report", "AI 소견서"],
+];
+
+const defaultState = {
+  activeView: "dashboard",
+  currentJobId: null,
+  storageMode: "google",
+  googleDrive: {
+    apiKey: "",
+    clientId: "",
+    folderId: "",
+    folderName: "WaterLeak Multi Check V2",
+  },
+  googleSetupOpen: false,
+  blogEditorOpen: false,
+  blogPhotoPickerOpen: false,
+  blogEditorPhotoNames: [],
+  reportPhotoPickerOpen: false,
+  blogCustomOpen: false,
+  quickListOpen: false,
+  quickListQuery: "",
+  quickListMonth: new Date().toISOString().slice(0, 7),
+  quickListSelectedDate: "",
+  documentPreviewPage: { estimate: 0, report: 0 },
+  deletedJobIds: [],
+  photoViewerOpen: false,
+  selectedFieldPhotoIndex: 0,
+  selectedFieldPhotoNames: [],
+  audioInputDeviceId: "",
+  audioInputLabel: "",
+  audioInputStatus: "분석 준비",
+  leakPipeCalibrations: {},
+  jobs: [],
+};
+
+let state = loadState();
+state.activeView = "dashboard";
+if (!state.leakPipeCalibrations || typeof state.leakPipeCalibrations !== "object") state.leakPipeCalibrations = {};
+let wavRecorder = null;
+let audioContext = null;
+let analyser = null;
+let animationFrame = null;
+let micStream = null;
+let leakAudioHistory = [];
+let lastLeakAudioMetrics = null;
+let recordingTarget = null;
+let driveSaveDraft = null;
+let googleTokenClient = null;
+let googleAccessToken = "";
+let pendingViewAnimation = "";
+let savedBlogSelection = null;
+let storageEstimate = { percent: null, text: "Google 저장 전용" };
+let audioInputDevices = [];
+let spectrumInputDetected = false;
+let leakDisplayScore = null;
+let leakRiskState = "green";
+let stablePeakHz = null;
+let stablePeakConfidence = 0;
+let audioActivityDisplayScore = null;
+let leakSilenceFrames = 0;
+let recentSavedRecordingKey = "";
+let recentSavedRecordingTimer = null;
+let documentPreviewRefreshTimer = null;
+const AI_ASSISTANT_URL = "https://claude.ai/new";
+
+const app = document.querySelector("#app");
+
+function createJob() {
+  const today = new Date().toISOString().slice(0, 10);
+  const id = `job-${Date.now()}`;
+  return {
+    id,
+    date: today,
+    customerName: "",
+    address: "",
+    phone: "",
+    situation: "",
+    generalWorkRequest: "",
+    environment: "",
+    plumbingChecks: createChecks(basePlumbingChecks),
+    waterproofChecks: createChecks(baseWaterproofChecks),
+    photos: [],
+    photoFiles: [],
+    somersPhotos: [],
+    somersPhotoFiles: [],
+    blogPhotos: [],
+    videos: [],
+    recordings: [],
+    report: "",
+    blog: "",
+    blogCategory: "",
+    blogKeyword: "",
+    leakAudioPoints: [],
+    reportPhotoNames: [],
+    leakComparePoints: {},
+    leakAudioBaseline: null,
+    leakGraphSnapshots: [],
+    leakPipeCalibration: null,
+    pipeMaterial: "pvc",
+    pipeLeakTypes: { cold: false, hot: false, heating: false },
+    somersLeakLevel: "",
+    somersFrequency: "",
+    somersOrangeMark: "",
+    somersSuspectLocation: "",
+    somersCaptureMemo: "",
+    excavationResult: "",
+    finalLeakLocation: "",
+    vatMode: "exclusive",
+    estimateItems: [createEstimateItem()],
+    estimatePreviewScale: 100,
+    estimatePreviewOffsetY: 0,
+    reportPreviewScale: 100,
+    reportPreviewOffsetY: 0,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  };
+}
+
+function createChecks(items) {
+  return items.map(([id, title, guide]) => ({ id, title, guide, done: false, result: "대기", memo: "" }));
+}
+
+function createEstimateItem() {
+  return { name: "", spec: "", qty: 1, unit: "식", unitPrice: "", cost: "" };
+}
+
+function normalizeChecks(savedChecks = [], baseItems = []) {
+  const savedById = new Map(savedChecks.map((check) => [check.id, check]));
+  return baseItems.map(([id, title, guide]) => ({
+    id,
+    title,
+    guide,
+    done: false,
+    result: "대기",
+    memo: "",
+    ...(savedById.get(id) || {}),
+    title,
+    guide,
+  }));
+}
+
+function loadState() {
+  try {
+    const saved = localStorage.getItem(STORAGE_KEY);
+    if (saved) {
+      const parsed = JSON.parse(saved);
+      const googleDrive = loadStoredGoogleConfig(parsed.googleDrive);
+      return { ...defaultState, ...parsed, googleDrive, googleSetupOpen: false };
+    }
+  } catch (error) {
+    console.warn(error);
+  }
+  const firstJob = createJob();
+  return { ...defaultState, googleDrive: loadStoredGoogleConfig(), currentJobId: firstJob.id, jobs: [firstJob] };
+}
+
+function saveState() {
+  saveGoogleConfigOnly();
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+}
+
+async function updateStorageEstimate() {
+  setStorageEstimate({ percent: null, text: "Google 저장 전용" });
+}
+
+function setStorageEstimate(next) {
+  if (storageEstimate.text === next.text && storageEstimate.percent === next.percent) return;
+  storageEstimate = next;
+  const pill = document.querySelector(".storage-pill");
+  if (pill) pill.textContent = storageEstimate.text;
+}
+
+function loadStoredGoogleConfig(fallback = {}) {
+  try {
+    const saved = localStorage.getItem(GOOGLE_CONFIG_KEY);
+    if (saved) {
+      return {
+        apiKey: "",
+        clientId: "",
+        folderId: "",
+        folderName: "WaterLeak Multi Check V2",
+        ...fallback,
+        ...JSON.parse(saved),
+      };
+    }
+  } catch (error) {
+    console.warn(error);
+  }
+  return {
+    apiKey: "",
+    clientId: "",
+    folderId: "",
+    folderName: "WaterLeak Multi Check V2",
+    ...fallback,
+  };
+}
+
+function saveGoogleConfigOnly() {
+  if (!state?.googleDrive) return;
+  localStorage.setItem(GOOGLE_CONFIG_KEY, JSON.stringify(googleConfig()));
+}
+
+function currentJob() {
+  let job = state.jobs.find((item) => item.id === state.currentJobId);
+  if (!job) {
+    job = state.jobs[0] || createJob();
+    if (!state.jobs.length) state.jobs.push(job);
+    state.currentJobId = job.id;
+  }
+  job.plumbingChecks = normalizeChecks(job.plumbingChecks, basePlumbingChecks);
+  job.waterproofChecks = normalizeChecks(job.waterproofChecks, baseWaterproofChecks);
+  job.estimateItems = normalizeEstimateItems(job.estimateItems);
+  normalizePipeLeakTypes(job);
+  normalizeV2Fields(job);
+  return job;
+}
+
+function normalizeEstimateItems(items) {
+  const normalized = Array.isArray(items) ? items.map((item) => ({
+    ...createEstimateItem(),
+    ...(item || {}),
+  })) : [];
+  return normalized.length ? normalized : [createEstimateItem()];
+}
+
+function normalizePipeLeakTypes(job) {
+  job.pipeLeakTypes = {
+    cold: false,
+    hot: false,
+    heating: false,
+    ...(job.pipeLeakTypes || {}),
+  };
+}
+
+function normalizeV2Fields(job) {
+  const defaults = {
+    generalWorkRequest: "",
+    somersLeakLevel: "",
+    somersFrequency: "",
+    somersOrangeMark: "",
+    somersSuspectLocation: "",
+    somersCaptureMemo: "",
+    excavationResult: "",
+    finalLeakLocation: "",
+  };
+  Object.entries(defaults).forEach(([key, value]) => {
+    if (job[key] == null) job[key] = value;
+  });
+  if (!Array.isArray(job.somersPhotos)) job.somersPhotos = [];
+  if (!Array.isArray(job.somersPhotoFiles)) job.somersPhotoFiles = [];
+  if (!Array.isArray(job.reportPhotoNames)) job.reportPhotoNames = [];
+  if (!Array.isArray(job.leakGraphSnapshots)) job.leakGraphSnapshots = [];
+  if (job.leakPipeCalibration && typeof job.leakPipeCalibration !== "object") job.leakPipeCalibration = null;
+  if (!job.leakComparePoints || typeof job.leakComparePoints !== "object") job.leakComparePoints = {};
+  const legacySlots = [["A", "1"], ["B", "2"], ["C", "3"], ["D", "4"]];
+  legacySlots.forEach(([legacy, next]) => {
+    if (!job.leakComparePoints[next] && job.leakComparePoints[legacy]) {
+      job.leakComparePoints[next] = { ...job.leakComparePoints[legacy], slot: next, name: `${next}지점` };
+    }
+  });
+  if (job.leakAudioBaseline && typeof job.leakAudioBaseline !== "object") job.leakAudioBaseline = null;
+}
+
+function updateJob(patch) {
+  const job = currentJob();
+  Object.assign(job, patch, { updatedAt: new Date().toISOString() });
+  saveState();
+  render();
+}
+
+function updateCheck(type, id, patch) {
+  const job = currentJob();
+  job[type] = job[type].map((check) => (check.id === id ? { ...check, ...patch } : check));
+  job.updatedAt = new Date().toISOString();
+  saveState();
+  render();
+}
+
+function setView(view, direction = 0) {
+  state.activeView = view;
+  pendingViewAnimation = direction > 0 ? "slide-in-right" : direction < 0 ? "slide-in-left" : "";
+  saveState();
+  render();
+}
+
+function moveView(direction) {
+  const ids = viewOrder.map(([id]) => id);
+  const currentIndex = Math.max(0, ids.indexOf(state.activeView));
+  const nextIndex = Math.min(ids.length - 1, Math.max(0, currentIndex + direction));
+  if (nextIndex !== currentIndex) animateViewChange(ids[nextIndex], direction);
+}
+
+function hardRefreshApp() {
+  const url = new URL(window.location.href);
+  url.searchParams.set("v", Date.now().toString());
+  window.location.replace(url.toString());
+}
+
+function animateViewChange(view, direction) {
+  setView(view, direction);
+}
+
+function render() {
+  const job = currentJob();
+  const animationClass = pendingViewAnimation;
+  pendingViewAnimation = "";
+  app.innerHTML = `
+    <div class="shell view-${escapeAttr(state.activeView)}">
+      <header class="topbar ${state.activeView === "dashboard" ? "" : "compact"}">
+        <div class="brand">
+          <span class="brand-mark">WL</span>
+          <div>
+            <strong>Waterleak MULTI CHECKER - V5</strong>
+          </div>
+        </div>
+        <div class="top-actions">
+          <span class="status-pill top-status">${escapeHtml(job.date || "-")} · ${escapeHtml(job.address || "주소 미입력")}</span>
+          <button class="btn primary top-new-job" data-action="new-job">새 작업</button>
+          <button class="btn top-job-list" data-action="toggle-quick-list">리스트</button>
+          <button class="btn top-refresh" data-action="hard-refresh">새 버전 새로고침</button>
+        </div>
+      </header>
+      <div class="layout ${state.activeView === "dashboard" ? "" : "workflow-layout"}">
+        <aside class="sidebar">${renderNav()}</aside>
+        <main class="content"><div class="view-stage ${animationClass}">${renderView()}</div></main>
+      </div>
+      ${state.blogEditorOpen ? renderBlogEditor(job) : ""}
+      ${state.blogPhotoPickerOpen ? renderBlogPhotoPicker(job) : ""}
+      ${state.reportPhotoPickerOpen ? renderReportPhotoPicker(job) : ""}
+      ${state.quickListOpen ? renderQuickJobList() : ""}
+    </div>
+  `;
+  bindEvents();
+  if (state.activeView === "tracker") drawIdleSpectrum();
+  if (state.activeView === "estimate") setTimeout(fitEstimatePreviewToA4, 0);
+  if (state.activeView === "report") setTimeout(() => fitDocumentPreviewToA4("report"), 0);
+  updateStorageEstimate();
+}
+
+function renderNav() {
+  return viewOrder.map(([id, label]) => `<button class="nav-button ${state.activeView === id ? "active" : ""}" data-view="${id}">${label}</button>`).join("");
+}
+
+function renderView() {
+  const job = currentJob();
+  const views = {
+    dashboard: renderDashboard,
+    generalWork: renderGeneralWork,
+    basic: () => renderChecklist("기본검사 및 방수문제 목록"),
+    tracker: renderTracker,
+    report: renderReport,
+    blog: renderBlog,
+    estimate: renderEstimate,
+  };
+  return (views[state.activeView] || views.dashboard)(job);
+}
+
+function renderFieldSteps(activeId) {
+  const steps = [
+    ["dashboard", "현장정보"],
+    ["basic", "기본검사"],
+    ["tracker", "누수추적"],
+    ["blog", "블로그"],
+    ["estimate", "견적서"],
+    ["report", "소견서"],
+  ];
+  return `
+    <div class="field-step-strip">
+      ${steps.map(([id, label], index) => `
+        <button class="${id === activeId ? "active" : ""}" data-view="${id}" type="button">
+          <b>${index + 1}</b>${label}
+        </button>
+      `).join("")}
+    </div>
+  `;
+}
+
+function renderDashboard(job) {
+  return `
+    <div class="dashboard-fixed-top">
+      ${renderFieldSteps("dashboard")}
+      <div class="section-head">
+        <div>
+          <h1>현장 기본정보</h1>
+          <p class="muted">날짜, 주소, 연락처, 현장 상황을 저장하고 이후 서식에 자동 반영합니다.</p>
+        </div>
+        <div class="toolbar">
+          <button class="btn map-action-btn" data-action="show-app-map">카카오지도</button>
+          <button class="btn primary" data-action="google-drive-save">구글저장</button>
+        </div>
+      </div>
+      <div class="general-work-bar">
+        <button class="btn general-work-btn" data-action="general-work" type="button">일반공사</button>
+      </div>
+    </div>
+    <section class="panel grid">
+      <div class="info-grid dashboard-info-grid">
+        ${field("date", "날짜", "date", job.date, "", "", "info-date")}
+        ${field("customerName", "고객 이름", "text", job.customerName || "", "고객 이름", "", "info-customer")}
+        ${field("address", "소비자 주소", "text", job.address, "예: 서울시 강남구 ...", "", "info-address")}
+        ${phoneField(job)}
+      </div>
+      ${textareaWithSituationRecording(job)}
+      <div id="driveStatus" class="drive-status">Google Drive: ${driveStatusText()}</div>
+      ${renderGoogleDriveInlineSetup()}
+      ${renderDriveMediaPicker()}
+    </section>
+  `;
+}
+
+function renderGeneralWork(job) {
+  return `
+    <div class="general-work-screen">
+      <div class="general-work-header">
+        <div>
+          <h1>일반공사</h1>
+          <p class="muted">공사 요청 내용을 기록하고 사진, 동영상, 녹음 자료를 함께 임시 저장합니다.</p>
+        </div>
+        <div class="toolbar">
+          <button class="btn warn" data-action="exit-general-work" type="button">나가기</button>
+        </div>
+      </div>
+      <section class="panel grid general-work-info">
+        <div class="info-grid dashboard-info-grid">
+          ${field("date", "날짜", "date", job.date, "", "", "info-date")}
+          ${field("customerName", "고객 이름", "text", job.customerName || "", "고객 이름", "", "info-customer")}
+          ${field("address", "소비자 주소", "text", job.address, "예: 서울시 강남구 ...", "", "info-address")}
+          ${phoneField(job)}
+        </div>
+        ${textareaWithSituationRecording(job, {
+          fieldName: "generalWorkRequest",
+          label: "공사요청기록",
+          placeholder: "일반 공사 요청 내용, 위치, 고객 요청사항, 필요한 자재나 현장 특이사항을 기록합니다.",
+        })}
+      </section>
+      <section class="panel general-work-link-panel">
+        <h2>자료 반영</h2>
+        <p class="muted">나가기를 누르면 입력한 공사요청기록이 앱에 저장되고, 블로그·견적서·소견서 자료에 함께 반영됩니다.</p>
+        <div class="toolbar">
+          <button class="btn ghost" data-view="blog" type="button">블로그에서 확인</button>
+          <button class="btn ghost" data-view="estimate" type="button">견적서에서 확인</button>
+          <button class="btn ghost" data-view="report" type="button">소견서에서 확인</button>
+        </div>
+      </section>
+    </div>
+  `;
+}
+
+function renderFieldCapturePanel(job) {
+  return `
+    <section class="panel field-capture-panel">
+      ${textareaWithSituationRecording(job)}
+    </section>
+  `;
+}
+
+function renderFieldReadinessPanel(job) {
+  const googleReady = Boolean(googleConfig().apiKey && googleConfig().clientId);
+  const micReady = Boolean(navigator.mediaDevices?.getUserMedia);
+  const recordingCount = (job.recordings || []).length;
+  const reportReady = Boolean(job.report);
+  const estimateReady = (job.estimateItems || []).some((item) => Number(item.cost || item.unitPrice || 0) > 0 || item.name);
+  const somersReady = Boolean((job.somersPhotos || []).length || job.somersLeakLevel || job.somersFrequency || job.somersSuspectLocation);
+  const items = [
+    ["Google", googleReady ? "준비" : "설정", googleReady ? "Drive 저장 가능" : "키 입력 필요"],
+    ["마이크", micReady ? "지원" : "미지원", micReady ? "녹음/분석 가능" : "권한 확인"],
+    ["녹음", recordingCount ? `${recordingCount}개` : "대기", recordingCount ? "기록 있음" : "녹음 가능"],
+    ["소머즈", somersReady ? "기록" : "대기", somersReady ? "OCR 포함" : "촬영 필요"],
+    ["문서", reportReady || estimateReady ? "준비" : "대기", "출력 확인"],
+  ];
+  return `
+    <section class="field-readiness-panel">
+      ${items.map(([label, status, help]) => `
+        <div class="${status === "설정 필요" || status === "미지원" ? "attention" : ""}">
+          <span>${label}</span>
+          <b>${status}</b>
+          <small>${help}</small>
+        </div>
+      `).join("")}
+    </section>
+  `;
+}
+
+function renderDashboardCommandDeck(job) {
+  const checks = [...job.plumbingChecks, ...job.waterproofChecks];
+  const done = countDone(checks);
+  const pointCount = (job.leakAudioPoints || []).length;
+  const cards = [
+    ["basic", "01", "기본검사 계속", `${done}/${checks.length} 완료`, "밸브, 방수, 우수관, 유가 상태를 빠르게 확인합니다."],
+    ["tracker", "02", "누수추적 시작", `${pointCount}개 지점`, "실시간 그래프와 청음 점수로 의심 위치를 좁힙니다."],
+    ["blog", "03", "블로그 자료 정리", job.blog ? "자료 있음" : "대기", "현장 자료를 AI용 프롬프트와 원고로 정리합니다."],
+    ["estimate", "04", "견적서 작성", `${(job.estimateItems || []).length}개 항목`, "공급가액, 부가세, 합계를 현장에서 바로 계산합니다."],
+    ["report", "05", "AI 소견서 작성", job.report ? "작성됨" : "미작성", "현장 기록과 점검 결과를 소견서 초안으로 만듭니다."],
+  ];
+  return `
+    <section class="command-deck">
+      ${cards.map(([view, index, title, meta, desc]) => `
+        <button class="command-card" data-view="${view}" type="button">
+          <span>${index}</span>
+          <strong>${title}</strong>
+          <b>${meta}</b>
+          <small>${desc}</small>
+        </button>
+      `).join("")}
+    </section>
+  `;
+}
+
+function textareaWithSituationRecording(job, options = {}) {
+  const fieldName = options.fieldName || "situation";
+  const label = options.label || "상황 기록";
+  const showLabel = options.showLabel ?? fieldName !== "situation";
+  const placeholder = options.placeholder || "누수 발생 위치, 시간, 피해상황, 고객 진술을 직접 입력합니다.";
+  const target = { kind: "field", field: fieldName };
+  const recording = getLastRecordingForTarget(target);
+  const active = wavRecorder?.recording && targetKey(recordingTarget) === targetKey(target);
+  const paused = active && wavRecorder?.paused;
+  const recentlySaved = recentSavedRecordingKey === targetKey(target);
+  const iconClass = active && !paused ? "blue pulse" : recentlySaved ? "green" : "red";
+  const elementId = fieldName === "situation" ? "situation" : `field-${fieldName}`;
+  return `
+    <div class="field">
+      <div class="field-head">
+        ${showLabel ? `<label for="${escapeAttr(elementId)}">${escapeHtml(label)}</label>` : ""}
+        <div class="field-recording-actions record-actions">
+          <button class="btn ghost record-btn ${active ? "recording" : ""} ${recentlySaved ? "saved" : ""}" data-action="record-field" data-field="${escapeAttr(fieldName)}">
+            <span class="voice-icon ${iconClass}"></span>${active ? "녹음중" : recentlySaved ? "저장됨" : "녹음"}
+          </button>
+          <button class="btn ghost pause-btn" data-action="pause-recording" data-field="${escapeAttr(fieldName)}" ${active ? "" : "disabled"}>${paused ? "계속" : "일시정지"}</button>
+          <button class="btn ghost listen-btn" data-action="play-recording" data-recording-id="${escapeAttr(recording?.id || "")}" ${recording ? "" : "disabled"}>재생</button>
+          <button class="btn ghost stop-btn" data-action="stop-field-recording" data-field="${escapeAttr(fieldName)}" ${active ? "" : "disabled"}>정지</button>
+          <button class="btn ghost clear-btn" data-action="delete-recording" data-recording-id="${escapeAttr(recording?.id || "")}" ${recording ? "" : "disabled"}>삭제</button>
+        </div>
+        <div class="field-media-actions record-actions">
+        <label class="btn field-photo-capture">사진촬영<input data-file-type="photos" type="file" accept="image/*,video/*" capture="environment" multiple /></label>
+        <button class="btn field-photo-view" data-action="toggle-photo-viewer" type="button">사진보기</button>
+        </div>
+      </div>
+      <textarea id="${escapeAttr(elementId)}" data-job-field="${escapeAttr(fieldName)}" placeholder="${escapeAttr(placeholder)}">${escapeHtml(job[fieldName] || "")}</textarea>
+      ${renderFieldPhotoViewer(job)}
+    </div>
+  `;
+}
+
+function renderFieldPhotoViewer(job) {
+  if (!state.photoViewerOpen) return "";
+  const names = job.photos || [];
+  const images = job.photoFiles || [];
+  const checkedNames = new Set(state.selectedFieldPhotoNames || []);
+  const selectedIndex = Math.min(Number(state.selectedFieldPhotoIndex || 0), Math.max(0, names.length - 1));
+  return `
+    <div class="field-photo-viewer">
+      <div class="field-photo-list">
+        ${names.length ? names.map((name, index) => {
+          const image = images.find((item) => item.name === name);
+          return `
+            <div class="field-photo-item ${index === selectedIndex ? "active" : ""}">
+              <input type="checkbox" data-field-photo-name="${escapeAttr(name)}" ${checkedNames.has(name) ? "checked" : ""} />
+              <button data-action="select-field-photo" data-index="${index}" type="button">
+                <span>${escapeHtml(name)}</span>
+              </button>
+              ${image?.dataUrl ? `<img src="${escapeAttr(image.dataUrl)}" alt="${escapeAttr(name)}" />` : `<b>영상/파일</b>`}
+            </div>
+          `;
+        }).join("") : `<p class="muted">저장된 사진이나 동영상이 없습니다.</p>`}
+      </div>
+      ${names.length ? `<button class="btn warn field-photo-delete" data-action="delete-selected-photos" type="button">선택 사진 삭제</button>` : ""}
+    </div>
+  `;
+}
+
+function renderReportPhotoSelector(job) {
+  const names = job.photos || [];
+  const selected = new Set(job.reportPhotoNames || []);
+  if (!names.length) {
+    return `<p class="muted">현장정보 또는 기본검사 상단의 사진촬영으로 사진을 먼저 저장하세요.</p>`;
+  }
+  return `
+    <div class="report-photo-selector">
+      ${names.map((name) => {
+        const image = (job.photoFiles || []).find((item) => item.name === name);
+        const checked = selected.has(name);
+        return `
+          <label>
+            <input type="checkbox" data-report-photo-name="${escapeAttr(name)}" ${checked ? "checked" : ""} />
+            ${image?.dataUrl ? `<img src="${escapeAttr(image.dataUrl)}" alt="${escapeAttr(name)}" />` : `<b>파일</b>`}
+            <span>${escapeHtml(name)}</span>
+          </label>
+        `;
+      }).join("")}
+    </div>
+    <button class="btn field-photo-capture report-photo-upload-btn" data-action="apply-report-photos" type="button">사진업로드</button>
+  `;
+}
+
+function renderReportPhotoPicker(job) {
+  const names = job.photos || [];
+  return `
+    <div class="photo-picker-backdrop">
+      <div class="photo-picker-panel">
+        <div class="section-head compact">
+          <div>
+            <h2>소견서 사진 가져오기</h2>
+            <p class="muted">현장 사진을 체크하고 완료를 누르면 소견서 첨부사진에 반영됩니다.</p>
+          </div>
+          <button class="btn warn" data-action="close-report-photo-picker" type="button">닫기</button>
+        </div>
+        ${names.length ? renderReportPhotoSelector(job) : `<p class="muted">현장정보 또는 기본검사에서 사진을 먼저 저장하세요.</p>`}
+      </div>
+    </div>
+  `;
+}
+
+function phoneField(job) {
+  return `
+    <div class="field info-phone">
+      <label for="phone">전화번호</label>
+      <input id="phone" data-job-field="phone" type="tel" value="${escapeAttr(job.phone || "")}" placeholder="010-0000-0000" />
+    </div>
+  `;
+}
+
+function renderDriveMediaPicker() {
+  return "";
+}
+
+function renderGoogleDriveInlineSetup() {
+  const config = googleConfig();
+  if (config.apiKey && config.clientId) return "";
+  return `
+    <div class="drive-setup">
+      <h2>Google Drive 저장 설정</h2>
+      <div class="grid two">
+        <label>Google API Key
+          <input data-google-setting="apiKey" type="text" value="${escapeHtml(config.apiKey || "")}" placeholder="API 키를 붙여넣기" />
+        </label>
+        <label>OAuth Client ID
+          <input data-google-setting="clientId" type="text" value="${escapeHtml(config.clientId || "")}" placeholder="OAuth 클라이언트 ID를 붙여넣기" />
+        </label>
+      </div>
+      <div class="toolbar">
+        <button class="btn primary" data-action="save-google-settings">설정 저장 후 구글저장</button>
+      </div>
+      <p class="muted">처음 한 번만 입력하면 이후에는 구글저장 버튼으로 바로 저장합니다.</p>
+    </div>
+  `;
+}
+
+function renderChecklist(title) {
+  const job = currentJob();
+  const groups = [
+    ["plumbingChecks", "기본검사", job.plumbingChecks || []],
+    ["waterproofChecks", "방수문제", job.waterproofChecks || []],
+  ];
+  return `
+    <div class="basic-fixed-top">
+      <div class="workflow-fixed-top">
+        <div class="section-head">
+          <div>
+            <h1>${title}</h1>
+            <p class="muted">중요 항목부터 빠르게 체크하고 결과를 저장합니다.</p>
+          </div>
+          <div class="toolbar checklist-toolbar">
+            <button class="btn warn" data-action="reset-checks" data-type="all">초기화</button>
+            <button class="btn primary" data-action="save">점검목록 저장</button>
+          </div>
+        </div>
+        ${renderFieldSteps("basic")}
+      </div>
+      ${renderFieldCapturePanel(job)}
+    </div>
+    <section class="panel check-list">
+      ${groups.map(([type, groupTitle, checks]) => `
+        <h2 class="check-group-title">${groupTitle}</h2>
+        ${checks.map((check) => renderCheckRow(type, check)).join("")}
+      `).join("")}
+    </section>
+  `;
+}
+
+function renderCheckRow(type, check) {
+  const isPipeLeakCheck = check.id === "hot_water";
+  const pipeLeakTypes = currentJob().pipeLeakTypes || {};
+  return `
+    <div class="check-row">
+      <input type="checkbox" ${check.done ? "checked" : ""} data-check="${check.id}" data-check-type="${type}" data-field="done" />
+      <div>
+        <strong>${escapeHtml(check.title)}</strong>
+        <p class="muted">${escapeHtml(check.guide)}</p>
+        ${isPipeLeakCheck ? `
+          <div class="pipe-leak-type-box">
+            <span>누수 체크박스</span>
+            <label><input type="checkbox" data-pipe-leak-type="cold" ${pipeLeakTypes.cold ? "checked" : ""} /> 냉수</label>
+            <label><input type="checkbox" data-pipe-leak-type="hot" ${pipeLeakTypes.hot ? "checked" : ""} /> 온수</label>
+            <label><input type="checkbox" data-pipe-leak-type="heating" ${pipeLeakTypes.heating ? "checked" : ""} /> 난방</label>
+          </div>
+        ` : ""}
+      </div>
+      <div class="check-result">
+        <select data-check="${check.id}" data-check-type="${type}" data-field="result">
+          ${["대기", "정상", "의심", "누수확인", "재검필요"].map((item) => `<option ${check.result === item ? "selected" : ""}>${item}</option>`).join("")}
+        </select>
+      </div>
+    </div>
+  `;
+}
+
+function renderTracker(job) {
+  const trackerRecording = getLastRecordingForTarget({ kind: "tracker" });
+  const trackerRecordingActive = wavRecorder?.recording && targetKey(recordingTarget) === "tracker";
+  const trackerRecordingPaused = trackerRecordingActive && wavRecorder?.paused;
+  const leakPoints = job.leakAudioPoints || [];
+  const hasLeakCalibration = Boolean(job.leakAudioBaseline || currentPipeProfile(job).calibrated);
+  return `
+    ${renderFieldSteps("tracker")}
+    ${renderFieldCapturePanel(job)}
+    <div class="section-head">
+      <div>
+        <h1>누수추적기</h1>
+        <p class="muted">마이크 입력을 실시간 주파수 그래프로 표시하고 필요한 소리를 녹음합니다.</p>
+      </div>
+      <div class="toolbar tracker-toolbar">
+        <div class="tracker-control-row">
+          <button class="btn blue pipe-material-btn" data-action="cycle-pipe-material" data-direction="1">
+            <span>배관 종류</span><strong>${escapeHtml(currentPipeProfile(job).label)}</strong>
+          </button>
+          <button class="btn primary tracker-analysis-btn" data-action="start-spectrum">분석시작</button>
+          <span class="audio-input-status ${audioInputStatusClass()}">${escapeHtml(trackerAnalysisStatusText())}</span>
+          <button class="btn warn tracker-stop-analysis-btn" data-action="stop-spectrum">분석정지</button>
+        </div>
+        <div class="tracker-recording-actions record-actions">
+          <button class="btn ghost record-btn tracker-record-btn ${trackerRecordingActive ? "recording" : ""} ${trackerRecording ? "saved" : ""}" data-action="record-tracker">
+            <span class="voice-icon ${trackerRecordingActive && !trackerRecordingPaused ? "blue pulse" : trackerRecording ? "green" : "red"}"></span>${trackerRecordingActive ? "녹음중" : trackerRecording ? "저장완료" : "주파수녹음"}
+          </button>
+          <button class="btn ghost pause-btn" data-action="pause-recording" data-target-kind="tracker" ${trackerRecordingActive ? "" : "disabled"}>${trackerRecordingPaused ? "계속" : "일시정지"}</button>
+          <button class="btn ghost listen-btn" data-action="play-recording" data-recording-id="${escapeAttr(trackerRecording?.id || "")}" ${trackerRecording ? "" : "disabled"}>재생</button>
+          <button class="btn ghost pause-btn" data-action="stop-tracker-recording" ${trackerRecordingActive ? "" : "disabled"}>정지</button>
+          <button class="btn ghost clear-btn" data-action="delete-recording" data-recording-id="${escapeAttr(trackerRecording?.id || "")}" ${trackerRecording ? "" : "disabled"}>삭제</button>
+        </div>
+      </div>
+    </div>
+    <section class="audio-panel">
+      <div class="audio-panel-head">
+        <h2>실시간 주파수 그래프</h2>
+        <span class="status-pill peak-status" id="peakStatus">최고 주파수 대역 대기</span>
+      </div>
+      <div class="spectrum-wrap">
+        <canvas id="spectrum" width="1100" height="360"></canvas>
+        <div class="leak-score-overlay">
+          <div class="leak-score-circle" id="leakScoreCircle" style="--score-deg:0deg"><span id="leakScoreValue">0</span><small>%</small></div>
+          <span class="leak-risk-badge risk-green" id="leakRiskBadge">정상 범위</span>
+        </div>
+      </div>
+      <p class="muted" style="color:#9fc2c8;margin-top:10px">높은 피크 대역은 주황색으로 표시됩니다. 녹음은 WAV 파일로 저장됩니다.</p>
+      <p class="muted leak-audio-detail" id="leakAudioDetail">RMS 입력세기 대기 · 반복 피크 대기</p>
+    </section>
+    <section class="panel leak-ai-panel">
+      <div class="leak-ai-head">
+        <div>
+          <h2>AI 청음 누수 분석</h2>
+          <p class="muted">청음기 출력이나 마이크 입력을 실시간 주파수 그래프로 분석합니다.</p>
+        </div>
+        <div class="leak-baseline-actions">
+          <button class="btn baseline-save" data-action="save-leak-baseline">정상기준소리저장</button>
+          <button class="btn ghost" data-action="save-graph-snapshot">그래프 저장</button>
+          <button class="btn ghost" data-action="calibrate-pipe-profile">배관 기준 보정</button>
+          <button class="btn ghost clear-btn" data-action="clear-leak-baseline" ${hasLeakCalibration ? "" : "disabled"}>기준 초기화</button>
+        </div>
+      </div>
+      <div class="leak-baseline-status ${job.leakAudioBaseline ? "active" : ""}">
+        ${job.leakAudioBaseline
+          ? `정상 기준 적용 중 · ${escapeHtml(job.leakAudioBaseline.pipeLabel || "배관")} · ${escapeHtml(new Date(job.leakAudioBaseline.createdAt || Date.now()).toLocaleString())}`
+          : "정상 기준 없음 · 조용한 상태에서 입력 분석 후 정상기준소리저장을 누르세요."}
+        ${(job.leakGraphSnapshots || []).length ? ` · 그래프 ${(job.leakGraphSnapshots || []).length}장 저장됨` : ""}
+        ${currentPipeProfile(job).calibrated ? " · 배관 보정 적용" : ""}
+      </div>
+      <div class="leak-save-row">
+        <button class="btn primary" data-action="save-leak-point">현재 지점 저장</button>
+      </div>
+      <div class="leak-point-list">
+        <h3>저장된 측정 지점</h3>
+        ${leakPoints.length ? leakPoints.map((point) => `
+          <div class="leak-point-item ${escapeAttr(point.color || "green")}">
+            <div>
+              <strong>${escapeHtml(point.name || "측정지점")}</strong>
+              <span>${escapeHtml(new Date(point.createdAt || Date.now()).toLocaleString())}</span>
+            </div>
+            <b>${Number(point.score || 0)}% · ${escapeHtml(point.risk || "정상 범위")}</b>
+            <button class="btn ghost" data-action="delete-leak-point" data-id="${escapeAttr(point.id)}">삭제</button>
+          </div>
+        `).join("") : `<p class="muted">아직 저장된 측정 지점이 없습니다.</p>`}
+      </div>
+    </section>
+    ${renderTrackerV2Workbench(job, leakPoints)}
+  `;
+}
+
+function renderTrackerV2Workbench(job, leakPoints = []) {
+  const comparePoints = job.leakComparePoints || {};
+  const compareSlots = ["1", "2", "3", "4"];
+  const compareList = compareSlots.map((label) => comparePoints[label]).filter(Boolean);
+  const highestCompareScore = Math.max(0, ...compareList.map((point) => Number(point.score || 0)));
+  const somersPreview = (job.somersPhotoFiles || [])[0];
+  const somersHasPhoto = Boolean((job.somersPhotoFiles || []).some((photo) => photo?.dataUrl));
+  const somersRecording = getLastRecordingForTarget({ kind: "somersSound" });
+  return `
+    <section class="tracker-v2-workbench">
+      <article class="v2-screen compare-screen compact">
+        <div>
+          <span class="v2-kicker">SCREEN 01</span>
+          <h3>다지점 비교</h3>
+          <p>1/2/3/4 지점의 점수와 위험도를 비교합니다.</p>
+        </div>
+        <div class="v2-compare-table">
+          ${compareSlots.map((label) => {
+            const point = comparePoints[label];
+            const isHighest = point && Number(point.score || 0) === highestCompareScore && highestCompareScore > 0;
+            return `
+              <div class="${point ? `filled ${escapeAttr(point.color || "green")}` : ""} ${isHighest ? "best" : ""}">
+                <strong>${label}</strong>
+                <span>${escapeHtml(point?.name || "측정 대기")}</span>
+                <b>${point ? `${Number(point.score || 0)}%` : "- %"}</b>
+                <small>${point?.metrics?.peakHz ? `${Number(point.metrics.peakHz).toLocaleString()} Hz` : "피크 대기"}</small>
+                ${isHighest ? `<em>최고 의심</em>` : ""}
+              </div>
+            `;
+          }).join("")}
+        </div>
+      </article>
+      <article class="v2-screen somers-screen">
+        <div>
+          <span class="v2-kicker">SCREEN 02</span>
+          <h3>소머즈 사진 / 소리 자료 저장</h3>
+          <p>소머즈가 표시한 의심 지점의 사진과 현장 소리 원본을 저장해 추후 AI 학습 자료로 남깁니다.</p>
+        </div>
+        <div class="v2-file-analysis-grid">
+          <label class="v2-capture-box">
+            <span>소머즈 사진 파일 가져오기</span>
+            <input data-file-type="somersPhotos" type="file" accept="image/*" multiple />
+          </label>
+          <div class="v2-save-line">
+            <button class="btn primary somers-action" data-action="save-somers-photo" ${somersHasPhoto ? "" : "disabled"}>사진 저장</button>
+          </div>
+          <label class="v2-capture-box">
+            <span>현장 소리 파일 가져오기</span>
+            <input data-import-recording data-target-kind="somersSound" type="file" accept="audio/*" />
+          </label>
+          <div class="v2-save-line">
+            <button class="btn primary somers-action" data-action="save-somers-sound" ${somersRecording ? "" : "disabled"}>소리 저장</button>
+          </div>
+        </div>
+        <div class="v2-capture-status">
+          <span>촬영 자료 <b>${(job.somersPhotos || []).length ? `${job.somersPhotos.length}장 저장됨` : "대기"}</b></span>
+          <span>소리 자료 <b>${somersRecording ? "저장됨" : "대기"}</b></span>
+          ${somersPreview?.dataUrl ? `<img src="${escapeAttr(somersPreview.dataUrl)}" alt="소머즈 촬영 미리보기" />` : ""}
+        </div>
+        <div class="v2-ocr-grid">
+          <label>누수 레벨<input data-job-field="somersLeakLevel" value="${escapeAttr(job.somersLeakLevel || "")}" placeholder="예: 78" /></label>
+          <label>주파수<input data-job-field="somersFrequency" value="${escapeAttr(job.somersFrequency || "")}" placeholder="예: 620 Hz" /></label>
+          <label>주황 표시<input data-job-field="somersOrangeMark" value="${escapeAttr(job.somersOrangeMark || "")}" placeholder="예: 강함 / 우측" /></label>
+          <label>의심 위치<input data-job-field="somersSuspectLocation" value="${escapeAttr(job.somersSuspectLocation || "")}" placeholder="예: 욕실 앞 배관" /></label>
+          <label>촬영 메모<textarea data-job-field="somersCaptureMemo" placeholder="촬영 각도, 화면 밝기, 소머즈 그래프 특징을 기록합니다.">${escapeHtml(job.somersCaptureMemo || "")}</textarea></label>
+        </div>
+      </article>
+      <article class="v2-screen save-screen">
+        <div>
+          <span class="v2-kicker">SCREEN 03</span>
+          <h3>결과 저장 화면</h3>
+          <p>대성 청음, 소머즈 OCR, 다지점 비교, 실제 굴착 결과를 한 작업 기록에 묶어 장기 학습 데이터로 남깁니다.</p>
+        </div>
+        <div class="v2-save-checks">
+          <span>청음 점수 <b>${leakPoints.length ? "저장됨" : "대기"}</b></span>
+          <span>소머즈 OCR <b>${job.somersLeakLevel || job.somersFrequency || job.somersSuspectLocation ? "기록됨" : "대기"}</b></span>
+          <label>최종 누수 위치<input data-job-field="finalLeakLocation" value="${escapeAttr(job.finalLeakLocation || "")}" placeholder="예: 주방 싱크대 하부 온수관" /></label>
+          <label>실제 굴착 결과<textarea data-job-field="excavationResult" placeholder="굴착 위치, 실제 파손 지점, 보수 결과를 기록합니다.">${escapeHtml(job.excavationResult || "")}</textarea></label>
+          <span>Google Drive <b>연동 가능</b></span>
+        </div>
+        <button class="btn primary" data-action="google-drive-save">결과 Google 저장</button>
+      </article>
+    </section>
+  `;
+}
+
+function renderReport(job) {
+  const reportDraft = job.report ? reportContentForDocument(job.report) : "";
+  const previewScale = documentPreviewScale(job, "report");
+  const previewOffsetY = documentPreviewOffsetY(job, "report");
+  return `
+    <div class="workflow-fixed-top">
+      <div class="section-head">
+        <div>
+          <h1>AI 소견서</h1>
+          <p class="muted">오늘 저장된 현장 데이터와 점검결과를 조합해 누수상황·문제점 소견서 초안을 만듭니다.</p>
+        </div>
+        <div class="toolbar">
+          <button class="btn primary" data-action="generate-report">소견서 만들기</button>
+          <button class="btn primary" data-action="open-chatgpt-report">AI 실행</button>
+          <span class="toolbar-break"></span>
+          <button class="btn primary" data-action="clear-report">새로만들기</button>
+          <button class="btn primary" data-action="download-report-pdf">PDF 다운로드</button>
+        </div>
+      </div>
+      ${renderFieldSteps("report")}
+    </div>
+    <div class="grid two">
+      <section class="panel grid">
+        <h2>사진 가져오기</h2>
+        <button class="btn field-photo-capture report-photo-import-btn" data-action="open-report-photo-picker" type="button">사진 가져오기</button>
+        <p class="muted">첨부 선택: ${(job.reportPhotoNames || []).length}장</p>
+      </section>
+      <section class="panel grid">
+        ${textarea("report", "소견서 내용", reportDraft, "소견서 자동생성 후 수정할 수 있습니다.")}
+        <div class="toolbar">
+          <button class="btn primary" data-action="save">수정 저장</button>
+          <button class="btn warn" data-action="delete-report">삭제</button>
+        </div>
+      </section>
+    </div>
+    <section class="panel pdf-preview-panel document-preview-panel report-preview-panel">
+      <div class="section-head compact">
+        <div class="document-preview-actions">
+          <button class="btn primary" data-action="save">저장</button>
+          <button class="btn primary" data-action="google-drive-save">구글저장</button>
+          <button class="btn field-photo-capture" data-action="download-report-pdf">PDF출력</button>
+          <button class="btn document-load-btn" data-action="toggle-quick-list">불러오기</button>
+        </div>
+      </div>
+      <div class="document-preview-control">
+        <div class="document-preview-value" data-document-scale-dial data-preview-type="report">
+          <span>${previewScale}%</span>
+        </div>
+        <label class="document-preview-slider">
+          <input type="range" min="45" max="130" step="1" value="${previewScale}" data-document-preview-scale data-preview-type="report" />
+        </label>
+        <div class="document-preview-value" data-document-offset-dial data-preview-type="report">
+          <span>${previewOffsetY}px</span>
+        </div>
+        <label class="document-preview-slider">
+          <input type="range" min="-160" max="160" step="1" value="${previewOffsetY}" data-document-preview-offset data-preview-type="report" />
+        </label>
+      </div>
+      <div class="a4-preview-shell">
+        ${renderDocumentPreviewPages("report", job)}
+      </div>
+    </section>
+  `;
+}
+
+function renderBlog(job) {
+  return `
+    <div class="workflow-fixed-top">
+      <div class="section-head">
+        <div>
+          <h1>블로그 글 작성</h1>
+          <p class="muted">현장 자료를 정리해 AI에 붙여넣을 프롬프트를 만듭니다.</p>
+        </div>
+        <div class="toolbar blog-main-toolbar">
+          <button class="btn primary" data-action="generate-blog">관련자료 가져오기</button>
+          <button class="btn primary" data-action="copy-blog-prompt">프롬프트 복사</button>
+          <button class="btn primary" data-action="open-chatgpt">AI 실행</button>
+          <button class="btn primary" data-action="open-blog-editor">원고 수정 및 새 원고쓰기</button>
+          <button class="btn primary" data-action="print-blog">PDF 인쇄</button>
+          <button class="btn warn" data-action="clear-blog-data">자료 삭제</button>
+        </div>
+      </div>
+      ${renderFieldSteps("blog")}
+    </div>
+    ${renderCustomBlogPanel(job)}
+    <section class="panel blog-preview-panel">
+      <div class="section-head compact">
+        <div>
+          <h2>프롬프트/원고 미리보기</h2>
+          <p class="muted">AI에서 작성한 글은 원고 수정 및 새 원고쓰기 화면에 붙여넣고 저장합니다.</p>
+        </div>
+        <button class="btn primary" data-action="save">앱에 저장</button>
+      </div>
+      <div class="preview blog-preview">${formatBlogContent(job.blog || "관련자료 가져오기를 누르면 프롬프트가 표시됩니다.")}</div>
+    </section>
+  `;
+}
+
+function renderCustomBlogPanel(job) {
+  return `
+    <details class="panel custom-blog-panel" ${job.blogCategory || job.blogKeyword ? "open" : ""}>
+      <summary class="custom-blog-summary">새 블로그</summary>
+      <div class="section-head compact">
+        <div>
+          <h2>새 블로그 주제 지정</h2>
+          <p class="muted">원하는 카테고리와 메인키워드로 AI용 프롬프트를 만듭니다.</p>
+        </div>
+      </div>
+      <div class="custom-blog-grid">
+        ${blogKeywordField("blogCategory", "카테고리:", job.blogCategory || "", "예) 건강, 생활정보, 누수탐지")}
+        ${blogKeywordField("blogKeyword", "메인키워드:", job.blogKeyword || "", "예) 누수진단")}
+      </div>
+      <div class="toolbar custom-blog-actions">
+        <button class="btn primary" data-action="copy-custom-blog-prompt">프롬프트 복사</button>
+        <button class="btn ghost" data-action="open-chatgpt-custom">AI 실행</button>
+      </div>
+    </details>
+  `;
+}
+
+function renderBlogEditor(job) {
+  return `
+    <div class="blog-editor-screen">
+      <header class="blog-editor-bar">
+        <div class="toolbar">
+          <button class="btn primary" data-action="save-blog-editor">저장</button>
+          <button class="btn ghost" data-action="print-blog">PDF 인쇄</button>
+          <button class="btn ghost" data-action="copy-blog-editor">내용복사</button>
+          <button class="btn primary" data-action="open-blog-photo-picker">사진 가져오기</button>
+          <button class="btn warn" data-action="clear-blog-editor">화면 삭제</button>
+          <button class="btn blog-link naver" data-action="open-external-link" data-url="https://blog.naver.com/cksomj">N</button>
+          <button class="btn blog-link tistory" data-action="open-external-link" data-url="https://cksomj.tistory.com/manage">T</button>
+          <button class="btn blog-link daangn" data-action="open-external-link" data-url="https://bizprofile.daangn.com/biz_accounts/83300/manager/posts/new/?entry=business_profile.home.info_manage_ba_info">D</button>
+          <button class="btn warn" data-action="close-blog-editor">나오기</button>
+        </div>
+      </header>
+      <div class="blog-editor-tools">
+        <button class="btn ghost" data-format="undo">↶</button>
+        <button class="btn ghost" data-format="redo">↷</button>
+        <button class="btn ghost" data-format="bold"><b>B</b></button>
+        <button class="btn ghost" data-format="italic"><i>I</i></button>
+        <button class="btn ghost" data-format="underline"><u>U</u></button>
+        <button class="btn ghost" data-format-block="h2">제목</button>
+        <button class="btn ghost" data-format-block="p">본문</button>
+        <button class="btn ghost" data-format="justifyLeft">왼쪽</button>
+        <button class="btn ghost" data-format="justifyCenter">가운데</button>
+        <button class="btn ghost" data-format="justifyRight">오른쪽</button>
+        <button class="btn ghost" data-format="insertUnorderedList">목록</button>
+        <button class="btn ghost" data-format="insertOrderedList">번호</button>
+        <button class="btn ghost" data-action="toggle-emoji-picker">이모티콘</button>
+      </div>
+      <div class="emoji-picker" hidden>
+        ${blogEmojis.map((emoji) => `<button class="emoji-btn" data-emoji="${emoji}" type="button">${emoji}</button>`).join("")}
+      </div>
+      <main id="blogEditor" class="blog-editor-page" contenteditable="true">${formatBlogEditorContent(job.blog || "")}</main>
+    </div>
+  `;
+}
+
+function renderBlogPhotoPicker(job) {
+  const names = job.photos || [];
+  const selected = new Set(state.blogEditorPhotoNames || []);
+  return `
+    <div class="photo-picker-backdrop">
+      <div class="photo-picker-panel">
+        <div class="section-head compact">
+          <div>
+            <h2>사진 가져오기</h2>
+            <p class="muted">현장정보에서 촬영한 사진을 선택해 원고 중간에 삽입합니다.</p>
+          </div>
+          <button class="btn warn" data-action="close-blog-photo-picker" type="button">닫기</button>
+        </div>
+        ${names.length ? `
+          <div class="report-photo-selector blog-photo-selector">
+            ${names.map((name) => {
+              const image = (job.photoFiles || []).find((item) => item.name === name);
+              return `
+                <label>
+                  <input type="checkbox" data-blog-photo-name="${escapeAttr(name)}" ${selected.has(name) ? "checked" : ""} />
+                  ${image?.dataUrl ? `<img src="${escapeAttr(image.dataUrl)}" alt="${escapeAttr(name)}" />` : `<b>파일</b>`}
+                  <span>${escapeHtml(name)}</span>
+                </label>
+              `;
+            }).join("")}
+          </div>
+          <button class="btn field-photo-capture report-photo-upload-btn" data-action="insert-blog-photos" type="button">완료</button>
+        ` : `<p class="muted">가져올 현장 사진이 없습니다. 현장정보에서 사진을 먼저 촬영하세요.</p>`}
+      </div>
+    </div>
+  `;
+}
+
+function renderEstimate(job) {
+  const items = job.estimateItems || [];
+  const printItems = estimatePrintableItems(job);
+  const totals = estimateTotals(job);
+  const estimateNo = job.estimateNo || `WL-${(job.date || "").replaceAll("-", "") || "00000000"}`;
+  const docTitle = job.estimateDocTitle || "견 적 서";
+  const labels = estimateDocumentLabels(job);
+  const vatMode = estimateVatMode(job);
+  const previewScale = estimatePreviewScale(job);
+  const previewOffsetY = estimatePreviewOffsetY(job);
+  return `
+    <div class="section-head">
+      <div>
+        <h1>견적서 작성</h1>
+        <p class="muted">날짜와 주소는 현장 기본정보에서 자동 입력됩니다. 내용과 비용은 직접 입력합니다.</p>
+      </div>
+      <div class="toolbar">
+        <button class="btn primary" data-action="toggle-estimate-title">제목 바꾸기</button>
+        <button class="btn primary" data-action="toggle-estimate-vat">${vatMode === "inclusive" ? "부가세포함" : "부가세별도"}</button>
+        <button class="btn primary" data-action="add-estimate">품명 추가</button>
+        <button class="btn primary" data-action="save">저장 및 수정</button>
+        <span class="toolbar-break"></span>
+        <button class="btn field-photo-capture" data-action="download-estimate-pdf">PDF 다운로드</button>
+        <span class="toolbar-fill"></span>
+        <button class="btn warn" data-action="delete-estimate">삭제</button>
+      </div>
+    </div>
+    ${renderFieldSteps("estimate")}
+    <section class="print-area estimate-form">
+      <h2 class="estimate-title">${escapeHtml(docTitle)}</h2>
+      <div class="estimate-meta">
+        ${field("estimateNo", labels.noLabel, "text", estimateNo)}
+        ${field("date", labels.dateLabel, "date", job.date)}
+        ${field("estimateValidUntil", "유효기간", "date", job.estimateValidUntil || "")}
+      </div>
+      <div class="estimate-party-edit">
+        <div class="estimate-party-card">
+          <h3>수신</h3>
+          <div class="estimate-party-grid">
+            <label>고객명${inlineField("customerName", job.customerName || "", "고객명")}</label>
+            <label>주소${inlineField("address", job.address || "", "주소")}</label>
+            <label>전화번호${inlineField("phone", job.phone || "", "전화번호")}</label>
+            <label>공사명${inlineField("workSummary", job.workSummary || "누수 진단 및 보수 공사", "공사명")}</label>
+          </div>
+        </div>
+        <div class="estimate-party-card">
+          <h3>공급자</h3>
+          <div class="estimate-party-grid">
+            <label>상호${inlineField("vendorName", job.vendorName || PROVIDER.name, "상호")}</label>
+            <label>사업자번호${inlineField("vendorBizNo", job.vendorBizNo || PROVIDER.bizNo, "000-00-00000")}</label>
+            <label>대표/담당${inlineField("vendorOwner", job.vendorOwner || PROVIDER.owner, "담당자")}</label>
+            <label>주소${inlineField("vendorAddress", job.vendorAddress || PROVIDER.address, "공급자 주소")}</label>
+          </div>
+        </div>
+      </div>
+      <table class="table estimate-info estimate-party-print print-only">
+        <tbody>
+          <tr><th colspan="2">수신</th><th colspan="2">공급자</th></tr>
+          <tr>
+            <th>고객명</th><td>${inlineField("customerName", job.customerName || "", "고객명")}</td>
+            <th>상호</th><td>${inlineField("vendorName", job.vendorName || PROVIDER.name, "상호")}</td>
+          </tr>
+          <tr>
+            <th>주소</th><td>${inlineField("address", job.address || "", "주소")}</td>
+            <th>사업자번호</th><td>${inlineField("vendorBizNo", job.vendorBizNo || PROVIDER.bizNo, "000-00-00000")}</td>
+          </tr>
+          <tr>
+            <th>전화번호</th><td>${inlineField("phone", job.phone || "", "전화번호")}</td>
+            <th>대표/담당</th><td>${inlineField("vendorOwner", job.vendorOwner || PROVIDER.owner, "담당자")}</td>
+          </tr>
+          <tr>
+            <th>공사명</th><td>${inlineField("workSummary", job.workSummary || "누수 진단 및 보수 공사", "공사명")}</td>
+            <th>주소</th><td>${inlineField("vendorAddress", job.vendorAddress || PROVIDER.address, "공급자 주소")}</td>
+          </tr>
+        </tbody>
+      </table>
+      <div class="estimate-edit-list">
+        ${items.map((item, index) => `
+          <div class="estimate-edit-card">
+            <div class="estimate-edit-card-head">
+              <strong>품명 ${index + 1}</strong>
+              <div class="estimate-card-actions no-print">
+                <button class="btn primary" data-action="add-estimate-after" data-index="${index}">품명추가</button>
+                <button class="btn warn" data-action="remove-estimate" data-index="${index}">삭제</button>
+              </div>
+            </div>
+            <label class="estimate-edit-field estimate-edit-name">
+              <span>품명</span>
+              <textarea rows="1" class="estimate-item-name" data-estimate="${index}" data-field="name" placeholder="예: 누수 진단 및 온수 배관 보수">${escapeHtml([item.name, item.spec].filter(Boolean).join(" / "))}</textarea>
+            </label>
+            <div class="estimate-edit-row">
+              <label class="estimate-edit-field">
+                <span>수량</span>
+                <input data-estimate="${index}" data-field="qty" type="number" value="${escapeAttr(item.qty || 1)}" placeholder="1" />
+              </label>
+              <label class="estimate-edit-field">
+                <span>공급가액</span>
+                <input data-estimate="${index}" data-field="unitPrice" type="number" value="${escapeAttr(item.unitPrice || item.cost || "")}" placeholder="0" />
+              </label>
+            </div>
+          </div>
+        `).join("")}
+        <div class="estimate-total-box">
+          <div><span>공급가액</span><strong data-estimate-total="supplyTotal">${totals.supplyTotal.toLocaleString()}원</strong></div>
+          <div><span>부가세</span><strong data-estimate-total="tax">${totals.tax.toLocaleString()}원</strong></div>
+          <div class="estimate-grand-total"><span>합계금액</span><strong data-estimate-total="total">${totals.total.toLocaleString()}원</strong></div>
+        </div>
+      </div>
+      <table class="table estimate-print-items print-only" style="margin-top:16px">
+        <thead><tr><th>품명</th><th style="width:90px">수량</th><th style="width:150px">공급가액</th></tr></thead>
+        <tbody>
+          ${printItems.map((item) => `
+            <tr>
+              <td>${escapeHtml([item.name, item.spec].filter(Boolean).join(" / "))}</td>
+              <td>${escapeHtml(item.qty || 1)}</td>
+              <td>${estimateLineTotal(item).toLocaleString()}원</td>
+            </tr>
+          `).join("")}
+          <tr><th colspan="2">공급가액</th><td><strong>${totals.supplyTotal.toLocaleString()}원</strong></td></tr>
+          <tr><th colspan="2">부가세</th><td><strong>${totals.tax.toLocaleString()}원</strong></td></tr>
+          <tr class="estimate-total"><th colspan="2">합계금액</th><td><strong>${totals.total.toLocaleString()}원</strong></td></tr>
+        </tbody>
+      </table>
+      <div class="estimate-note">
+        ${textarea("estimateNote", "비고", estimateNoteText(job), "비고")}
+      </div>
+      ${renderGeneralWorkDocumentBlock(job)}
+      <div class="estimate-sign">공급자 확인: ${escapeHtml(PROVIDER.owner)} ${stampSealImage("stamp-seal")}</div>
+    </section>
+    <section class="panel pdf-preview-panel estimate-preview-panel document-preview-panel">
+      <div class="section-head compact">
+        <div class="estimate-preview-actions document-preview-actions">
+          <button class="btn primary" data-action="save">저장</button>
+          <button class="btn primary" data-action="google-drive-save">구글저장</button>
+          <button class="btn field-photo-capture" data-action="download-estimate-pdf">PDF출력</button>
+          <button class="btn estimate-load-btn document-load-btn" data-action="toggle-quick-list">불러오기</button>
+        </div>
+      </div>
+      <div class="estimate-preview-control document-preview-control">
+        <div class="estimate-scale-dial document-preview-value" data-estimate-scale-dial style="--dial-rotation:${(previewScale - 100) * 2.4}deg">
+          <span>${previewScale}%</span>
+        </div>
+        <label class="estimate-scale-slider document-preview-slider">
+          <input type="range" min="45" max="130" step="1" value="${previewScale}" data-estimate-preview-scale />
+        </label>
+        <div class="estimate-scale-dial document-preview-value" data-estimate-offset-dial>
+          <span>${previewOffsetY}px</span>
+        </div>
+        <label class="estimate-scale-slider document-preview-slider">
+          <input type="range" min="-160" max="160" step="1" value="${previewOffsetY}" data-estimate-preview-offset />
+        </label>
+      </div>
+      <div class="a4-preview-shell">
+        ${renderDocumentPreviewPages("estimate", job)}
+      </div>
+    </section>
+  `;
+}
+
+function renderQuickJobList() {
+  const query = state.quickListQuery || "";
+  const allJobs = visibleJobs().sort((a, b) => `${b.date || ""}${b.createdAt || ""}`.localeCompare(`${a.date || ""}${a.createdAt || ""}`));
+  const jobs = allJobs
+    .filter((job) => matchesQuickJobSearch(job, query))
+    .sort((a, b) => `${b.date || ""}${b.createdAt || ""}`.localeCompare(`${a.date || ""}${a.createdAt || ""}`));
+  const month = state.quickListMonth || new Date().toISOString().slice(0, 7);
+  const selectedDate = state.quickListSelectedDate || "";
+  const selectedJobs = selectedDate ? allJobs.filter((job) => job.date === selectedDate) : [];
+  return `
+    <div class="quick-list-backdrop">
+      <section class="quick-list-box">
+        <div class="quick-list-head">
+          <div>
+            <h2>작업 리스트</h2>
+            <p class="muted">Google Drive에서 불러온 작업을 달력과 검색으로 확인합니다.</p>
+          </div>
+          <div class="quick-list-actions">
+            <button class="btn primary" data-action="import-google-jobs">구글에서 불러오기</button>
+            <button class="btn ghost" data-action="close-quick-list">닫기</button>
+          </div>
+        </div>
+        <div class="quick-list-search">
+          <input data-quick-list-search value="${escapeAttr(query)}" placeholder="주소, 아파트, 누수, 방수, 창틀방수, 옥상방수 등 검색" />
+          <button class="btn primary" data-action="apply-quick-list-search">검색</button>
+          <button class="btn ghost" data-action="clear-quick-list-search" ${query ? "" : "disabled"}>검색 지우기</button>
+          <span class="muted">검색 결과 ${jobs.length}건</span>
+        </div>
+        ${query ? renderQuickSearchResults(jobs) : renderQuickCalendar(allJobs, month, selectedDate, selectedJobs)}
+      </section>
+    </div>
+  `;
+}
+
+function renderQuickSearchResults(jobs) {
+  return `
+    <div class="quick-result-panel">
+      <h3>검색 결과</h3>
+      ${renderQuickJobItems(jobs)}
+    </div>
+  `;
+}
+
+function renderQuickCalendar(jobs, month, selectedDate, selectedJobs) {
+  const counts = jobs.reduce((map, job) => {
+    if (!job.date || !job.date.startsWith(month)) return map;
+    map[job.date] = (map[job.date] || 0) + 1;
+    return map;
+  }, {});
+  const [year, monthNumber] = month.split("-").map(Number);
+  const first = new Date(year, monthNumber - 1, 1);
+  const lastDate = new Date(year, monthNumber, 0).getDate();
+  const leading = first.getDay();
+  const cells = [];
+  for (let i = 0; i < leading; i += 1) cells.push(null);
+  for (let day = 1; day <= lastDate; day += 1) cells.push(`${month}-${String(day).padStart(2, "0")}`);
+  while (cells.length % 7) cells.push(null);
+  return `
+    <div class="quick-calendar-panel">
+      <div class="quick-calendar-head">
+        <button class="btn ghost" data-action="set-quick-list-month" data-month="${escapeAttr(shiftMonth(month, -1))}">이전달</button>
+        <h3>${escapeHtml(month)}</h3>
+        <button class="btn ghost" data-action="set-quick-list-month" data-month="${escapeAttr(shiftMonth(month, 1))}">다음달</button>
+      </div>
+      <div class="quick-calendar-weekdays">
+        ${["일", "월", "화", "수", "목", "금", "토"].map((day) => `<b>${day}</b>`).join("")}
+      </div>
+      <div class="quick-calendar-grid">
+        ${cells.map((date) => {
+          if (!date) return `<div class="quick-calendar-day empty"></div>`;
+          const count = counts[date] || 0;
+          return `
+            <button class="quick-calendar-day ${count ? "has-work" : ""} ${date === selectedDate ? "selected" : ""}" data-action="select-quick-date" data-date="${escapeAttr(date)}" ${count ? "" : "disabled"}>
+              <span>${Number(date.slice(-2))}</span>
+              ${count ? `<strong>${count}건</strong>` : ""}
+            </button>
+          `;
+        }).join("")}
+      </div>
+      <div class="quick-date-results">
+        <h3>${selectedDate ? `${escapeHtml(selectedDate)} 작업` : "날짜의 건수를 누르면 리스트가 열립니다"}</h3>
+        ${selectedDate ? renderQuickJobItems(selectedJobs) : `<p class="muted">작업한 날짜에는 건수가 표시됩니다.</p>`}
+      </div>
+    </div>
+  `;
+}
+
+function renderQuickJobItems(jobs) {
+  return jobs.length ? `
+    <div class="quick-list-items">
+      ${jobs.map((job) => `
+        <div class="quick-list-item ${job.id === state.currentJobId ? "active" : ""}">
+          <button class="quick-list-main" data-action="select-job" data-id="${escapeAttr(job.id)}">
+            <strong>${escapeHtml(job.address || "주소 미입력")}</strong>
+            <span>${escapeHtml(job.date || "-")} · ${escapeHtml(job.customerName || job.phone || "이름/전화 없음")} · 견적 ${estimatePrintableItems(job).length}개</span>
+          </button>
+          <div class="quick-list-item-actions">
+            <button class="btn primary" data-action="edit-quick-job" data-id="${escapeAttr(job.id)}">적용</button>
+            <button class="btn warn" data-action="delete-quick-job" data-id="${escapeAttr(job.id)}">삭제</button>
+          </div>
+        </div>
+      `).join("")}
+    </div>
+  ` : `<p class="muted">해당 작업이 없습니다.</p>`;
+}
+
+function visibleJobs() {
+  const deleted = new Set(state.deletedJobIds || []);
+  return state.jobs.filter((job) => job?.id && !deleted.has(job.id));
+}
+
+function shiftMonth(month, delta) {
+  const [year, monthNumber] = month.split("-").map(Number);
+  const date = new Date(year, monthNumber - 1 + delta, 1);
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
+}
+
+function extractApartmentGroup(address = "") {
+  const text = String(address || "").trim();
+  if (!text) return "아파트명 없음";
+  const match = text.match(/[가-힣A-Za-z0-9·\-\s]+?(?:아파트|APT|apt|오피스텔|빌라|맨션|주공|자이|래미안|푸르지오|힐스테이트|더샵|롯데캐슬|아이파크)/);
+  return match ? match[0].trim() : "아파트명 없음";
+}
+
+function matchesQuickJobSearch(job, query = "") {
+  const normalizedQuery = normalizeSearchText(query);
+  if (!normalizedQuery) return true;
+  const searchText = buildQuickJobSearchText(job);
+  const addressText = normalizeLooseSearchText([job.address, extractApartmentGroup(job.address)].join(" "));
+  return expandSearchTerms(normalizedQuery).every((group) => group.some((term) => {
+    const normalizedTerm = normalizeSearchText(term);
+    const looseTerm = normalizeLooseSearchText(term);
+    return searchText.includes(normalizedTerm) || (looseTerm.length >= 2 && addressText.includes(looseTerm));
+  }));
+}
+
+function normalizeSearchText(value = "") {
+  return String(value).toLowerCase().replace(/\s+/g, " ").trim();
+}
+
+function expandSearchTerms(query) {
+  const rawTerms = normalizeSearchText(query).split(" ").filter(Boolean);
+  return rawTerms.map((term) => {
+    const related = QUICK_SEARCH_RELATED_TERMS.find((group) => group.some((item) => item.includes(term) || term.includes(item)));
+    return related ? [...new Set([term, ...related.map(normalizeSearchText)])] : expandAddressLikeTerm(term);
+  });
+}
+
+function expandAddressLikeTerm(term) {
+  const normalized = normalizeSearchText(term);
+  const loose = normalizeLooseSearchText(term);
+  const parts = normalized.split(/[,\s]+/).filter((part) => part.length >= 2);
+  const numericParts = normalized.match(/\d+/g) || [];
+  return [...new Set([normalized, loose, ...parts, ...numericParts].filter(Boolean))];
+}
+
+function normalizeLooseSearchText(value = "") {
+  return String(value).toLowerCase().replace(/[\s,.-]/g, "").trim();
+}
+
+const QUICK_SEARCH_RELATED_TERMS = [
+  ["누수", "배관누수", "물샘", "물새", "누수확인", "누수의심", "청음", "탐지", "수압", "계량기"],
+  ["방수", "화장실방수", "창틀방수", "옥상방수", "외벽방수", "우레탄", "실리콘", "코킹", "방수층", "유가"],
+  ["창틀", "샷시", "새시", "창문", "창틀방수", "실리콘", "코킹"],
+  ["옥상", "옥상방수", "우수관", "배수", "드레인", "루프드레인"],
+  ["화장실", "욕실", "변기", "유가", "타일", "방수"],
+  ["싱크대", "주방", "개수대", "수전", "배수관"],
+  ["보일러", "온수", "난방", "배관", "분배기"],
+  ["아파트", "apt", "주공", "자이", "래미안", "푸르지오", "힐스테이트", "더샵", "롯데캐슬", "아이파크"],
+];
+
+function buildQuickJobSearchText(job) {
+  const checkText = [...(job.plumbingChecks || []), ...(job.waterproofChecks || [])]
+    .map((check) => [check.title, check.guide, check.result, check.memo, check.done ? "점검완료" : ""].join(" "))
+    .join(" ");
+  const estimateText = (job.estimateItems || []).map((item) => [item.name, item.spec, item.cost].join(" ")).join(" ");
+  const leakText = (job.leakAudioPoints || []).map((point) => [point.name, point.score, point.risk, point.metrics?.peakHz].join(" ")).join(" ");
+  const v2Text = [
+    job.somersLeakLevel,
+    job.somersFrequency,
+    job.somersOrangeMark,
+    job.somersSuspectLocation,
+    job.somersCaptureMemo,
+    ...(job.somersPhotos || []),
+    job.finalLeakLocation,
+    job.excavationResult,
+  ].join(" ");
+  return normalizeSearchText([
+    job.date,
+    job.customerName,
+    job.address,
+    extractApartmentGroup(job.address),
+    job.phone,
+    job.situation,
+    job.environment,
+    pipeLeakTypeSummary(job),
+    job.report,
+    job.blog,
+    job.workSummary,
+    checkText,
+    estimateText,
+    leakText,
+    v2Text,
+  ].join(" "));
+}
+
+async function importJobsFromGoogleDrive() {
+  try {
+    const config = googleConfig();
+    if (!config.apiKey || !config.clientId) {
+      state.googleSetupOpen = true;
+      saveState();
+      render();
+      notify("먼저 Google Drive 저장 설정을 입력하세요.");
+      return;
+    }
+    const token = await getGoogleAccessToken();
+    const files = await listDriveJobDataFiles(token);
+    if (!files.length) {
+      notify("Google Drive에서 작업데이터.json 파일을 찾지 못했습니다.");
+      return;
+    }
+    const jobs = [];
+    for (const file of files) {
+      const response = await fetch(`https://www.googleapis.com/drive/v3/files/${encodeURIComponent(file.id)}?alt=media`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!response.ok) continue;
+      jobs.push(...extractJobsFromImportedData(await response.json()));
+    }
+    const result = mergeImportedJobs(jobs);
+    const focusJob = result.appliedJobs[0] || state.jobs[0];
+    state.quickListQuery = "";
+    if (focusJob?.date) {
+      state.quickListMonth = focusJob.date.slice(0, 7);
+      state.quickListSelectedDate = focusJob.date;
+    }
+    state.quickListOpen = true;
+    saveState();
+    render();
+    notify(`Google Drive에서 파일 ${files.length}개 확인 · 작업 ${result.applied}개 적용`);
+  } catch (error) {
+    console.error(error);
+    notify(`Google Drive 불러오기 실패: ${driveErrorMessage(error)}`);
+  }
+}
+
+async function listDriveJobDataFiles(token) {
+  const queries = [
+    "name contains '작업데이터.json' and trashed=false",
+    "name contains '작업데이터' and trashed=false",
+  ];
+  const filesById = new Map();
+  for (const query of queries) {
+    let pageToken = "";
+    do {
+      const tokenQuery = pageToken ? `&pageToken=${encodeURIComponent(pageToken)}` : "";
+      const url = `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(query)}&fields=nextPageToken,files(id,name,createdTime,modifiedTime)&orderBy=modifiedTime desc&pageSize=1000${tokenQuery}`;
+      const response = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+      if (!response.ok) throw new Error(await response.text());
+      const data = await response.json();
+      (data.files || []).forEach((file) => filesById.set(file.id, file));
+      pageToken = data.nextPageToken || "";
+    } while (pageToken);
+  }
+  return Array.from(filesById.values()).sort((a, b) => String(b.modifiedTime || "").localeCompare(String(a.modifiedTime || "")));
+}
+
+function extractJobsFromImportedData(data) {
+  if (!data) return [];
+  const exportedAt = data.exportedAt || "";
+  if (Array.isArray(data.jobs)) return data.jobs.map((job) => ({ ...job, exportedAt: job.exportedAt || exportedAt }));
+  if (Array.isArray(data.state?.jobs)) return data.state.jobs.map((job) => ({ ...job, exportedAt: job.exportedAt || exportedAt }));
+  if (data.job) return [{ ...data.job, exportedAt: data.job.exportedAt || exportedAt }];
+  if (data.id && (data.date || data.address || data.customerName)) return [data];
+  return [];
+}
+
+function mergeImportedJobs(importedJobs) {
+  const deleted = new Set(state.deletedJobIds || []);
+  const validJobs = importedJobs.filter((job) => job && (job.id || job.date || job.address || job.customerName));
+  const bestJobsById = new Map();
+  validJobs.forEach((job) => {
+    const key = job.id || `${job.date || ""}-${job.address || ""}-${job.customerName || ""}`;
+    const previous = bestJobsById.get(key);
+    if (!previous || importedJobScore(job) > importedJobScore(previous)) bestJobsById.set(key, job);
+  });
+  let added = 0;
+  let updated = 0;
+  const appliedJobs = [];
+  Array.from(bestJobsById.values()).forEach((job) => {
+    const normalizedJob = {
+      ...createJob(),
+      ...job,
+      id: job.id || `job-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+      plumbingChecks: normalizeChecks(job.plumbingChecks || [], basePlumbingChecks),
+      waterproofChecks: normalizeChecks(job.waterproofChecks || [], baseWaterproofChecks),
+      recordings: Array.isArray(job.recordings) ? job.recordings : [],
+      photos: Array.isArray(job.photos) ? job.photos : [],
+      photoFiles: Array.isArray(job.photoFiles) ? job.photoFiles : [],
+      somersPhotos: Array.isArray(job.somersPhotos) ? job.somersPhotos : [],
+      somersPhotoFiles: Array.isArray(job.somersPhotoFiles) ? job.somersPhotoFiles : [],
+      leakAudioPoints: Array.isArray(job.leakAudioPoints) ? job.leakAudioPoints : [],
+      leakComparePoints: job.leakComparePoints && typeof job.leakComparePoints === "object" ? job.leakComparePoints : {},
+      leakGraphSnapshots: Array.isArray(job.leakGraphSnapshots) ? job.leakGraphSnapshots : [],
+      leakPipeCalibration: job.leakPipeCalibration && typeof job.leakPipeCalibration === "object" ? job.leakPipeCalibration : null,
+      estimateItems: normalizeEstimateItems(job.estimateItems || job.estimateItemsBackup || job.estimateItemsForDrive),
+    };
+    normalizePipeLeakTypes(normalizedJob);
+    normalizeV2Fields(normalizedJob);
+    if (deleted.has(normalizedJob.id)) deleted.delete(normalizedJob.id);
+    const existingIndex = state.jobs.findIndex((existing) => existing.id === normalizedJob.id);
+    if (existingIndex >= 0) {
+      const existingJob = state.jobs[existingIndex];
+      state.jobs.splice(existingIndex, 1);
+      state.jobs.unshift({ ...existingJob, ...normalizedJob });
+      updated += 1;
+    } else {
+      state.jobs.unshift(normalizedJob);
+      added += 1;
+    }
+    appliedJobs.push(normalizedJob);
+  });
+  state.deletedJobIds = Array.from(deleted);
+  if (!state.currentJobId && state.jobs.length) state.currentJobId = state.jobs[0].id;
+  state.quickListOpen = true;
+  saveState();
+  render();
+  return { added, updated, applied: added + updated, appliedJobs };
+}
+
+function importedJobScore(job = {}) {
+  const estimateScore = normalizeEstimateItems(job.estimateItems || job.estimateItemsBackup || job.estimateItemsForDrive)
+    .filter(estimateItemHasContent).length * 100000;
+  const updated = Date.parse(job.updatedAt || job.exportedAt || job.createdAt || "") || 0;
+  return estimateScore + updated;
+}
+
+function field(id, label, type, value, placeholder = "", step = "", className = "") {
+  return `
+    <div class="field ${escapeAttr(className)}">
+      <label for="${id}">${label}</label>
+      <input id="${id}" data-job-field="${id}" type="${type}" value="${escapeAttr(value ?? "")}" placeholder="${escapeAttr(placeholder)}" ${step ? `step="${step}"` : ""} />
+    </div>
+  `;
+}
+
+function inlineField(id, value, placeholder = "") {
+  return `<input class="inline-input" data-job-field="${id}" value="${escapeAttr(value || "")}" placeholder="${escapeAttr(placeholder)}" />`;
+}
+
+function blogKeywordField(id, label, value, placeholder = "") {
+  return `
+    <label class="keyword-input">
+      <span>${escapeHtml(label)}</span>
+      <input data-job-field="${id}" value="${escapeAttr(value || "")}" placeholder="${escapeAttr(placeholder)}" />
+    </label>
+  `;
+}
+
+function textarea(id, label, value, placeholder = "") {
+  return `
+    <div class="field">
+      <label for="${id}">${label}</label>
+      <textarea id="${id}" data-job-field="${id}" placeholder="${escapeAttr(placeholder)}">${escapeHtml(value || "")}</textarea>
+    </div>
+  `;
+}
+
+function metric(label, value, helper) {
+  return `<div class="metric"><span class="muted">${label}</span><b>${value}</b><span class="muted">${helper}</span></div>`;
+}
+
+function fileBox(type, label) {
+  const job = currentJob();
+  const files = job[type] || [];
+  const accept = type === "photos" ? ".jpg,.jpeg,.png,.webp,.heic,.heif" : "video/*";
+  return `
+    <div class="file-box">
+      <span>${label}: ${files.length ? files.map(escapeHtml).join(", ") : "없음"}</span>
+      <input data-file-type="${type}" type="file" accept="${accept}" multiple />
+    </div>
+  `;
+}
+
+function bindEvents() {
+  app.querySelectorAll("[data-view]").forEach((button) => {
+    button.addEventListener("click", () => setView(button.dataset.view));
+  });
+
+  app.querySelectorAll("[data-job-field]").forEach((input) => {
+    input.addEventListener("input", () => {
+      const value = input.type === "number" ? Number(input.value) : input.value;
+      const job = currentJob();
+      job[input.dataset.jobField] = value;
+      job.updatedAt = new Date().toISOString();
+      saveState();
+      refreshCurrentJobHeader(job);
+      if (input.dataset.jobField === "pressureLive") updatePressureDial(value);
+      refreshActiveDocumentPreview(job);
+    });
+  });
+
+  app.querySelectorAll("[data-check]").forEach((input) => {
+    input.addEventListener("input", () => {
+      const fieldName = input.dataset.field;
+      const value = fieldName === "done" ? input.checked : input.value;
+      updateCheck(input.dataset.checkType, input.dataset.check, { [fieldName]: value });
+    });
+  });
+
+  app.querySelectorAll("[data-pipe-leak-type]").forEach((input) => {
+    input.addEventListener("input", () => {
+      const job = currentJob();
+      normalizePipeLeakTypes(job);
+      job.pipeLeakTypes[input.dataset.pipeLeakType] = input.checked;
+      job.updatedAt = new Date().toISOString();
+      saveState();
+    });
+  });
+
+  app.querySelectorAll("[data-report-photo-name]").forEach((input) => {
+    input.addEventListener("change", () => {
+      const job = currentJob();
+      const name = input.dataset.reportPhotoName;
+      const selected = new Set(job.reportPhotoNames || []);
+      if (input.checked) selected.add(name);
+      else selected.delete(name);
+      job.reportPhotoNames = [...selected];
+      job.updatedAt = new Date().toISOString();
+      saveState();
+      refreshReportPreview(job);
+    });
+  });
+
+  app.querySelectorAll("[data-blog-photo-name]").forEach((input) => {
+    input.addEventListener("change", () => {
+      const selected = new Set(state.blogEditorPhotoNames || []);
+      const name = input.dataset.blogPhotoName;
+      if (input.checked) selected.add(name);
+      else selected.delete(name);
+      state.blogEditorPhotoNames = [...selected];
+      saveState();
+    });
+  });
+
+  app.querySelectorAll("[data-field-photo-name]").forEach((input) => {
+    input.addEventListener("change", () => {
+      const selected = new Set(state.selectedFieldPhotoNames || []);
+      const name = input.dataset.fieldPhotoName;
+      if (input.checked) selected.add(name);
+      else selected.delete(name);
+      state.selectedFieldPhotoNames = [...selected];
+      saveState();
+    });
+  });
+
+  app.querySelectorAll(".pipe-material-btn").forEach((button) => {
+    button.addEventListener("wheel", (event) => {
+      event.preventDefault();
+      cyclePipeMaterial(event.deltaY > 0 ? 1 : -1);
+    }, { passive: false });
+  });
+
+  app.querySelectorAll("[data-estimate]").forEach((input) => {
+    if (input.dataset.field === "name") resizeEstimateNameInput(input);
+    input.addEventListener("input", () => {
+      const job = currentJob();
+      const item = job.estimateItems[Number(input.dataset.estimate)];
+      item[input.dataset.field] = input.value;
+      if (input.dataset.field === "name") item.spec = "";
+      if (input.dataset.field === "name") resizeEstimateNameInput(input);
+      maybeAddEstimateRow(input);
+      job.updatedAt = new Date().toISOString();
+      saveState();
+      updateEstimateTotalsInPlace();
+      refreshEstimatePreview(job);
+    });
+  });
+
+  const estimateScaleInput = app.querySelector("[data-estimate-preview-scale]");
+  if (estimateScaleInput) {
+    estimateScaleInput.addEventListener("input", () => {
+      setEstimatePreviewScale(estimateScaleInput.value);
+    });
+  }
+
+  const estimateScaleDial = app.querySelector("[data-estimate-scale-dial]");
+  if (estimateScaleDial) {
+    estimateScaleDial.addEventListener("wheel", (event) => {
+      event.preventDefault();
+      const job = currentJob();
+      const delta = event.deltaY > 0 ? -1 : 1;
+      setEstimatePreviewScale(estimatePreviewScale(job) + delta);
+    }, { passive: false });
+  }
+
+  const estimateOffsetInput = app.querySelector("[data-estimate-preview-offset]");
+  if (estimateOffsetInput) {
+    estimateOffsetInput.addEventListener("input", () => {
+      setEstimatePreviewOffsetY(estimateOffsetInput.value);
+    });
+  }
+
+  const estimateOffsetDial = app.querySelector("[data-estimate-offset-dial]");
+  if (estimateOffsetDial) {
+    estimateOffsetDial.addEventListener("wheel", (event) => {
+      event.preventDefault();
+      const job = currentJob();
+      const delta = event.deltaY > 0 ? -2 : 2;
+      setEstimatePreviewOffsetY(estimatePreviewOffsetY(job) + delta);
+    }, { passive: false });
+  }
+
+  app.querySelectorAll("[data-document-preview-scale]").forEach((input) => {
+    input.addEventListener("input", () => {
+      setDocumentPreviewScale(input.dataset.previewType, input.value);
+    });
+  });
+
+  app.querySelectorAll("[data-document-preview-offset]").forEach((input) => {
+    input.addEventListener("input", () => {
+      setDocumentPreviewOffsetY(input.dataset.previewType, input.value);
+    });
+  });
+
+  app.querySelectorAll("[data-document-scale-dial]").forEach((dial) => {
+    dial.addEventListener("wheel", (event) => {
+      event.preventDefault();
+      const type = dial.dataset.previewType || "report";
+      const delta = event.deltaY > 0 ? -1 : 1;
+      setDocumentPreviewScale(type, documentPreviewScale(currentJob(), type) + delta);
+    }, { passive: false });
+  });
+
+  app.querySelectorAll("[data-document-offset-dial]").forEach((dial) => {
+    dial.addEventListener("wheel", (event) => {
+      event.preventDefault();
+      const type = dial.dataset.previewType || "report";
+      const delta = event.deltaY > 0 ? -2 : 2;
+      setDocumentPreviewOffsetY(type, documentPreviewOffsetY(currentJob(), type) + delta);
+    }, { passive: false });
+  });
+
+  app.querySelectorAll("[data-file-type]").forEach((input) => {
+    input.addEventListener("change", async () => {
+      const job = currentJob();
+      const files = Array.from(input.files || []);
+      const fileType = input.dataset.fileType;
+      if (fileType === "photos") {
+        const generatedNames = files.map((file, index) => nextJobAssetName(job, "photo", index, fileExtension(file, "jpg")));
+        const printableImages = await filesToPrintableImages(files);
+        job.photos = [...(job.photos || []), ...generatedNames];
+        job.photoFiles = [...(job.photoFiles || []), ...printableImages.map((image, index) => ({ ...image, name: generatedNames[index] || image.name }))];
+        state.photoViewerOpen = true;
+        state.selectedFieldPhotoNames = [];
+        state.selectedFieldPhotoIndex = Math.max(0, (job.photos || []).length - files.length);
+      } else if (fileType === "somersPhotos") {
+        job[fileType] = files.map((file) => file.name);
+        job.somersPhotoFiles = await filesToPrintableImages(files);
+      } else {
+        job[fileType] = files.map((file) => file.name);
+      }
+      saveState();
+      render();
+    });
+  });
+
+  app.querySelectorAll("[data-import-recording]").forEach((input) => {
+    input.addEventListener("change", async () => {
+      const files = Array.from(input.files || []);
+      const file = files.find((item) => item.type.startsWith("audio/")) || files[0];
+      if (!file) return;
+      await importRecordingFile(file, input.dataset);
+    });
+  });
+
+  app.querySelectorAll("[data-drive-pick]").forEach((input) => {
+    input.addEventListener("change", () => {
+      if (!driveSaveDraft) return;
+      const files = Array.from(input.files || []);
+      if (input.dataset.drivePick === "photos") driveSaveDraft.photoFiles = files;
+      if (input.dataset.drivePick === "recordings") driveSaveDraft.recordingFiles = files;
+      render();
+    });
+  });
+
+  const quickSearch = app.querySelector("[data-quick-list-search]");
+  if (quickSearch) {
+    quickSearch.addEventListener("keydown", (event) => {
+      if (event.key !== "Enter") return;
+      event.preventDefault();
+      applyQuickListSearch();
+    });
+  }
+
+  app.querySelectorAll("[data-action]").forEach((button) => {
+    button.addEventListener("click", () => handleAction(button.dataset.action, button.dataset, button));
+  });
+
+  app.querySelectorAll("[data-format]").forEach((button) => {
+    button.addEventListener("click", () => applyBlogFormat(button.dataset.format));
+  });
+
+  app.querySelectorAll("[data-format-block]").forEach((button) => {
+    button.addEventListener("click", () => applyBlogBlock(button.dataset.formatBlock));
+  });
+
+  app.querySelectorAll("[data-emoji]").forEach((button) => {
+    button.addEventListener("mousedown", (event) => event.preventDefault());
+    button.addEventListener("click", () => insertBlogEmoji(button.dataset.emoji));
+  });
+
+  const blogEditor = app.querySelector("#blogEditor");
+  if (blogEditor) {
+    ["keyup", "mouseup", "touchend", "input"].forEach((eventName) => {
+      blogEditor.addEventListener(eventName, saveBlogSelection);
+    });
+    blogEditor.addEventListener("click", (event) => {
+      const button = event.target.closest("[data-action='rotate-blog-photo']");
+      if (!button) return;
+      event.preventDefault();
+      rotateBlogPhoto(button.dataset.direction, button);
+    });
+  }
+
+  bindSwipeNavigation();
+}
+
+function bindDocumentPreviewButtons(root = document) {
+  root.querySelectorAll("[data-action='preview-page-prev'], [data-action='preview-page-next'], [data-action='preview-page-set']").forEach((button) => {
+    if (button.dataset.previewBound === "true") return;
+    button.dataset.previewBound = "true";
+    button.addEventListener("click", () => handleAction(button.dataset.action, button.dataset, button));
+  });
+}
+
+function applyQuickListSearch() {
+  const input = app.querySelector("[data-quick-list-search]");
+  state.quickListQuery = input?.value.trim() || "";
+  saveState();
+  render();
+}
+
+async function pickContactPhone() {
+  const input = app.querySelector("#phone");
+  if (!input) return;
+  input.focus();
+  input.select?.();
+  notify("최근기록/연락처 앱은 열지 않습니다. 전화번호를 직접 입력하세요.");
+}
+
+function saveGoogleSettingsFromForm() {
+  const config = googleConfig();
+  const apiKey = app.querySelector("[data-google-setting='apiKey']")?.value.trim() || "";
+  const clientId = app.querySelector("[data-google-setting='clientId']")?.value.trim() || "";
+  if (!apiKey || !clientId) {
+    notify("Google API Key와 OAuth Client ID를 모두 입력하세요.");
+    return false;
+  }
+  state.googleDrive = {
+    ...config,
+    apiKey,
+    clientId,
+    folderName: config.folderName || "WaterLeak Multi Check V2",
+  };
+  state.googleSetupOpen = false;
+  saveGoogleConfigOnly();
+  saveState();
+  return true;
+}
+
+function bindSwipeNavigation() {
+  const content = app.querySelector(".content");
+  if (!content) return;
+  let startX = 0;
+  let startY = 0;
+  let tracking = false;
+  const ignored = "button,input,textarea,select,option,label,a,canvas,.map-canvas,.estimate-name";
+
+  content.addEventListener("touchstart", (event) => {
+    if (event.touches.length !== 1 || event.target.closest(ignored)) return;
+    const touch = event.touches[0];
+    startX = touch.clientX;
+    startY = touch.clientY;
+    tracking = true;
+  }, { passive: true });
+
+  content.addEventListener("touchend", (event) => {
+    if (!tracking || event.changedTouches.length !== 1) return;
+    tracking = false;
+    const touch = event.changedTouches[0];
+    const deltaX = touch.clientX - startX;
+    const deltaY = touch.clientY - startY;
+    if (Math.abs(deltaX) < 70 || Math.abs(deltaX) < Math.abs(deltaY) * 1.35) return;
+    moveView(deltaX < 0 ? 1 : -1);
+  }, { passive: true });
+}
+
+function handleAction(action, data, sourceElement = null) {
+  const job = currentJob();
+  if (action === "save") {
+    saveLocalDraft();
+    return;
+  }
+  if (action === "new-job") {
+    const next = createJob();
+    state.jobs.unshift(next);
+    state.currentJobId = next.id;
+    state.activeView = "dashboard";
+    state.quickListOpen = false;
+    state.audioInputStatus = "분석 준비";
+    saveState();
+    render();
+  }
+  if (action === "toggle-quick-list") {
+    state.quickListOpen = !state.quickListOpen;
+    saveState();
+    render();
+  }
+  if (action === "import-google-jobs") importJobsFromGoogleDrive();
+  if (action === "apply-quick-list-search") applyQuickListSearch();
+  if (action === "clear-quick-list-search") {
+    state.quickListQuery = "";
+    saveState();
+    render();
+  }
+  if (action === "set-quick-list-month") {
+    state.quickListMonth = data.month;
+    state.quickListSelectedDate = "";
+    saveState();
+    render();
+  }
+  if (action === "select-quick-date") {
+    state.quickListSelectedDate = data.date;
+    saveState();
+    render();
+  }
+  if (action === "close-quick-list") {
+    state.quickListOpen = false;
+    saveState();
+    render();
+  }
+  if (action === "hard-refresh") hardRefreshApp();
+  if (action === "show-app-map") openExternalMap(job.address, "kakao");
+  if (action === "general-work") {
+    state.activeView = "generalWork";
+    state.photoViewerOpen = false;
+    saveState();
+    render();
+  }
+  if (action === "exit-general-work") {
+    job.updatedAt = new Date().toISOString();
+    state.activeView = "dashboard";
+    saveState();
+    notify("공사요청기록을 저장했습니다. 블로그, 견적서, 소견서 자료에 반영됩니다.");
+    render();
+  }
+  if (action === "pick-contact-phone") pickContactPhone();
+  if (action === "toggle-photo-viewer") {
+    state.photoViewerOpen = !state.photoViewerOpen;
+    saveState();
+    render();
+  }
+  if (action === "select-field-photo") {
+    state.selectedFieldPhotoIndex = Number(data.index || 0);
+    state.photoViewerOpen = true;
+    saveState();
+    render();
+  }
+  if (action === "delete-selected-photos") deleteSelectedFieldPhotos();
+  if (action === "google-drive-save") saveCurrentJobToGoogleDrive();
+  if (action === "save-google-settings" && saveGoogleSettingsFromForm()) saveCurrentJobToGoogleDrive();
+  if (action === "continue-google-drive-save") continueGoogleDriveSave();
+  if (action === "cancel-google-drive-save") {
+    driveSaveDraft = null;
+    render();
+    notify("Google Drive 선택 업로드를 취소했습니다.");
+  }
+  if (action === "clear-field") clearField(data.field);
+  if (action === "clear-check") clearCheckMemo(data.checkType, data.check);
+  if (action === "record-field") toggleRecording({ kind: "field", field: data.field });
+  if (action === "record-check") toggleRecording({ kind: "check", type: data.checkType, id: data.check });
+  if (action === "record-tracker") toggleRecording({ kind: "tracker" });
+  if (action === "stop-tracker-recording") {
+    if (wavRecorder?.recording && targetKey(recordingTarget) === "tracker") toggleRecording({ kind: "tracker" });
+    else notify("진행 중인 누수추적기 녹음이 없습니다.");
+  }
+  if (action === "stop-field-recording") {
+    const target = { kind: "field", field: data.field || "situation" };
+    if (wavRecorder?.recording && targetKey(recordingTarget) === targetKey(target)) toggleRecording(target);
+    else notify("진행 중인 상황기록 녹음이 없습니다.");
+  }
+  if (action === "pause-recording") {
+    const target = data.targetKind === "tracker"
+      ? { kind: "tracker" }
+      : data.field ? { kind: "field", field: data.field } : { kind: "check", type: data.checkType, id: data.check };
+    togglePauseRecording(target);
+  }
+  if (action === "play-recording") playRecording(data.recordingId);
+  if (action === "delete-recording") deleteRecording(data.recordingId);
+  if (action === "reset-checks") {
+    if (data.type === "all") {
+      job.plumbingChecks = createChecks(basePlumbingChecks);
+      job.waterproofChecks = createChecks(baseWaterproofChecks);
+    } else {
+      job[data.type] = createChecks(data.type === "plumbingChecks" ? basePlumbingChecks : baseWaterproofChecks);
+    }
+    saveState();
+    render();
+  }
+  if (action === "start-spectrum") startSpectrum();
+  if (action === "cycle-pipe-material") cyclePipeMaterial(Number(data.direction || 1));
+  if (action === "stop-spectrum") stopSpectrum();
+  if (action === "save-leak-point") saveLeakAudioPoint();
+  if (action === "save-leak-baseline") saveLeakAudioBaseline();
+  if (action === "save-graph-snapshot") saveLeakGraphSnapshot();
+  if (action === "calibrate-pipe-profile") calibrateCurrentPipeProfile();
+  if (action === "clear-leak-baseline") clearLeakAudioBaseline();
+  if (action === "delete-leak-point") deleteLeakAudioPoint(data.id);
+  if (action === "save-tracker") notify("추적 데이터가 현재 작업에 저장되었습니다.");
+  if (action === "clear-tracker") notify("화면 그래프 로그를 삭제했습니다.");
+  if (action === "save-somers-photo") notify("소머즈 사진 자료가 저장되어 Google 저장 때 자동 분류됩니다.");
+  if (action === "save-somers-sound") notify("소머즈 소리 자료가 저장되어 Google 저장 때 자동 분류됩니다.");
+  if (action === "generate-report") updateJob({ report: reportContentForDocument(generateReport(job)) });
+  if (action === "download-report-pdf") openPdfPrintWindow("report");
+  if (action === "preview-page-prev") setDocumentPreviewPage(data.previewType || "estimate", documentPreviewPageIndex(data.previewType || "estimate", documentPreviewPages(data.previewType || "estimate", job).length) - 1);
+  if (action === "preview-page-next") setDocumentPreviewPage(data.previewType || "estimate", documentPreviewPageIndex(data.previewType || "estimate", documentPreviewPages(data.previewType || "estimate", job).length) + 1);
+  if (action === "preview-page-set") setDocumentPreviewPage(data.previewType || "estimate", Number(data.pageIndex || 0));
+  if (action === "open-report-photo-picker") {
+    state.reportPhotoPickerOpen = true;
+    saveState();
+    render();
+  }
+  if (action === "close-report-photo-picker") {
+    state.reportPhotoPickerOpen = false;
+    saveState();
+    document.querySelector(".photo-picker-backdrop")?.remove();
+  }
+  if (action === "apply-report-photos") {
+    state.reportPhotoPickerOpen = false;
+    job.updatedAt = new Date().toISOString();
+    saveState();
+    document.querySelector(".photo-picker-backdrop")?.remove();
+    render();
+    notify("체크한 사진을 소견서 업로드 목록에 반영했습니다.");
+  }
+  if (action === "clear-report" || action === "delete-report") updateJob({ report: "" });
+  if (action === "open-chatgpt-report") openChatGptReport(job);
+  if (action === "generate-blog") updateJob({ blog: buildBlogPrompt(job) });
+  if (action === "copy-blog-prompt") copyBlogPrompt(job);
+  if (action === "open-chatgpt") openChatGptWithPrompt(job);
+  if (action === "clear-blog-data") clearBlogData();
+  if (action === "toggle-custom-blog") {
+    state.blogCustomOpen = !state.blogCustomOpen;
+    saveState();
+    render();
+  }
+  if (action === "copy-custom-blog-prompt") copyBlogPrompt(job, true);
+  if (action === "open-chatgpt-custom") openChatGptWithPrompt(job, true);
+  if (action === "open-blog-editor") {
+    state.blogEditorOpen = true;
+    saveState();
+    render();
+  }
+  if (action === "open-blog-photo-picker") {
+    saveBlogSelection();
+    const editor = document.querySelector("#blogEditor");
+    if (editor) {
+      restoreBlogSelection();
+      document.querySelector("#blog-photo-cursor-marker")?.remove();
+      document.execCommand("insertHTML", false, `<span id="blog-photo-cursor-marker"></span>`);
+      job.blog = editor.innerHTML.trim();
+    }
+    state.blogPhotoPickerOpen = true;
+    state.blogEditorPhotoNames = [];
+    saveState();
+    render();
+  }
+  if (action === "close-blog-photo-picker") {
+    state.blogPhotoPickerOpen = false;
+    state.blogEditorPhotoNames = [];
+    saveState();
+    document.querySelector("#blog-photo-cursor-marker")?.remove();
+    document.querySelector(".photo-picker-backdrop")?.remove();
+  }
+  if (action === "insert-blog-photos") insertSelectedBlogPhotos();
+  if (action === "rotate-blog-photo") rotateBlogPhoto(data.direction, sourceElement);
+  if (action === "close-blog-editor") {
+    state.blogEditorOpen = false;
+    state.blogPhotoPickerOpen = false;
+    saveState();
+    render();
+  }
+  if (action === "save-blog-editor") saveBlogEditor();
+  if (action === "clear-blog-editor") clearBlogEditor();
+  if (action === "print-blog") printBlogPreview();
+  if (action === "copy-blog-editor") copyBlogEditor();
+  if (action === "toggle-emoji-picker") toggleEmojiPicker();
+  if (action === "open-external-link") openExternalLink(data.url);
+  if (action === "toggle-estimate-title") toggleEstimateTitle();
+  if (action === "toggle-estimate-vat") toggleEstimateVatMode();
+  if (action === "set-estimate-vat") setEstimateVatMode(data.mode);
+  if (action === "add-estimate") {
+    job.estimateItems.push(createEstimateItem());
+    saveState();
+    render();
+    focusEstimateName(job.estimateItems.length - 1);
+  }
+  if (action === "add-estimate-after") {
+    const index = Number(data.index);
+    const nextIndex = Number.isFinite(index) ? index + 1 : job.estimateItems.length;
+    job.estimateItems.splice(nextIndex, 0, createEstimateItem());
+    job.updatedAt = new Date().toISOString();
+    saveState();
+    render();
+    focusEstimateName(nextIndex);
+  }
+  if (action === "remove-estimate") {
+    job.estimateItems.splice(Number(data.index), 1);
+    job.updatedAt = new Date().toISOString();
+    saveState();
+    render();
+  }
+  if (action === "delete-estimate") clearEstimateData();
+  if (action === "print") window.print();
+  if (action === "download-estimate-pdf") openPdfPrintWindow("estimate");
+  if (action === "select-job") openQuickJob(data.id, { targetView: "dashboard" });
+  if (action === "edit-quick-job") openQuickJob(data.id, { targetView: state.activeView });
+  if (action === "delete-quick-job") deleteQuickJob(data.id);
+}
+
+function openQuickJob(id, options = {}) {
+  if (!state.jobs.some((item) => item.id === id)) {
+    notify("작업 데이터를 찾지 못했습니다.");
+    return;
+  }
+  state.currentJobId = id;
+  state.activeView = options.targetView || "dashboard";
+  state.quickListOpen = false;
+  currentJob().estimateItems = normalizeEstimateItems(currentJob().estimateItems);
+  saveState();
+  render();
+  if (options.targetView === "estimate") {
+    notify(`작업을 적용했습니다. 견적 품목 ${estimatePrintableItems(currentJob()).length}개`);
+  }
+}
+
+function deleteQuickJob(id) {
+  const job = state.jobs.find((item) => item.id === id);
+  if (!job) {
+    notify("삭제할 작업을 찾지 못했습니다.");
+    return;
+  }
+  const label = [job.date, job.address || job.customerName || "주소 미입력"].filter(Boolean).join(" · ");
+  if (!confirm(`${label}\n\n이 작업을 리스트에서 삭제할까요?\nGoogle Drive 원본 파일은 지우지 않고, 앱 목록에서만 숨깁니다.`)) return;
+  state.deletedJobIds = [...new Set([...(state.deletedJobIds || []), id])];
+  state.jobs = state.jobs.filter((item) => item.id !== id);
+  if (state.currentJobId === id) {
+    const next = visibleJobs()[0] || createJob();
+    if (!state.jobs.some((item) => item.id === next.id)) state.jobs.unshift(next);
+    state.currentJobId = next.id;
+    state.activeView = "dashboard";
+  }
+  saveState();
+  render();
+  notify("작업 리스트에서 숨김 처리했습니다. Google Drive 원본은 그대로 둡니다.");
+}
+
+function openExternalMap(address, provider = "kakao") {
+  if (!address) {
+    notify("주소를 먼저 입력하세요.");
+    return;
+  }
+  const encoded = encodeURIComponent(address);
+  window.open(`https://map.kakao.com/link/search/${encodeURIComponent(address)}`, "_blank");
+}
+
+function googleConfig() {
+  state.googleDrive = {
+    apiKey: "",
+    clientId: "",
+    folderId: "",
+    folderName: "WaterLeak Multi Check V2",
+    ...(state.googleDrive || {}),
+  };
+  return state.googleDrive;
+}
+
+function driveStatusText() {
+  const config = googleConfig();
+  if (!config.clientId || !config.apiKey) return "처음 저장 때 설정";
+  if (!config.folderId) return `저장 시 폴더 자동 생성 · ${config.folderName || "WaterLeak Multi Check V2"}`;
+  return `연결됨 · ${config.folderName || "WaterLeak Multi Check V2"}`;
+}
+
+function loadGoogleIdentityScript() {
+  if (window.google?.accounts?.oauth2) return Promise.resolve();
+  return new Promise((resolve, reject) => {
+    const existing = document.querySelector("script[data-google-identity]");
+    if (existing) {
+      existing.addEventListener("load", resolve, { once: true });
+      existing.addEventListener("error", () => reject(new Error("Google 로그인 스크립트를 불러오지 못했습니다. 인터넷 연결, 광고차단, 승인된 JavaScript 원본을 확인하세요.")), { once: true });
+      return;
+    }
+    const script = document.createElement("script");
+    script.dataset.googleIdentity = "true";
+    script.src = "https://accounts.google.com/gsi/client";
+    script.onload = resolve;
+    script.onerror = () => reject(new Error("Google 로그인 스크립트를 불러오지 못했습니다. 인터넷 연결, 광고차단, 승인된 JavaScript 원본을 확인하세요."));
+    document.head.appendChild(script);
+  });
+}
+
+async function getGoogleAccessToken() {
+  const config = googleConfig();
+  if (!config.clientId || !config.apiKey) {
+    notify("처음 저장을 위해 Google API Key와 OAuth Client ID를 입력하세요.");
+    throw new Error("Missing Google Drive settings");
+  }
+  if (googleAccessToken) return googleAccessToken;
+  await loadGoogleIdentityScript();
+  return new Promise((resolve, reject) => {
+    googleTokenClient = window.google.accounts.oauth2.initTokenClient({
+      client_id: config.clientId,
+      scope: "https://www.googleapis.com/auth/drive.file",
+      callback: (response) => {
+        if (response.error) {
+          reject(new Error(response.error));
+          return;
+        }
+        googleAccessToken = response.access_token;
+        resolve(googleAccessToken);
+      },
+    });
+    googleTokenClient.requestAccessToken({ prompt: "consent" });
+  });
+}
+
+async function createGoogleDriveFolder() {
+  const config = googleConfig();
+  const token = await getGoogleAccessToken();
+  const folder = await ensureMainDriveFolder(token, config);
+  state.googleDrive = { ...config, folderId: folder.id, folderName: folder.name };
+  saveState();
+  render();
+  notify(`Google Drive 주 폴더 연결 완료: ${folder.name}`);
+  return folder;
+}
+
+async function ensureMainDriveFolder(token, config) {
+  if (config.folderId) {
+    const existing = await getDriveFolderById(token, config.folderId);
+    if (existing) return existing;
+  }
+  return ensureDriveFolder(token, config.folderName || "WaterLeak Multi Check V2", null);
+}
+
+async function getDriveFolderById(token, folderId) {
+  const url = `https://www.googleapis.com/drive/v3/files/${encodeURIComponent(folderId)}?fields=id,name,mimeType,trashed`;
+  const response = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+  if (response.status === 403 || response.status === 404) return null;
+  if (!response.ok) throw new Error(await response.text());
+  const file = await response.json();
+  if (file.trashed || file.mimeType !== "application/vnd.google-apps.folder") return null;
+  return file;
+}
+
+async function ensureDriveFolder(token, name, parentId) {
+  const escapedName = String(name).replaceAll("\\", "\\\\").replaceAll("'", "\\'");
+  const parentQuery = parentId ? ` and '${parentId}' in parents` : "";
+  const query = `name='${escapedName}' and mimeType='application/vnd.google-apps.folder' and trashed=false${parentQuery}`;
+  const searchUrl = `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(query)}&fields=files(id,name,webViewLink,createdTime)&orderBy=createdTime&pageSize=10`;
+  const searchResponse = await fetch(searchUrl, { headers: { Authorization: `Bearer ${token}` } });
+  if (!searchResponse.ok) throw new Error(await searchResponse.text());
+  const found = await searchResponse.json();
+  if (found.files?.length) return found.files[0];
+
+  const body = {
+    name,
+    mimeType: "application/vnd.google-apps.folder",
+  };
+  if (parentId) body.parents = [parentId];
+  const response = await fetch("https://www.googleapis.com/drive/v3/files?fields=id,name,webViewLink", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(body),
+  });
+  if (!response.ok) throw new Error(await response.text());
+  return response.json();
+}
+
+async function saveCurrentJobToGoogleDrive(options = {}) {
+  try {
+    const config = googleConfig();
+    if (!config.apiKey || !config.clientId) {
+      state.googleSetupOpen = true;
+      saveState();
+      render();
+      notify("화면 아래 Google Drive 저장 설정에 키를 붙여넣으세요.");
+      return;
+    }
+    state.googleSetupOpen = false;
+    saveState();
+    const prepared = await prepareGoogleDriveSave();
+    notify(`Google Drive 저장 완료: ${prepared.yearFolder.name}/${prepared.monthFolder.name}/${prepared.dateFolder.name} · 자동분류 ${prepared.totalAssetCount}개`);
+  } catch (error) {
+    notify(`Google Drive 저장 실패: ${driveErrorMessage(error)}`);
+    console.error(error);
+  }
+}
+
+async function continueGoogleDriveSave() {
+  if (!driveSaveDraft?.active) return;
+  const photoFiles = driveSaveDraft.photoFiles || [];
+  const recordingFiles = driveSaveDraft.recordingFiles || [];
+  const prepared = await prepareGoogleDriveSave(photoFiles.length > 0, recordingFiles.length > 0);
+  driveSaveDraft = null;
+  render();
+  await uploadSelectedDriveMedia(prepared, photoFiles, recordingFiles);
+}
+
+async function prepareGoogleDriveSave() {
+  const token = await getGoogleAccessToken();
+  const mainFolder = await ensureMainDriveFolder(token, googleConfig());
+  state.googleDrive = { ...googleConfig(), folderId: mainFolder.id, folderName: mainFolder.name };
+  saveState();
+  const job = currentJob();
+  syncEstimateItemsFromForm(job);
+  job.estimateItems = normalizeEstimateItems(job.estimateItems);
+  job.updatedAt = new Date().toISOString();
+  saveState();
+  const dateValue = job.date || new Date().toISOString().slice(0, 10);
+  const year = dateValue.slice(0, 4) || new Date().getFullYear().toString();
+  const month = dateValue.slice(0, 7) || `${year}-${String(new Date().getMonth() + 1).padStart(2, "0")}`;
+  const yearFolder = await ensureDriveFolder(token, year, mainFolder.id);
+  const monthFolder = await ensureDriveFolder(token, month, yearFolder.id);
+  const folderLabel = safeFileName([dateValue, job.customerName, job.address].filter(Boolean).join("_") || dateValue);
+  const dateFolder = await ensureDriveFolder(token, folderLabel, monthFolder.id);
+  const baseName = safeFileName(job.address || "주소미입력");
+  const docFolder = await ensureDriveFolder(token, "문서", dateFolder.id);
+  const dataFolder = await ensureDriveFolder(token, "작업데이터", dateFolder.id);
+  const reportBlob = await createDocumentPdfBlob("report", job);
+  const estimateBlob = await createDocumentPdfBlob("estimate", job);
+  await uploadBlobToDrive(token, docFolder.id, `${baseName}-소견서.pdf`, reportBlob, "application/pdf");
+  await uploadBlobToDrive(token, docFolder.id, `${baseName}-견적서.pdf`, estimateBlob, "application/pdf");
+  const exportedJob = {
+    ...job,
+    estimateItems: normalizeEstimateItems(job.estimateItems),
+    estimateItemsBackup: normalizeEstimateItems(job.estimateItems),
+    estimateItemCount: estimatePrintableItems(job).length,
+  };
+  const dataBlob = new Blob([JSON.stringify({ exportedAt: new Date().toISOString(), job: exportedJob }, null, 2)], { type: "application/json" });
+  await uploadBlobToDrive(token, dataFolder.id, `${baseName}-작업데이터.json`, dataBlob, "application/json");
+  const blogDocumentCount = await uploadStoredBlogDocumentsToDrive(token, docFolder.id, baseName, job);
+  const fieldPhotoCount = await uploadStoredFieldPhotosToDrive(token, dateFolder.id, baseName, job);
+  const somersPhotoCount = await uploadStoredSomersPhotosToDrive(token, dateFolder.id, baseName, job);
+  const somersSoundCount = await uploadStoredRecordingsToDrive(token, dateFolder.id, baseName, job, "somers:sound", ["소머즈", "소리"]);
+  const daesungSoundCount = await uploadStoredRecordingsToDrive(token, dateFolder.id, baseName, job, "tracker", ["대성청음", "소리"]);
+  return {
+    token,
+    yearFolder,
+    monthFolder,
+    dateFolder,
+    baseName,
+    blogDocumentCount,
+    fieldPhotoCount,
+    somersPhotoCount,
+    somersSoundCount,
+    daesungSoundCount,
+    totalAssetCount: 3 + blogDocumentCount + fieldPhotoCount + somersPhotoCount + somersSoundCount + daesungSoundCount,
+  };
+}
+
+async function uploadStoredBlogDocumentsToDrive(token, docFolderId, baseName, job) {
+  const blogHtml = String(job.blog || "").trim();
+  if (!blogHtml) return 0;
+  const fullHtml = buildBlogBackupHtml(job, blogHtml);
+  const htmlBlob = new Blob([fullHtml], { type: "text/html;charset=utf-8" });
+  const textBlob = new Blob([blogPlainTextForBackup(blogHtml)], { type: "text/plain;charset=utf-8" });
+  await uploadBlobToDrive(token, docFolderId, `${baseName}-블로그원고.html`, htmlBlob, "text/html");
+  await uploadBlobToDrive(token, docFolderId, `${baseName}-블로그원고.txt`, textBlob, "text/plain");
+  return 2;
+}
+
+async function uploadStoredFieldPhotosToDrive(token, dateFolderId, baseName, job) {
+  const photos = Array.isArray(job.photoFiles) ? job.photoFiles.filter((photo) => photo?.dataUrl) : [];
+  if (!photos.length) return 0;
+  const photoFolder = await ensureNestedDriveFolder(token, dateFolderId, ["현장사진"]);
+  let count = 0;
+  for (const [index, photo] of photos.entries()) {
+    const blob = await dataUrlToBlob(photo.dataUrl);
+    const name = `${baseName}-현장사진-${safeFileName(photo.name || `photo-${index + 1}.jpg`)}`;
+    await uploadBlobToDrive(token, photoFolder.id, name, blob, blob.type || "image/jpeg");
+    count += 1;
+  }
+  return count;
+}
+
+async function uploadStoredSomersPhotosToDrive(token, dateFolderId, baseName, job) {
+  const somersPhotos = Array.isArray(job.somersPhotoFiles) ? job.somersPhotoFiles.filter((photo) => photo?.dataUrl) : [];
+  if (!somersPhotos.length) return 0;
+  const somersFolder = await ensureNestedDriveFolder(token, dateFolderId, ["소머즈", "사진"]);
+  let count = 0;
+  for (const [index, photo] of somersPhotos.entries()) {
+    const blob = await dataUrlToBlob(photo.dataUrl);
+    const name = `${baseName}-소머즈-${safeFileName(photo.name || `capture-${index + 1}.jpg`)}`;
+    await uploadBlobToDrive(token, somersFolder.id, name, blob, blob.type || "image/jpeg");
+    count += 1;
+  }
+  return count;
+}
+
+async function uploadStoredRecordingsToDrive(token, dateFolderId, baseName, job, targetKeyValue, folderPath) {
+  const recordings = (job.recordings || []).filter((recording) => recording.targetKey === targetKeyValue);
+  if (!recordings.length) return 0;
+  const folder = await ensureNestedDriveFolder(token, dateFolderId, folderPath);
+  let count = 0;
+  for (const [index, recording] of recordings.entries()) {
+    const blob = await getRecordingBlob(recording.id);
+    if (!blob) continue;
+    const name = `${baseName}-${safeFileName(recording.name || `recording-${index + 1}`)}`;
+    await uploadBlobToDrive(token, folder.id, name, blob, recording.type || blob.type || "audio/wav");
+    count += 1;
+  }
+  return count;
+}
+
+async function ensureNestedDriveFolder(token, parentId, names) {
+  let folder = { id: parentId };
+  for (const name of names) {
+    folder = await ensureDriveFolder(token, name, folder.id);
+  }
+  return folder;
+}
+
+async function uploadSelectedDriveMedia(prepared, photoFiles, recordingFiles) {
+  try {
+    const token = prepared?.token || await getGoogleAccessToken();
+    let photoCount = 0;
+    let recordingCount = 0;
+    if (photoFiles.length && prepared?.photoFolder) {
+      for (const file of photoFiles) {
+        await uploadBlobToDrive(token, prepared.photoFolder.id, `${prepared.baseName}-${safeFileName(file.name || "photo")}`, file, file.type || "image/jpeg");
+        photoCount += 1;
+      }
+    }
+    if (recordingFiles.length && prepared?.recordingFolder) {
+      for (const file of recordingFiles) {
+        await uploadBlobToDrive(token, prepared.recordingFolder.id, `${prepared.baseName}-${safeFileName(file.name || "recording")}`, file, file.type || "audio/wav");
+        recordingCount += 1;
+      }
+    }
+    const somersText = prepared.somersPhotoCount ? ` · 소머즈 ${prepared.somersPhotoCount}개` : "";
+    notify(`Google Drive 저장 완료: ${prepared.dateFolder.name} 폴더 · 사진 ${photoCount}개 · 녹음 ${recordingCount}개${somersText}`);
+  } catch (error) {
+    notify(`Google Drive 업로드 실패: ${driveErrorMessage(error)}`);
+    console.error(error);
+  }
+}
+
+function clearRecordingDatabase() {
+  return new Promise((resolve) => {
+    const request = indexedDB.deleteDatabase(RECORDING_DB_NAME);
+    request.onsuccess = () => resolve();
+    request.onerror = () => resolve();
+    request.onblocked = () => resolve();
+  });
+}
+
+function driveErrorMessage(error) {
+  if (error instanceof Event) {
+    return "브라우저가 Google 요청을 차단했습니다. 팝업 허용, 광고차단 해제, OAuth 승인된 JavaScript 원본을 확인하세요.";
+  }
+  const message = String(error?.message || error || "알 수 없는 오류");
+  if (message === "[object Event]") {
+    return "브라우저가 Google 요청을 차단했습니다. 팝업 허용, 광고차단 해제, OAuth 승인된 JavaScript 원본을 확인하세요.";
+  }
+  try {
+    const parsed = JSON.parse(message);
+    return parsed.error?.message || parsed.message || message;
+  } catch {
+    return message.slice(0, 180);
+  }
+}
+
+async function uploadBlobToDrive(token, folderId, name, blob, mimeType) {
+  const boundary = `waterleak_${Date.now()}`;
+  const metadata = { name, parents: [folderId], mimeType };
+  const body = new Blob([
+    `--${boundary}`,
+    "Content-Type: application/json; charset=UTF-8",
+    "",
+    JSON.stringify(metadata),
+    `--${boundary}`,
+    `Content-Type: ${mimeType}`,
+    "",
+    blob,
+    "",
+    `--${boundary}--`,
+  ].map((part) => part instanceof Blob ? part : `${part}\r\n`), { type: `multipart/related; boundary=${boundary}` });
+  const response = await fetch("https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,name,webViewLink", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": `multipart/related; boundary=${boundary}`,
+    },
+    body,
+  });
+  if (!response.ok) throw new Error(await response.text());
+  return response.json();
+}
+
+async function createDocumentPdfBlob(type, job) {
+  const pages = type === "report" ? buildReportPdfPages(job) : buildEstimatePdfPages(job);
+  const images = [];
+  for (const lines of pages) {
+    images.push(await renderPdfPageImage(lines));
+  }
+  return buildImagePdf(images);
+}
+
+function buildReportPdfPages(job) {
+  const report = reportContentForDocument(typeof job.report === "string" ? job.report : generateReport(job));
+  return paginatePdfLines([
+    { text: "누수진단 소견서", size: 32, bold: true, align: "center", gap: 18 },
+    { text: `진단일자: ${job.date || ""}`, size: 16 },
+    { text: `고객 이름: ${job.customerName || ""}`, size: 16 },
+    { text: `현장주소: ${job.address || ""}`, size: 16 },
+    { text: `연락처: ${job.phone || ""}`, size: 16 },
+    { text: `공급자: ${PROVIDER.name} / ${PROVIDER.bizNo}`, size: 16 },
+    { text: `공급자 주소: ${PROVIDER.address}`, size: 16, gap: 18 },
+    { text: "소견 내용", size: 20, bold: true, gap: 8 },
+    ...String(report).split("\n").map((text) => ({ text, size: 15 })),
+    { text: "", size: 10, gap: 20 },
+    { text: `공급자 확인: ${PROVIDER.owner} (인)`, size: 17, align: "right" },
+  ]);
+}
+
+function buildEstimatePdfPages(job) {
+  const items = estimatePrintableItems(job);
+  const totals = estimateTotals(job);
+  const labels = estimateDocumentLabels(job);
+  const general = generalWorkSummary(job);
+  return paginatePdfLines([
+    { text: job.estimateDocTitle || "견 적 서", size: 32, bold: true, align: "center", gap: 18 },
+    { text: `${labels.dateLabel}: ${job.date || ""}`, size: 16 },
+    { text: `${labels.noLabel}: ${job.estimateNo || `WL-${(job.date || "").replaceAll("-", "")}`}`, size: 16 },
+    { text: `수신: ${job.customerName || ""}`, size: 16 },
+    { text: `수신 주소: ${job.address || ""}`, size: 16 },
+    { text: `전화번호: ${job.phone || ""}`, size: 16 },
+    { text: `공급자: ${PROVIDER.name} / ${PROVIDER.bizNo}`, size: 16 },
+    { text: `공급자 주소: ${PROVIDER.address}`, size: 16, gap: 18 },
+    { text: "품명 및 금액", size: 20, bold: true, gap: 8 },
+    ...items.map((item, index) => ({
+      text: `${index + 1}. ${[item.name, item.spec].filter(Boolean).join(" / ") || "품명 미입력"} - ${estimateLineTotal(item).toLocaleString()}원`,
+      size: 15,
+    })),
+    { text: "", size: 10, gap: 12 },
+    { text: `공급가액: ${totals.supplyTotal.toLocaleString()}원`, size: 17, align: "right" },
+    { text: `부가세: ${totals.tax.toLocaleString()}원`, size: 17, align: "right" },
+    { text: `합계금액: ${totals.total.toLocaleString()}원`, size: 20, bold: true, align: "right", gap: 16 },
+    { text: `비고: ${estimateNoteText(job)}`, size: 15 },
+    ...(general ? [{ text: `공사요청기록: ${general}`, size: 15 }] : []),
+    { text: `공급자 확인: ${PROVIDER.owner} (인)`, size: 17, align: "right", gap: 18 },
+  ]);
+}
+
+function paginatePdfLines(lines) {
+  const pages = [[]];
+  let y = 0;
+  lines.forEach((line) => {
+    const height = (line.size || 15) * 1.6 + (line.gap || 3);
+    if (y + height > 1480 && pages[pages.length - 1].length) {
+      pages.push([]);
+      y = 0;
+    }
+    pages[pages.length - 1].push(line);
+    y += height;
+  });
+  return pages;
+}
+
+async function renderPdfPageImage(lines) {
+  const canvas = document.createElement("canvas");
+  canvas.width = 1240;
+  canvas.height = 1754;
+  const ctx = canvas.getContext("2d");
+  ctx.fillStyle = "#ffffff";
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  ctx.fillStyle = "#111827";
+  let y = 110;
+  lines.forEach((line) => {
+    const size = line.size || 15;
+    ctx.font = `${line.bold ? "700" : "400"} ${size * 2}px "Malgun Gothic", Arial, sans-serif`;
+    ctx.textAlign = line.align || "left";
+    const x = line.align === "center" ? canvas.width / 2 : line.align === "right" ? canvas.width - 90 : 90;
+    const maxWidth = line.align ? 1060 : 1060;
+    const wrapped = wrapCanvasText(ctx, line.text || " ", maxWidth);
+    wrapped.forEach((text) => {
+      ctx.fillText(text, x, y);
+      y += size * 2.7;
+    });
+    y += line.gap || 6;
+  });
+  const blob = await new Promise((resolve) => canvas.toBlob(resolve, "image/jpeg", 0.92));
+  return { bytes: await blob.arrayBuffer(), width: 595.28, height: 841.89 };
+}
+
+function wrapCanvasText(ctx, text, maxWidth) {
+  const words = String(text).split(/(\s+)/);
+  const lines = [];
+  let line = "";
+  words.forEach((word) => {
+    const test = line + word;
+    if (ctx.measureText(test).width > maxWidth && line) {
+      lines.push(line.trimEnd());
+      line = word.trimStart();
+    } else {
+      line = test;
+    }
+  });
+  lines.push(line || " ");
+  return lines;
+}
+
+function buildImagePdf(images) {
+  const parts = [];
+  const offsets = [];
+  let offset = 0;
+  const add = (part) => {
+    parts.push(part);
+    offset += typeof part === "string" ? part.length : part.byteLength;
+  };
+  const addObject = (id, bodyParts) => {
+    offsets[id] = offset;
+    add(`${id} 0 obj\n`);
+    bodyParts.forEach(add);
+    add("\nendobj\n");
+  };
+  add("%PDF-1.4\n%\xFF\xFF\xFF\xFF\n");
+  const pageIds = images.map((_, index) => 3 + index * 3);
+  addObject(1, ["<< /Type /Catalog /Pages 2 0 R >>"]);
+  addObject(2, [`<< /Type /Pages /Kids [${pageIds.map((id) => `${id} 0 R`).join(" ")}] /Count ${images.length} >>`]);
+  images.forEach((image, index) => {
+    const pageId = 3 + index * 3;
+    const contentId = pageId + 1;
+    const imageId = pageId + 2;
+    const imageName = `Im${index + 1}`;
+    const command = `q\n595.28 0 0 841.89 0 0 cm\n/${imageName} Do\nQ`;
+    addObject(pageId, [`<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595.28 841.89] /Resources << /XObject << /${imageName} ${imageId} 0 R >> >> /Contents ${contentId} 0 R >>`]);
+    addObject(contentId, [`<< /Length ${command.length} >>\nstream\n${command}\nendstream`]);
+    addObject(imageId, [
+      `<< /Type /XObject /Subtype /Image /Width 1240 /Height 1754 /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length ${image.bytes.byteLength} >>\nstream\n`,
+      new Uint8Array(image.bytes),
+      "\nendstream",
+    ]);
+  });
+  const xref = offset;
+  add(`xref\n0 ${offsets.length}\n0000000000 65535 f \n`);
+  for (let i = 1; i < offsets.length; i += 1) add(`${String(offsets[i]).padStart(10, "0")} 00000 n \n`);
+  add(`trailer\n<< /Size ${offsets.length} /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF`);
+  return new Blob(parts, { type: "application/pdf" });
+}
+
+function safeFileName(value) {
+  return String(value).replace(/[\\/:*?"<>|]/g, "_").replace(/\s+/g, "_").slice(0, 60);
+}
+
+function compactJobDate(job) {
+  return String(job.date || new Date().toISOString().slice(0, 10)).replaceAll("-", "");
+}
+
+function jobAssetPrefix(job) {
+  return safeFileName(String(job.customerName || "고객").replace(/\s+/g, "")) || "고객";
+}
+
+function fileExtension(file, fallback = "dat") {
+  const name = file?.name || "";
+  const found = name.includes(".") ? name.split(".").pop() : "";
+  return safeFileName(found || fallback).toLowerCase();
+}
+
+function nextJobAssetName(job, kind, offset = 0, extension = "dat") {
+  const names = kind === "recording"
+    ? (job.recordings || []).map((recording) => recording.name)
+    : (job.photos || []);
+  const maxNumber = names.reduce((max, name) => {
+    const match = String(name || "").match(/-(\d+)(?:\.[^.]+)?$/);
+    return match ? Math.max(max, Number(match[1] || 0)) : max;
+  }, 0);
+  const next = maxNumber + offset + 1;
+  return `${jobAssetPrefix(job)}${compactJobDate(job)}-${pad2(next)}.${extension}`;
+}
+
+function markRecordingSaved(key) {
+  recentSavedRecordingKey = key;
+  if (recentSavedRecordingTimer) clearTimeout(recentSavedRecordingTimer);
+  recentSavedRecordingTimer = setTimeout(() => {
+    recentSavedRecordingKey = "";
+    render();
+  }, 3000);
+}
+
+function deleteSelectedFieldPhotos() {
+  const job = currentJob();
+  const selected = new Set(state.selectedFieldPhotoNames || []);
+  if (!selected.size) {
+    notify("삭제할 사진을 체크하세요.");
+    return;
+  }
+  job.photos = (job.photos || []).filter((name) => !selected.has(name));
+  job.photoFiles = (job.photoFiles || []).filter((photo) => !selected.has(photo.name));
+  job.reportPhotoNames = (job.reportPhotoNames || []).filter((name) => !selected.has(name));
+  state.selectedFieldPhotoNames = [];
+  state.selectedFieldPhotoIndex = 0;
+  job.updatedAt = new Date().toISOString();
+  saveState();
+  render();
+  notify("선택한 사진을 삭제했습니다.");
+}
+
+async function toggleRecording(target = { kind: "situation" }) {
+  if (wavRecorder?.recording) {
+    await stopWavRecording();
+    notify("녹음 저장완료.");
+    return;
+  }
+  try {
+    let stream;
+    if (target.kind === "tracker") {
+      if (!micStream || !analyser || !audioContext) await startSpectrum();
+      if (!micStream) throw new Error("No tracker audio input");
+      const tracks = micStream.getAudioTracks().map((track) => track.clone());
+      stream = new MediaStream(tracks);
+    } else {
+      stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    }
+    recordingTarget = target;
+    await startWavRecording(stream);
+    render();
+    notify(target.kind === "tracker" ? "그래프를 보면서 녹음 중입니다." : "녹음 중입니다.");
+  } catch (error) {
+    notify("마이크 권한이 필요합니다. 브라우저 권한 허용, 입력 장치, HTTPS 실행 상태를 확인하세요.");
+  }
+}
+
+function togglePauseRecording(target) {
+  if (!wavRecorder?.recording || targetKey(recordingTarget) !== targetKey(target)) {
+    notify("진행 중인 녹음이 없습니다.");
+    return;
+  }
+  wavRecorder.paused = !wavRecorder.paused;
+  render();
+  notify(wavRecorder.paused ? "녹음 일시정지." : "녹음 이어서 진행.");
+}
+
+async function startWavRecording(stream) {
+  const context = new AudioContext();
+  const source = context.createMediaStreamSource(stream);
+  const processor = context.createScriptProcessor(4096, 1, 1);
+  const samples = [];
+  processor.onaudioprocess = (event) => {
+    if (!wavRecorder?.recording || wavRecorder.paused) return;
+    samples.push(new Float32Array(event.inputBuffer.getChannelData(0)));
+  };
+  source.connect(processor);
+  processor.connect(context.destination);
+  wavRecorder = {
+    context,
+    source,
+    processor,
+    samples,
+    sampleRate: context.sampleRate,
+    stream,
+    recording: true,
+    paused: false,
+  };
+}
+
+async function stopWavRecording() {
+  if (!wavRecorder) return;
+  const recorder = wavRecorder;
+  recorder.recording = false;
+  recorder.processor.disconnect();
+  recorder.source.disconnect();
+  recorder.stream.getTracks().forEach((track) => track.stop());
+  await recorder.context.close();
+  const blob = createWavBlob(recorder.samples, recorder.sampleRate);
+  const target = recordingTarget || { kind: "situation" };
+  const job = currentJob();
+  const savedName = saveBlobFile(blob, "wav", nextJobAssetName(job, "recording", 0, "wav"));
+  const recording = {
+    id: `rec-${Date.now()}`,
+    name: savedName,
+    targetKey: targetKey(target),
+    target,
+    type: "audio/wav",
+    createdAt: new Date().toISOString(),
+  };
+  await putRecordingBlob(recording.id, blob);
+  job.recordings = [...(job.recordings || []).filter((item) => item.targetKey !== recording.targetKey), recording];
+  recordingTarget = null;
+  wavRecorder = null;
+  markRecordingSaved(recording.targetKey);
+  saveState();
+  render();
+}
+
+async function importRecordingFile(file, dataset = {}) {
+  if (!file) return;
+  const target = recordingTargetFromDataset(dataset);
+  const id = `rec-${Date.now()}`;
+  const job = currentJob();
+  const recording = {
+    id,
+    name: nextJobAssetName(job, "recording", 0, fileExtension(file, "wav")),
+    targetKey: targetKey(target),
+    target,
+    type: file.type || "audio/mpeg",
+    createdAt: new Date().toISOString(),
+    imported: true,
+  };
+  await putRecordingBlob(id, file);
+  job.recordings = [...(job.recordings || []).filter((item) => item.targetKey !== recording.targetKey), recording];
+  job.updatedAt = new Date().toISOString();
+  saveState();
+  render();
+  notify("녹음 파일을 가져와 저장했습니다.");
+}
+
+function recordingTargetFromDataset(dataset = {}) {
+  if (dataset.targetKind === "tracker") return { kind: "tracker" };
+  if (dataset.targetKind === "somersSound") return { kind: "somersSound" };
+  if (dataset.targetKind === "check") return { kind: "check", type: dataset.checkType || "", id: dataset.check || "" };
+  return { kind: "field", field: dataset.field || "situation" };
+}
+
+function targetKey(target = {}) {
+  if (!target) return "";
+  if (target.kind === "tracker") return "tracker";
+  if (target.kind === "somersSound") return "somers:sound";
+  if (target.kind === "check") return `check:${target.type || ""}:${target.id || ""}`;
+  if (target.kind === "field") return `field:${target.field || "situation"}`;
+  return "field:situation";
+}
+
+function getLastRecordingForTarget(target) {
+  const key = targetKey(target);
+  const recordings = currentJob().recordings || [];
+  return [...recordings].reverse().find((item) => item.targetKey === key);
+}
+
+async function playRecording(id) {
+  if (!id) return;
+  try {
+    const blob = await getRecordingBlob(id);
+    if (!blob) {
+      notify("녹음 파일을 찾지 못했습니다.");
+      return;
+    }
+    const url = URL.createObjectURL(blob);
+    const audio = new Audio(url);
+    audio.addEventListener("ended", () => URL.revokeObjectURL(url), { once: true });
+    await audio.play();
+    notify("녹음 재생 중입니다.");
+  } catch (error) {
+    notify("녹음을 재생하지 못했습니다.");
+  }
+}
+
+async function deleteRecording(id) {
+  if (!id) return;
+  const job = currentJob();
+  job.recordings = (job.recordings || []).filter((item) => item.id !== id);
+  await deleteRecordingBlob(id);
+  saveState();
+  render();
+  notify("녹음이 삭제되었습니다.");
+}
+
+function openRecordingDb() {
+  return new Promise((resolve, reject) => {
+    const request = indexedDB.open(RECORDING_DB_NAME, 1);
+    request.onupgradeneeded = () => {
+      request.result.createObjectStore("recordings");
+    };
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error);
+  });
+}
+
+async function putRecordingBlob(id, blob) {
+  const db = await openRecordingDb();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction("recordings", "readwrite");
+    tx.objectStore("recordings").put(blob, id);
+    tx.oncomplete = () => {
+      db.close();
+      resolve();
+    };
+    tx.onerror = () => {
+      db.close();
+      reject(tx.error);
+    };
+  });
+}
+
+async function getRecordingBlob(id) {
+  const db = await openRecordingDb();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction("recordings", "readonly");
+    const request = tx.objectStore("recordings").get(id);
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error);
+    tx.oncomplete = () => db.close();
+  });
+}
+
+async function deleteRecordingBlob(id) {
+  const db = await openRecordingDb();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction("recordings", "readwrite");
+    tx.objectStore("recordings").delete(id);
+    tx.oncomplete = () => {
+      db.close();
+      resolve();
+    };
+    tx.onerror = () => {
+      db.close();
+      reject(tx.error);
+    };
+  });
+}
+
+function createWavBlob(buffers, sampleRate) {
+  const totalLength = buffers.reduce((sum, buffer) => sum + buffer.length, 0);
+  const pcm = new Int16Array(totalLength);
+  let offset = 0;
+  buffers.forEach((buffer) => {
+    for (let i = 0; i < buffer.length; i += 1) {
+      const sample = Math.max(-1, Math.min(1, buffer[i]));
+      pcm[offset] = sample < 0 ? sample * 0x8000 : sample * 0x7fff;
+      offset += 1;
+    }
+  });
+  const wav = new ArrayBuffer(44 + pcm.length * 2);
+  const view = new DataView(wav);
+  writeAscii(view, 0, "RIFF");
+  view.setUint32(4, 36 + pcm.length * 2, true);
+  writeAscii(view, 8, "WAVE");
+  writeAscii(view, 12, "fmt ");
+  view.setUint32(16, 16, true);
+  view.setUint16(20, 1, true);
+  view.setUint16(22, 1, true);
+  view.setUint32(24, sampleRate, true);
+  view.setUint32(28, sampleRate * 2, true);
+  view.setUint16(32, 2, true);
+  view.setUint16(34, 16, true);
+  writeAscii(view, 36, "data");
+  view.setUint32(40, pcm.length * 2, true);
+  let dataOffset = 44;
+  for (let i = 0; i < pcm.length; i += 1) {
+    view.setInt16(dataOffset, pcm[i], true);
+    dataOffset += 2;
+  }
+  return new Blob([view], { type: "audio/wav" });
+}
+
+function writeAscii(view, offset, text) {
+  for (let i = 0; i < text.length; i += 1) {
+    view.setUint8(offset + i, text.charCodeAt(i));
+  }
+}
+
+function saveBlobFile(blob, extension, preferredName = "") {
+  const date = new Date();
+  const stamp = `${date.getFullYear()}${pad2(date.getMonth() + 1)}${pad2(date.getDate())}-${pad2(date.getHours())}${pad2(date.getMinutes())}${pad2(date.getSeconds())}`;
+  const filename = preferredName || `waterleak-recording-${stamp}.${extension}`;
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+  return filename;
+}
+
+function pad2(value) {
+  return String(value).padStart(2, "0");
+}
+
+function appendTargetText(target, text) {
+  const job = currentJob();
+  const stamp = text.trim();
+  if (!stamp) return;
+  if (target.kind === "check") {
+    const checks = job[target.type] || [];
+    const check = checks.find((item) => item.id === target.id);
+    if (check) check.memo = `${check.memo ? `${check.memo}\n` : ""}${stamp}`;
+  } else if (target.kind === "field") {
+    const fieldName = target.field || "situation";
+    job[fieldName] = `${job[fieldName] ? `${job[fieldName]}\n` : ""}${stamp}`;
+  } else {
+    job.situation = `${job.situation ? `${job.situation}\n` : ""}${stamp}`;
+  }
+  job.updatedAt = new Date().toISOString();
+  saveState();
+}
+
+function clearField(fieldName, shouldRender = true) {
+  const job = currentJob();
+  job[fieldName] = "";
+  job.updatedAt = new Date().toISOString();
+  saveState();
+  if (shouldRender) render();
+}
+
+function clearCheckMemo(type, id, shouldRender = true) {
+  const job = currentJob();
+  const check = (job[type] || []).find((item) => item.id === id);
+  if (check) check.memo = "";
+  job.updatedAt = new Date().toISOString();
+  saveState();
+  if (shouldRender) render();
+}
+
+function openDeviceFilePicker(type) {
+  const input = document.querySelector("#externalAudioInput");
+  if (!input) {
+    notify("녹음 파일 선택창을 찾지 못했습니다.");
+    return;
+  }
+  input.value = "";
+  input.click();
+}
+
+function maybeAddEstimateRow(input) {
+  if (input.dataset.field !== "name") return;
+  const job = currentJob();
+  const index = Number(input.dataset.estimate);
+  const isLast = index === job.estimateItems.length - 1;
+  const isLong = input.value.length >= 80 || input.scrollHeight > input.clientHeight + 12;
+  if (!isLast || !isLong) return;
+  job.estimateItems.push(createEstimateItem());
+  setTimeout(render, 0);
+}
+
+function resizeEstimateNameInput(input) {
+  input.style.height = "auto";
+  input.style.height = `${Math.min(Math.max(input.scrollHeight, 42), 180)}px`;
+}
+
+function focusEstimateName(index) {
+  setTimeout(() => {
+    const target = document.querySelector(`.estimate-item-name[data-estimate="${index}"]`);
+    if (!target) return;
+    target.focus();
+    resizeEstimateNameInput(target);
+  }, 0);
+}
+
+function refreshCurrentJobHeader(job = currentJob()) {
+  const topStatus = document.querySelector(".top-status");
+  if (topStatus) topStatus.textContent = `${job.date || "-"} · ${job.address || "주소 미입력"}`;
+}
+
+async function filesToPrintableImages(files) {
+  const images = [];
+  for (const file of files) {
+    if (!file.type.startsWith("image/")) continue;
+    try {
+      const dataUrl = await resizeImageFile(file, 1400, 0.82);
+      images.push({ name: file.name, dataUrl });
+    } catch (error) {
+      console.warn(error);
+      const dataUrl = await readFileAsDataUrl(file);
+      images.push({ name: file.name, dataUrl });
+    }
+  }
+  return images;
+}
+
+function readFileAsDataUrl(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result || ""));
+    reader.onerror = () => reject(reader.error || new Error("사진 파일을 읽지 못했습니다."));
+    reader.readAsDataURL(file);
+  });
+}
+
+async function dataUrlToBlob(dataUrl) {
+  const response = await fetch(dataUrl);
+  return response.blob();
+}
+
+async function resizeImageFile(file, maxSide = 1400, quality = 0.82) {
+  const dataUrl = await readFileAsDataUrl(file);
+  const image = await loadImage(dataUrl);
+  const scale = Math.min(1, maxSide / Math.max(image.naturalWidth || image.width, image.naturalHeight || image.height));
+  const width = Math.max(1, Math.round((image.naturalWidth || image.width) * scale));
+  const height = Math.max(1, Math.round((image.naturalHeight || image.height) * scale));
+  const canvas = document.createElement("canvas");
+  canvas.width = width;
+  canvas.height = height;
+  const ctx = canvas.getContext("2d");
+  ctx.drawImage(image, 0, 0, width, height);
+  return canvas.toDataURL("image/jpeg", quality);
+}
+
+function loadImage(src) {
+  return new Promise((resolve, reject) => {
+    const image = new Image();
+    image.onload = () => resolve(image);
+    image.onerror = () => reject(new Error("사진 미리보기 변환에 실패했습니다."));
+    image.src = src;
+  });
+}
+
+function toggleEstimateTitle() {
+  const job = currentJob();
+  const previousNote = estimateNoteText(job);
+  job.estimateDocTitle = job.estimateDocTitle === "거래명세서" ? "견 적 서" : "거래명세서";
+  if (!job.estimateNote || isDefaultEstimateNote(previousNote)) {
+    job.estimateNote = estimateDefaultNote(job);
+  }
+  job.updatedAt = new Date().toISOString();
+  saveState();
+  render();
+}
+
+function isStatementDocument(job = currentJob()) {
+  return (job.estimateDocTitle || "견 적 서") === "거래명세서";
+}
+
+function estimateDocumentLabels(job = currentJob()) {
+  const statement = isStatementDocument(job);
+  return {
+    dateLabel: statement ? "일자" : "견적일자",
+    noLabel: statement ? "명세서번호" : "견적번호",
+    previewTitle: statement ? "거래명세서" : "견적서",
+  };
+}
+
+function estimateDefaultNote(job = currentJob()) {
+  const general = generalWorkSummary(job);
+  const base = isStatementDocument(job)
+    ? "상기 거래명세서는 현장 상황 및 추가 작업 범위에 따라 변경될 수 있습니다."
+    : "상기 견적은 현장 상황 및 추가 작업 범위에 따라 변경될 수 있습니다.";
+  return general ? `${base}\n\n[공사요청기록]\n${general}` : base;
+}
+
+function isDefaultEstimateNote(note = "") {
+  const normalized = String(note || "").trim();
+  return normalized === "상기 견적은 현장 상황 및 추가 작업 범위에 따라 변경될 수 있습니다."
+    || normalized === "상기 거래명세서는 현장 상황 및 추가 작업 범위에 따라 변경될 수 있습니다.";
+}
+
+function estimateNoteText(job = currentJob()) {
+  return job.estimateNote || estimateDefaultNote(job);
+}
+
+function generalWorkSummary(job = currentJob()) {
+  return String(job.generalWorkRequest || "").trim();
+}
+
+function renderGeneralWorkDocumentBlock(job = currentJob()) {
+  const general = generalWorkSummary(job);
+  if (!general) return "";
+  return `
+    <div class="general-work-doc-block">
+      <h3>공사요청기록</h3>
+      <p>${escapeHtml(general)}</p>
+    </div>
+  `;
+}
+
+function estimateLineTotal(item) {
+  const qty = Number(item.qty || 0);
+  const hasUnitPrice = String(item.unitPrice ?? "").trim() !== "";
+  const unitPrice = Number(item.unitPrice || 0);
+  if (hasUnitPrice) return qty * unitPrice;
+  return Number(item.cost || 0);
+}
+
+function estimateItemHasContent(item = {}) {
+  return Boolean(String(item.name || "").trim() || String(item.spec || "").trim() || Number(item.cost || item.unitPrice || 0));
+}
+
+function estimatePrintableItems(job = currentJob()) {
+  return (job.estimateItems || []).filter(estimateItemHasContent);
+}
+
+function estimateVatMode(job = currentJob()) {
+  return job.vatMode === "inclusive" ? "inclusive" : "exclusive";
+}
+
+function estimateTotals(job = currentJob()) {
+  const lineTotal = (job.estimateItems || []).reduce((sum, item) => sum + estimateLineTotal(item), 0);
+  if (estimateVatMode(job) === "inclusive") {
+    const total = lineTotal;
+    const supplyTotal = Math.round(total / 1.1);
+    return { supplyTotal, tax: total - supplyTotal, total };
+  }
+  const supplyTotal = lineTotal;
+  const tax = Math.round(supplyTotal * 0.1);
+  return { supplyTotal, tax, total: supplyTotal + tax };
+}
+
+function updateEstimateTotalsInPlace(job = currentJob()) {
+  const totals = estimateTotals(job);
+  Object.entries(totals).forEach(([key, value]) => {
+    const target = document.querySelector(`[data-estimate-total="${key}"]`);
+    if (target) target.textContent = `${value.toLocaleString()}원`;
+  });
+}
+
+function refreshReportPreview(job = currentJob()) {
+  const shell = document.querySelector(".report-preview-panel .a4-preview-shell");
+  if (shell) {
+    shell.innerHTML = renderDocumentPreviewPages("report", job);
+    bindDocumentPreviewButtons(shell);
+    setTimeout(() => updateDocumentPreviewFitScales("report"), 0);
+    return;
+  }
+  const target = document.querySelector('[data-live-preview="report"]');
+  if (target) target.innerHTML = buildReportPrintHtml(job);
+}
+
+function refreshEstimatePreview(job = currentJob()) {
+  const shell = document.querySelector(".estimate-preview-panel .a4-preview-shell");
+  if (shell) {
+    shell.innerHTML = renderDocumentPreviewPages("estimate", job);
+    bindDocumentPreviewButtons(shell);
+    setTimeout(() => updateDocumentPreviewFitScales("estimate"), 0);
+    return;
+  }
+  const target = document.querySelector('[data-live-preview="estimate"]');
+  if (target) target.innerHTML = buildEstimatePrintHtml(job);
+}
+
+function refreshActiveDocumentPreview(job = currentJob()) {
+  if (state.activeView === "report") refreshReportPreview(job);
+  if (state.activeView === "estimate") {
+    updateEstimateTotalsInPlace(job);
+    refreshEstimatePreview(job);
+  }
+}
+
+function saveLocalDraft() {
+  const job = currentJob();
+  syncEstimateItemsFromForm(job);
+  job.updatedAt = new Date().toISOString();
+  saveState();
+  refreshActiveDocumentPreview(job);
+  updateDocumentPreviewFitScales(state.activeView === "report" ? "report" : "estimate");
+  notify("앱에 임시 저장했습니다. Google Drive에는 백업 저장 때만 올라갑니다.");
+}
+
+function setEstimateVatMode(mode) {
+  const job = currentJob();
+  job.vatMode = mode === "inclusive" ? "inclusive" : "exclusive";
+  job.updatedAt = new Date().toISOString();
+  saveState();
+  render();
+}
+
+function toggleEstimateVatMode() {
+  const currentMode = estimateVatMode();
+  setEstimateVatMode(currentMode === "inclusive" ? "exclusive" : "inclusive");
+}
+
+function estimatePreviewScale(job = currentJob()) {
+  return clampNumber(Number(job.estimatePreviewScale || 100), 45, 130);
+}
+
+function estimatePreviewOffsetY(job = currentJob()) {
+  return clampNumber(Number(job.estimatePreviewOffsetY || 0), -160, 160);
+}
+
+function documentPreviewScale(job = currentJob(), type = "estimate") {
+  return type === "report" ? clampNumber(Number(job.reportPreviewScale || 100), 45, 130) : estimatePreviewScale(job);
+}
+
+function documentPreviewOffsetY(job = currentJob(), type = "estimate") {
+  return type === "report" ? clampNumber(Number(job.reportPreviewOffsetY || 0), -160, 160) : estimatePreviewOffsetY(job);
+}
+
+function setEstimatePreviewScale(value) {
+  const job = currentJob();
+  const scale = clampNumber(Number(value || 100), 45, 130);
+  job.estimatePreviewScale = scale;
+  job.updatedAt = new Date().toISOString();
+  saveState();
+  document.querySelectorAll('[data-preview-wrap="estimate"]').forEach((wrap) => {
+    updateA4PreviewFitScale(wrap);
+    wrap.style.setProperty("--estimate-preview-scale", String(scale / 100));
+    wrap.style.setProperty("--document-preview-scale", String(scale / 100));
+  });
+  const input = document.querySelector("[data-estimate-preview-scale]");
+  if (input) input.value = String(scale);
+  const dial = document.querySelector("[data-estimate-scale-dial]");
+  if (dial) {
+    dial.style.setProperty("--dial-rotation", `${(scale - 100) * 2.4}deg`);
+    const label = dial.querySelector("span");
+    if (label) label.textContent = `${scale}%`;
+  }
+  scheduleDocumentPreviewRefresh("estimate", job);
+}
+
+function setEstimatePreviewOffsetY(value) {
+  const job = currentJob();
+  const offset = clampNumber(Number(value || 0), -160, 160);
+  job.estimatePreviewOffsetY = offset;
+  job.updatedAt = new Date().toISOString();
+  saveState();
+  document.querySelectorAll('[data-preview-wrap="estimate"]').forEach((wrap) => {
+    wrap.style.setProperty("--estimate-preview-offset", `${offset}px`);
+    wrap.style.setProperty("--document-preview-offset", `${offset}px`);
+  });
+  const input = document.querySelector("[data-estimate-preview-offset]");
+  if (input) input.value = String(offset);
+  const dial = document.querySelector("[data-estimate-offset-dial] span");
+  if (dial) dial.textContent = `${offset}px`;
+  scheduleDocumentPreviewRefresh("estimate", job);
+}
+
+function setDocumentPreviewScale(type = "estimate", value) {
+  if (type !== "report") {
+    setEstimatePreviewScale(value);
+    return;
+  }
+  const job = currentJob();
+  const scale = clampNumber(Number(value || 100), 45, 130);
+  job.reportPreviewScale = scale;
+  job.updatedAt = new Date().toISOString();
+  saveState();
+  document.querySelectorAll('[data-preview-wrap="report"]').forEach((wrap) => {
+    updateA4PreviewFitScale(wrap);
+    wrap.style.setProperty("--document-preview-scale", String(scale / 100));
+  });
+  const input = document.querySelector('[data-document-preview-scale][data-preview-type="report"]');
+  if (input) input.value = String(scale);
+  const label = document.querySelector('[data-document-scale-dial][data-preview-type="report"] span');
+  if (label) label.textContent = `${scale}%`;
+  scheduleDocumentPreviewRefresh("report", job);
+}
+
+function setDocumentPreviewOffsetY(type = "estimate", value) {
+  if (type !== "report") {
+    setEstimatePreviewOffsetY(value);
+    return;
+  }
+  const job = currentJob();
+  const offset = clampNumber(Number(value || 0), -160, 160);
+  job.reportPreviewOffsetY = offset;
+  job.updatedAt = new Date().toISOString();
+  saveState();
+  document.querySelectorAll('[data-preview-wrap="report"]').forEach((wrap) => {
+    wrap.style.setProperty("--document-preview-offset", `${offset}px`);
+  });
+  const input = document.querySelector('[data-document-preview-offset][data-preview-type="report"]');
+  if (input) input.value = String(offset);
+  const label = document.querySelector('[data-document-offset-dial][data-preview-type="report"] span');
+  if (label) label.textContent = `${offset}px`;
+  scheduleDocumentPreviewRefresh("report", job);
+}
+
+function scheduleDocumentPreviewRefresh(type = "estimate", job = currentJob()) {
+  if (documentPreviewRefreshTimer) clearTimeout(documentPreviewRefreshTimer);
+  documentPreviewRefreshTimer = setTimeout(() => {
+    documentPreviewRefreshTimer = null;
+    if (type === "report") refreshReportPreview(job);
+    else refreshEstimatePreview(job);
+  }, 220);
+}
+
+function clampNumber(value, min, max) {
+  if (!Number.isFinite(value)) return min;
+  return Math.min(max, Math.max(min, Math.round(value)));
+}
+
+function syncEstimateItemsFromForm(job = currentJob()) {
+  const fields = document.querySelectorAll("[data-estimate]");
+  if (!fields.length) return;
+  const nextItems = (job.estimateItems || []).map((item) => ({ ...createEstimateItem(), ...item }));
+  fields.forEach((field) => {
+    const index = Number(field.dataset.estimate);
+    const name = field.dataset.field;
+    if (!Number.isFinite(index) || !name) return;
+    if (!nextItems[index]) nextItems[index] = createEstimateItem();
+    nextItems[index][name] = field.type === "number" ? field.value : field.value;
+    if (name === "name") nextItems[index].spec = "";
+  });
+  job.estimateItems = nextItems.length ? nextItems : [createEstimateItem()];
+}
+
+function fitEstimatePreviewToA4() {
+  fitDocumentPreviewToA4("estimate");
+}
+
+function updateDocumentPreviewFitScales(type = "estimate") {
+  document.querySelectorAll(`[data-preview-wrap="${type}"]`).forEach((wrap) => updateA4PreviewFitScale(wrap));
+}
+
+function fitDocumentPreviewToA4(type = "estimate") {
+  const job = currentJob();
+  const wraps = Array.from(document.querySelectorAll(`[data-preview-wrap="${type}"]`));
+  if (!wraps.length) return;
+  const current = documentPreviewScale(job, type);
+  const requiredValues = wraps.map((wrap) => {
+    const page = wrap.querySelector(".a4-preview-page");
+    if (!page) return current;
+    const baseScale = updateA4PreviewFitScale(wrap);
+    const pageHeight = Math.max(page.scrollHeight, page.offsetHeight);
+    const frameHeight = wrap.clientHeight;
+    if (!pageHeight || !frameHeight) return current;
+    return pageHeight * baseScale * (current / 100) > frameHeight
+      ? clampNumber(Math.floor((frameHeight / (pageHeight * baseScale)) * 100) - 1, 45, 130)
+      : current;
+  });
+  const required = Math.min(...requiredValues);
+  if (required < current) setDocumentPreviewScale(type, required);
+}
+
+function updateA4PreviewFitScale(wrap = document.querySelector(".a4-preview-page-wrap")) {
+  if (!wrap) return 1;
+  const pageWidth = 794;
+  const fitScale = Math.max(0.1, wrap.clientWidth / pageWidth);
+  wrap.style.setProperty("--a4-fit-scale", String(fitScale));
+  return fitScale;
+}
+
+function openPdfPrintWindow(type) {
+  const job = currentJob();
+  if (type === "estimate") {
+    syncEstimateItemsFromForm(job);
+    saveState();
+  }
+  const title = type === "report" ? "누수진단 소견서" : currentJob().estimateDocTitle || "견 적 서";
+  const html = buildDocumentPrintPagesHtml(type, job);
+  const previewScale = documentPreviewScale(job, type) / 100;
+  const previewOffsetY = documentPreviewOffsetY(job, type);
+  const popup = window.open("", "_blank", "width=920,height=1100");
+  if (!popup) {
+    notify("팝업이 차단되었습니다. 브라우저 팝업 허용 후 다시 시도하세요.");
+    return;
+  }
+  popup.document.open();
+  popup.document.write(`
+    <!doctype html>
+    <html lang="ko">
+      <head>
+        <meta charset="UTF-8" />
+        <title>${escapeHtml(title)}</title>
+        <style>
+          @page { size: A4; margin: 0; }
+          * { box-sizing: border-box; }
+          body { color: #111827; font-family: "Malgun Gothic", Arial, sans-serif; line-height: 1.55; margin: 0; padding: 0; }
+          h1 { font-size: 26px; letter-spacing: 0; margin: 0 0 18px; text-align: center; }
+          h2 { border-bottom: 2px solid #111827; font-size: 17px; margin: 18px 0 8px; padding-bottom: 5px; }
+          p { margin: 6px 0; }
+          table { border-collapse: collapse; margin: 10px 0; width: 100%; }
+          th, td { border: 1px solid #222; padding: 8px; text-align: left; vertical-align: top; }
+          th { background: #f3f4f6; font-weight: 700; }
+          .doc { padding: 0; }
+          .print-sheet { align-items: flex-start; break-after: page; display: flex; height: 297mm; justify-content: center; overflow: hidden; width: 210mm; }
+          .print-sheet:last-child { break-after: auto; }
+          .print-page { flex: 0 0 auto; min-height: 1123px; padding: 24px; transform: translateY(${previewOffsetY}px) scale(${previewScale}); transform-origin: top center; width: 794px; }
+          .right { text-align: right; }
+          .pre { white-space: pre-wrap; }
+          .total th, .total td { background: #ecfdf5; font-size: 16px; font-weight: 700; }
+          .stamp-wrap { align-items: center; display: inline-flex; gap: 12px; justify-content: flex-end; margin-top: 28px; width: 100%; }
+          .stamp-svg { height: 78px; object-fit: contain; opacity: .95; transform: rotate(-5deg); width: 78px; }
+          .photo-page { break-before: auto; page-break-before: auto; }
+          .photo-grid-print { display: grid; gap: 10px; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+          .photo-grid-print figure { border: 1px solid #222; display: grid; grid-template-rows: 1fr auto; margin: 0; min-height: 150px; padding: 8px; }
+          .photo-grid-print img { height: 150px; object-fit: contain; width: 100%; }
+          .photo-grid-print figcaption { border-top: 1px solid #ddd; font-size: 11px; margin-top: 6px; overflow: hidden; padding-top: 4px; text-align: center; text-overflow: ellipsis; white-space: nowrap; }
+          @media print { body { print-color-adjust: exact; -webkit-print-color-adjust: exact; } }
+        </style>
+      </head>
+      <body>
+        <div class="doc">${html}</div>
+        <script>
+          window.addEventListener("load", () => setTimeout(() => window.print(), 250));
+        <\/script>
+      </body>
+    </html>
+  `);
+  popup.document.close();
+}
+
+function buildDocumentPrintPagesHtml(type, job = currentJob()) {
+  return documentPreviewPages(type, job)
+    .map((page) => `<section class="print-sheet"><div class="print-page">${page.html}</div></section>`)
+    .join("");
+}
+
+function buildReportPrintHtml(job) {
+  const report = reportContentForDocument(typeof job.report === "string" ? job.report : generateReport(job));
+  return [
+    ...buildReportDocumentPages(job, report).map((page) => page.html),
+    ...reportPhotoChunks(job).map((chunk, index, chunks) => buildReportPhotoPageHtml(chunk, index, chunks.length)),
+  ].join("");
+}
+
+function buildReportContentHtml(job, report, includePhotos = true) {
+  const pages = buildReportDocumentPages(job, report).map((page) => page.html).join("");
+  return `${pages}${includePhotos ? buildReportPhotoPages(job) : ""}`;
+}
+
+function buildReportDocumentPages(job, report) {
+  const scaleFactor = documentPreviewScaleFactor(job, "report");
+  const offsetFactor = documentPreviewOffsetY(job, "report") * 2.2;
+  const firstLimit = Math.max(520, Math.round((880 - offsetFactor) / scaleFactor));
+  const nextLimit = Math.max(760, Math.round((1320 - offsetFactor) / scaleFactor));
+  const chunks = splitDocumentText(report || "점검박스를 확인하세요.", firstLimit, nextLimit);
+  return chunks.map((chunk, index) => {
+    const isFirst = index === 0;
+    const isLast = index === chunks.length - 1;
+    return {
+      label: chunks.length > 1 ? `소견서 ${index + 1}` : "소견서",
+      html: `
+        ${isFirst ? `
+          <h1>누수진단 소견서</h1>
+          <table>
+            <tbody>
+              <tr><th>진단일자</th><td>${escapeHtml(job.date || "")}</td><th>연락처</th><td>${escapeHtml(job.phone || "")}</td></tr>
+              <tr><th>고객 이름</th><td colspan="3">${escapeHtml(job.customerName || "")}</td></tr>
+              <tr><th>현장주소</th><td colspan="3">${escapeHtml(job.address || "")}</td></tr>
+              <tr><th>작성자</th><td>${escapeHtml(PROVIDER.name)}</td><th>사업자번호</th><td>${escapeHtml(PROVIDER.bizNo)}</td></tr>
+              <tr><th>공급자 주소</th><td colspan="3">${escapeHtml(PROVIDER.address)}</td></tr>
+            </tbody>
+          </table>
+          <h2>소견 내용</h2>
+        ` : `<h1>누수진단 소견서</h1><h2>소견 내용 계속</h2>`}
+        <div class="pre">${escapeHtml(chunk)}</div>
+        ${isLast ? `
+          <div class="stamp-wrap">
+            <span>공급자 확인: ${escapeHtml(PROVIDER.owner)}</span>
+            ${stampSealImage("stamp-svg")}
+          </div>
+        ` : ""}
+      `,
+    };
+  });
+}
+
+function buildReportContentHtmlLegacy(job, report, includePhotos = true) {
+  return `
+    <h1>누수진단 소견서</h1>
+    <table>
+      <tbody>
+        <tr><th>진단일자</th><td>${escapeHtml(job.date || "")}</td><th>연락처</th><td>${escapeHtml(job.phone || "")}</td></tr>
+        <tr><th>고객 이름</th><td colspan="3">${escapeHtml(job.customerName || "")}</td></tr>
+        <tr><th>현장주소</th><td colspan="3">${escapeHtml(job.address || "")}</td></tr>
+        <tr><th>작성자</th><td>${escapeHtml(PROVIDER.name)}</td><th>사업자번호</th><td>${escapeHtml(PROVIDER.bizNo)}</td></tr>
+        <tr><th>공급자 주소</th><td colspan="3">${escapeHtml(PROVIDER.address)}</td></tr>
+      </tbody>
+    </table>
+    <h2>소견 내용</h2>
+    <div class="pre">${escapeHtml(report)}</div>
+    <div class="stamp-wrap">
+      <span>공급자 확인: ${escapeHtml(PROVIDER.owner)}</span>
+      ${stampSealImage("stamp-svg")}
+    </div>
+    ${includePhotos ? buildReportPhotoPages(job) : ""}
+  `;
+}
+
+function documentPreviewPages(type, job = currentJob()) {
+  if (type === "report") {
+    const report = reportContentForDocument(typeof job.report === "string" ? job.report : generateReport(job));
+    return [
+      ...buildReportDocumentPages(job, report),
+      ...reportPhotoChunks(job).map((chunk, index, chunks) => ({
+        label: `첨부 사진 ${index + 1}`,
+        html: buildReportPhotoPageHtml(chunk, index, chunks.length),
+      })),
+    ];
+  }
+  return buildEstimateDocumentPages(job);
+}
+
+function renderDocumentPreviewPages(type, job = currentJob()) {
+  const scale = documentPreviewScale(job, type);
+  const offset = documentPreviewOffsetY(job, type);
+  const pages = documentPreviewPages(type, job);
+  const pageIndex = documentPreviewPageIndex(type, pages.length);
+  const page = pages[pageIndex] || pages[0];
+  return `
+    <div class="a4-page-switcher" data-preview-switcher="${escapeAttr(type)}">
+      <button class="btn ghost" data-action="preview-page-prev" data-preview-type="${escapeAttr(type)}" ${pageIndex <= 0 ? "disabled" : ""}>이전</button>
+      <strong>${pageIndex + 1} / ${pages.length}</strong>
+      <button class="btn ghost" data-action="preview-page-next" data-preview-type="${escapeAttr(type)}" ${pageIndex >= pages.length - 1 ? "disabled" : ""}>다음</button>
+    </div>
+    <div class="a4-preview-pages">
+      <div class="a4-page-block active">
+        <div class="a4-page-label">${pageIndex + 1} / ${pages.length} · ${escapeHtml(page.label)}</div>
+        <div class="a4-preview-page-wrap" data-preview-wrap="${escapeAttr(type)}" style="--document-preview-scale:${scale / 100}; --document-preview-offset:${offset}px">
+          <div class="pdf-preview-page a4-preview-page" data-live-preview="${escapeAttr(type)}">${page.html}</div>
+        </div>
+      </div>
+      <div class="a4-page-thumbs">
+        ${pages.map((item, index) => `
+          <button class="a4-page-thumb ${index === pageIndex ? "active" : ""}" data-action="preview-page-set" data-preview-type="${escapeAttr(type)}" data-page-index="${index}">
+            ${index + 1}
+            <span>${escapeHtml(item.label)}</span>
+          </button>
+        `).join("")}
+      </div>
+    </div>
+  `;
+}
+
+function documentPreviewPageIndex(type, pageCount = 1) {
+  if (!state.documentPreviewPage || typeof state.documentPreviewPage !== "object") state.documentPreviewPage = { estimate: 0, report: 0 };
+  const raw = Number(state.documentPreviewPage[type] || 0);
+  const max = Math.max(0, pageCount - 1);
+  const index = Math.min(max, Math.max(0, Number.isFinite(raw) ? raw : 0));
+  if (state.documentPreviewPage[type] !== index) {
+    state.documentPreviewPage[type] = index;
+    saveState();
+  }
+  return index;
+}
+
+function setDocumentPreviewPage(type, nextIndex) {
+  const pages = documentPreviewPages(type, currentJob());
+  if (!state.documentPreviewPage || typeof state.documentPreviewPage !== "object") state.documentPreviewPage = { estimate: 0, report: 0 };
+  state.documentPreviewPage[type] = Math.min(Math.max(0, Number(nextIndex) || 0), Math.max(0, pages.length - 1));
+  saveState();
+  const shell = document.querySelector(`.${type === "report" ? "report" : "estimate"}-preview-panel .a4-preview-shell`);
+  if (shell) {
+    shell.innerHTML = renderDocumentPreviewPages(type, currentJob());
+    bindDocumentPreviewButtons(shell);
+    setTimeout(() => updateDocumentPreviewFitScales(type), 0);
+  } else {
+    render();
+  }
+}
+
+function reportContentForDocument(report) {
+  const text = String(report || "").trim();
+  const firstSection = text.search(/\n\s*1\.\s*현장\s*상황/);
+  if (firstSection >= 0) return text.slice(firstSection).trim();
+  return text
+    .replace(/^\[누수진단 소견서\]\s*/u, "")
+    .replace(/^진단일자:.*(?:\r?\n)?/mu, "")
+    .replace(/^고객 이름:.*(?:\r?\n)?/mu, "")
+    .replace(/^현장주소:.*(?:\r?\n)?/mu, "")
+    .replace(/^연락처:.*(?:\r?\n)?/mu, "")
+    .replace(/^작성자:.*(?:\r?\n)?/mu, "")
+    .replace(/^사업자번호:.*(?:\r?\n)?/mu, "")
+    .replace(/^공급자 주소:.*(?:\r?\n)?/mu, "")
+    .replace(/^공급자 확인:.*(?:\r?\n)?/mu, "")
+    .trim();
+}
+
+function buildReportPhotoPages(job) {
+  const chunks = reportPhotoChunks(job);
+  return chunks.map((chunk, pageIndex) => buildReportPhotoPageHtml(chunk, pageIndex, chunks.length)).join("");
+}
+
+function reportPhotoChunks(job) {
+  const selectedNames = new Set(job.reportPhotoNames || []);
+  const fieldPhotos = Array.isArray(job.photoFiles)
+    ? job.photoFiles
+      .filter((photo) => photo?.dataUrl && selectedNames.has(photo.name))
+      .map((photo) => ({ ...photo, group: "현장 사진" }))
+    : [];
+  const somersPhotos = Array.isArray(job.somersPhotoFiles) ? job.somersPhotoFiles.filter((photo) => photo?.dataUrl).map((photo) => ({ ...photo, group: "소머즈 촬영" })) : [];
+  const photos = [...fieldPhotos, ...somersPhotos];
+  if (!photos.length) return [];
+  const chunks = [];
+  for (let i = 0; i < photos.length; i += 8) chunks.push(photos.slice(i, i + 8));
+  return chunks;
+}
+
+function buildReportPhotoPageHtml(chunk, pageIndex = 0, pageCount = 1) {
+  return `
+    <section class="photo-page">
+      <h1>첨부 사진${pageCount > 1 ? ` ${pageIndex + 1}` : ""}</h1>
+      <div class="photo-grid-print">
+        ${chunk.map((photo, index) => `
+          <figure>
+            <img src="${escapeAttr(photo.dataUrl)}" alt="${escapeAttr(photo.name || `첨부 사진 ${index + 1}`)}" />
+            <figcaption>${escapeHtml(`${photo.group || "첨부 사진"} - ${photo.name || `사진 ${pageIndex * 8 + index + 1}`}`)}</figcaption>
+          </figure>
+        `).join("")}
+      </div>
+    </section>
+  `;
+}
+
+function buildEstimatePrintHtml(job) {
+  return buildEstimateDocumentPages(job).map((page) => page.html).join("");
+}
+
+function buildEstimateDocumentPages(job) {
+  const items = estimatePrintableItems(job);
+  const totals = estimateTotals(job);
+  const labels = estimateDocumentLabels(job);
+  const general = generalWorkSummary(job);
+  const chunks = paginateEstimateItems(job, items, general);
+  return chunks.map((chunk, index) => {
+    const isFirst = index === 0;
+    const isLast = index === chunks.length - 1;
+    return {
+      label: chunks.length > 1 ? `견적서 ${index + 1}` : "견적서",
+      html: `
+    <h1>${escapeHtml(job.estimateDocTitle || "견 적 서")}</h1>
+    ${isFirst ? `<table>
+      <tbody>
+        <tr><th>${escapeHtml(labels.dateLabel)}</th><td>${escapeHtml(job.date || "")}</td><th>${escapeHtml(labels.noLabel)}</th><td>${escapeHtml(job.estimateNo || `WL-${(job.date || "").replaceAll("-", "")}`)}</td></tr>
+        <tr><th colspan="2">수신</th><th colspan="2">공급자</th></tr>
+        <tr><th>고객명</th><td>${escapeHtml(job.customerName || "")}</td><th>상호</th><td>${escapeHtml(PROVIDER.name)}</td></tr>
+        <tr><th>주소</th><td>${escapeHtml(job.address || "")}</td><th>사업자번호</th><td>${escapeHtml(PROVIDER.bizNo)}</td></tr>
+        <tr><th>전화번호</th><td>${escapeHtml(job.phone || "")}</td><th>대표/담당</th><td>${escapeHtml(PROVIDER.owner)}</td></tr>
+        <tr><th>공사명</th><td>${escapeHtml(job.workSummary || "누수 진단 및 보수 공사")}</td><th>주소</th><td>${escapeHtml(PROVIDER.address)}</td></tr>
+      </tbody>
+    </table>` : `<h2>품명 계속</h2>`}
+    <table>
+      <thead><tr><th style="width:68%">품명</th><th>수량</th><th>공급가액</th></tr></thead>
+      <tbody>
+        ${chunk.map((item) => `
+          <tr>
+            <td>${escapeHtml([item.name, item.spec].filter(Boolean).join(" / "))}</td>
+            <td>${escapeHtml(item.qty || 1)}</td>
+            <td class="right">${estimateLineTotal(item).toLocaleString()}원</td>
+          </tr>
+        `).join("")}
+        ${isLast ? `
+          <tr><th colspan="2" class="right">공급가액</th><td class="right">${totals.supplyTotal.toLocaleString()}원</td></tr>
+          <tr><th colspan="2" class="right">부가세</th><td class="right">${totals.tax.toLocaleString()}원</td></tr>
+          <tr class="total"><th colspan="2" class="right">합계금액</th><td class="right">${totals.total.toLocaleString()}원</td></tr>
+        ` : ""}
+      </tbody>
+    </table>
+    ${isLast ? `
+      <h2>비고</h2>
+      <p class="pre">${escapeHtml(estimateNoteText(job))}</p>
+      ${general ? `<h2>공사요청기록</h2><p class="pre">${escapeHtml(general)}</p>` : ""}
+      <div class="stamp-wrap">
+        <span>공급자 확인: ${escapeHtml(PROVIDER.owner)}</span>
+        ${stampSealImage("stamp-svg")}
+      </div>
+    ` : ""}
+  `,
+    };
+  });
+}
+
+function paginateEstimateItems(job, items, general = "") {
+  const safeItems = items.length ? items : [createEstimateItem()];
+  const contentLimit = estimatePageContentLimit(job);
+  const firstItemBudget = Math.max(120, contentLimit - 318);
+  const nextItemBudget = Math.max(160, contentLimit - 128);
+  const footerHeight = estimateDocumentFooterHeight(job, general);
+  const pages = [];
+
+  const newPage = () => {
+    const page = {
+      rows: [],
+      used: 0,
+      budget: pages.length ? nextItemBudget : firstItemBudget,
+    };
+    pages.push(page);
+    return page;
+  };
+
+  safeItems.forEach((item) => {
+    const height = estimateItemPrintHeight(item);
+    let page = pages[pages.length - 1] || newPage();
+    if (page.rows.length && page.used + height > page.budget) page = newPage();
+    page.rows.push({ item, height });
+    page.used += height;
+  });
+
+  let last = pages[pages.length - 1] || newPage();
+  while (last.used + footerHeight > last.budget && last.rows.length > 0) {
+    const moved = last.rows.pop();
+    last.used -= moved.height;
+    const next = {
+      rows: [moved],
+      used: moved.height,
+      budget: nextItemBudget,
+    };
+    pages.push(next);
+    last = next;
+    if (last.used + footerHeight > last.budget && last.rows.length <= 1) {
+      pages.push({ rows: [], used: 0, budget: nextItemBudget });
+      break;
+    }
+  }
+
+  return pages.map((page) => page.rows.map((row) => row.item));
+}
+
+function estimatePageContentLimit(job = currentJob()) {
+  const a4Height = 1123;
+  const pagePadding = 48;
+  const bottomSafeMargin = 16;
+  const userOffset = estimatePreviewOffsetY(job);
+  const visibleHeight = a4Height - pagePadding - bottomSafeMargin - userOffset;
+  return Math.max(360, Math.round(visibleHeight / documentPreviewScaleFactor(job, "estimate")));
+}
+
+function documentPreviewScaleFactor(job = currentJob(), type = "estimate") {
+  return Math.max(0.45, documentPreviewScale(job, type) / 100);
+}
+
+function estimateItemPrintHeight(item) {
+  const text = [item.name, item.spec].filter(Boolean).join(" / ") || "품명 미입력";
+  const wrappedLines = Math.max(1, Math.ceil(text.length / 34));
+  return 42 + (wrappedLines - 1) * 20;
+}
+
+function estimateDocumentFooterHeight(job, general = "") {
+  const note = estimateNoteText(job);
+  const totalsHeight = 118;
+  const noteHeight = 44 + Math.max(28, Math.ceil(String(note || "").length / 48) * 24);
+  const generalHeight = general ? 44 + Math.max(28, Math.ceil(String(general).length / 48) * 24) : 0;
+  const stampHeight = 118;
+  return totalsHeight + noteHeight + generalHeight + stampHeight;
+}
+
+function splitDocumentText(text, firstLimit = 880, nextLimit = 1320) {
+  const source = String(text || "").trim();
+  if (!source) return [""];
+  const normalized = source
+    .split(/\r?\n/)
+    .flatMap((line) => wrapDocumentLine(line, 42));
+  const chunks = [];
+  let current = [];
+  let count = 0;
+  let limit = firstLimit;
+  normalized.forEach((line) => {
+    const weight = Math.max(18, line.length + 18);
+    if (current.length && count + weight > limit) {
+      chunks.push(current.join("\n").trim());
+      current = [];
+      count = 0;
+      limit = nextLimit;
+    }
+    current.push(line);
+    count += weight;
+  });
+  if (current.length) chunks.push(current.join("\n").trim());
+  return chunks.length ? chunks : [source];
+}
+
+function wrapDocumentLine(line, maxLength = 42) {
+  const value = String(line || "");
+  if (!value.trim()) return [""];
+  const chunks = [];
+  for (let i = 0; i < value.length; i += maxLength) chunks.push(value.slice(i, i + maxLength));
+  return chunks;
+}
+
+function stampSealImage(className = "stamp-seal") {
+  const src = new URL("assets/stamp-choi.png", window.location.href).href;
+  return `<img class="${className}" src="${src}" alt="최규석 도장" />`;
+}
+
+async function startSpectrum() {
+  try {
+    if (animationFrame) cancelAnimationFrame(animationFrame);
+    if (micStream) micStream.getTracks().forEach((track) => track.stop());
+    if (audioContext) await audioContext.close();
+    leakAudioHistory = [];
+    lastLeakAudioMetrics = null;
+    spectrumInputDetected = false;
+    leakDisplayScore = null;
+    leakRiskState = "green";
+    stablePeakHz = null;
+    stablePeakConfidence = 0;
+    audioActivityDisplayScore = null;
+    state.audioInputStatus = "분석중";
+    saveState();
+    render();
+    const selectedDeviceId = await resolveAudioInputDeviceId();
+    const audioConstraints = {
+      echoCancellation: false,
+      noiseSuppression: false,
+      autoGainControl: false,
+      channelCount: 1,
+    };
+    if (selectedDeviceId) audioConstraints.deviceId = { exact: selectedDeviceId };
+    micStream = await navigator.mediaDevices.getUserMedia({
+      audio: {
+        ...audioConstraints,
+      },
+      video: false,
+    });
+    await refreshAudioInputDevices({ silent: true, skipRender: true });
+    markSelectedAudioInput();
+    audioContext = new (window.AudioContext || window.webkitAudioContext)();
+    const source = audioContext.createMediaStreamSource(micStream);
+    analyser = audioContext.createAnalyser();
+    analyser.fftSize = 4096;
+    analyser.smoothingTimeConstant = 0.72;
+    analyser.minDecibels = -110;
+    analyser.maxDecibels = -20;
+    source.connect(analyser);
+    renderSpectrum();
+  } catch (error) {
+    state.audioInputStatus = "입력 확인 실패";
+    saveState();
+    render();
+    notify("마이크/오디오 입력 권한이 필요합니다. 브라우저 권한과 입력 장치를 확인한 뒤 다시 실행하세요.");
+  }
+}
+
+async function stopSpectrum() {
+  state.audioInputStatus = "대기중";
+  saveState();
+  updateAudioInputStatusElement();
+  await resetTrackerRecordingState();
+  if (animationFrame) cancelAnimationFrame(animationFrame);
+  if (micStream) micStream.getTracks().forEach((track) => track.stop());
+  if (audioContext) {
+    try {
+      await audioContext.close();
+    } catch (error) {
+      console.warn(error);
+    }
+  }
+  animationFrame = null;
+  micStream = null;
+  audioContext = null;
+  analyser = null;
+  lastLeakAudioMetrics = null;
+  spectrumInputDetected = false;
+  leakDisplayScore = null;
+  leakRiskState = "green";
+  stablePeakHz = null;
+  stablePeakConfidence = 0;
+  audioActivityDisplayScore = null;
+  leakSilenceFrames = 0;
+  saveState();
+  updateAudioInputStatusElement();
+  drawIdleSpectrum();
+  updateLeakAudioPanel(null);
+}
+
+async function resetTrackerRecordingState() {
+  if (wavRecorder?.recording && targetKey(recordingTarget) === "tracker") {
+    await stopWavRecording();
+  }
+}
+
+function renderSpectrum() {
+  const canvas = document.querySelector("#spectrum");
+  if (!canvas || !analyser || !audioContext) return;
+  const ctx = canvas.getContext("2d");
+  const data = new Float32Array(analyser.frequencyBinCount);
+  const timeData = new Float32Array(analyser.fftSize);
+  analyser.getFloatFrequencyData(data);
+  analyser.getFloatTimeDomainData(timeData);
+  if (!spectrumInputDetected && hasMeaningfulAudioInput(data)) {
+    spectrumInputDetected = true;
+    state.audioInputStatus = "분석중";
+    saveState();
+    updateAudioInputStatusElement();
+  }
+  const currentMetrics = calculateLeakAudioScore({
+    frequencyData: data,
+    sampleRate: audioContext.sampleRate,
+    fftSize: analyser.fftSize,
+    history: leakAudioHistory,
+    profile: currentPipeProfile(),
+    baseline: currentJob().leakAudioBaseline,
+    timeDomainData: timeData,
+  });
+  if (currentMetrics.silent) {
+    leakSilenceFrames += 1;
+    if (leakSilenceFrames >= 8) {
+      leakAudioHistory = [];
+      leakDisplayScore = 0;
+      audioActivityDisplayScore = 0;
+      stablePeakHz = null;
+      stablePeakConfidence = 0;
+    }
+  } else {
+    leakSilenceFrames = 0;
+  }
+  leakAudioHistory.push(currentMetrics);
+  if (leakAudioHistory.length > 150) leakAudioHistory.shift();
+  const recentAverage = Math.round(leakAudioHistory.reduce((sum, item) => sum + item.score, 0) / leakAudioHistory.length);
+  const recentActivity = Math.round(leakAudioHistory.reduce((sum, item) => sum + Number(item.activityScore || 0), 0) / leakAudioHistory.length);
+  leakDisplayScore = leakDisplayScore === null ? recentAverage : Math.round(leakDisplayScore * 0.9 + recentAverage * 0.1);
+  audioActivityDisplayScore = audioActivityDisplayScore === null ? recentActivity : Math.round(audioActivityDisplayScore * 0.75 + recentActivity * 0.25);
+  const smoothedScore = clamp(leakDisplayScore, 0, 100);
+  const displayScore = clamp(Math.max(smoothedScore, Math.min(39, audioActivityDisplayScore || 0)), 0, 100);
+  lastLeakAudioMetrics = { ...currentMetrics, score: smoothedScore, displayScore };
+  const width = canvas.width;
+  const height = canvas.height;
+  ctx.clearRect(0, 0, width, height);
+  ctx.fillStyle = "#0f172a";
+  ctx.fillRect(0, 0, width, height);
+  ctx.strokeStyle = "rgba(255,255,255,0.12)";
+  ctx.lineWidth = 1;
+  for (let y = 40; y < height; y += 40) {
+    ctx.beginPath();
+    ctx.moveTo(0, y);
+    ctx.lineTo(width, y);
+    ctx.stroke();
+  }
+  const maxHz = Math.min(18000, audioContext.sampleRate / 2);
+  const maxBin = Math.max(1, Math.min(binFromHz(maxHz, audioContext.sampleRate, analyser.fftSize), data.length - 1));
+  const pipeProfile = currentPipeProfile();
+  const leakStartBin = binFromHz(pipeProfile.leakStart, audioContext.sampleRate, analyser.fftSize);
+  const leakX = (leakStartBin / maxBin) * width;
+  ctx.fillStyle = "rgba(249,115,22,0.16)";
+  ctx.fillRect(leakX, 0, width - leakX, height);
+  drawLeakFrequencyBands(ctx, width, height, maxBin, audioContext.sampleRate, analyser.fftSize, pipeProfile);
+  const peakInfo = updateStablePeakMarker(lastLeakAudioMetrics, data);
+  const peakHz = peakInfo.visible ? peakInfo.hz : 0;
+  const peakBin = binFromHz(peakHz, audioContext.sampleRate, analyser.fftSize);
+  const peakX = peakInfo.visible ? clamp((peakBin / maxBin) * width, 0, width) : 0;
+  const peakBandWidth = clamp(width * 0.055, 34, 82);
+  if (peakInfo.visible) {
+    ctx.fillStyle = "rgba(249,115,22,0.18)";
+    ctx.fillRect(clamp(peakX - peakBandWidth / 2, 0, width), 0, peakBandWidth, height);
+  }
+  const barWidth = width / Math.max(1, maxBin);
+  for (let i = 0; i < maxBin; i += 1) {
+    const db = data[i];
+    const normalized = clamp((db + 110) / 90, 0, 1);
+    const barHeight = normalized * height;
+    const hz = (i * audioContext.sampleRate) / analyser.fftSize;
+    const isPeakBand = peakInfo.visible && Math.abs(hz - peakHz) <= 450;
+    if (isPeakBand && smoothedScore >= 85) ctx.fillStyle = "#ef4444";
+    else if (isPeakBand) ctx.fillStyle = "#fb923c";
+    else if (hz >= pipeProfile.leakStart && smoothedScore >= 70) ctx.fillStyle = "#f97316";
+    else if (hz >= pipeProfile.leakStart) ctx.fillStyle = "#38bdf8";
+    else ctx.fillStyle = "#64748b";
+    ctx.fillRect(i * barWidth, height - barHeight, Math.max(1, barWidth), barHeight);
+  }
+  ctx.fillStyle = "#ffffff";
+  ctx.font = "600 14px Arial, 'Malgun Gothic', sans-serif";
+  ctx.textBaseline = "top";
+  ctx.fillText("저주파", 12, 24);
+  ctx.fillStyle = "#ffedd5";
+  ctx.fillText(`${pipeProfile.label} 누수 의심 대역`, leakX + 12, 24);
+  if (peakInfo.visible) {
+    ctx.fillStyle = "#fed7aa";
+    ctx.font = "700 15px Arial, 'Malgun Gothic', sans-serif";
+    ctx.fillText(`높은 피크 ${peakHz}Hz`, clamp(peakX + 10, 12, width - 170), 52);
+  }
+  const status = document.querySelector("#peakStatus");
+  const risk = getStableLeakAudioRisk(smoothedScore);
+  if (status) {
+    status.textContent = lastLeakAudioMetrics.silent
+      ? "정상 범위 · 입력 대기"
+      : `${risk.label} ${peakInfo.visible ? `${peakHz}Hz` : "피크 안정화 중"} ${smoothedScore}%`;
+  }
+  updateLeakAudioPanel(lastLeakAudioMetrics);
+  animationFrame = requestAnimationFrame(renderSpectrum);
+}
+
+function drawLeakFrequencyBands(ctx, width, height, maxBin, sampleRate, fftSize, profile = currentPipeProfile()) {
+  const bands = [
+    { from: profile.leakStart, to: profile.leakMid, label: "누수 의심" },
+    { from: profile.leakMid, to: profile.leakEnd, label: "피크 범위" },
+    { from: profile.leakEnd, to: profile.ultraEnd, label: "강한 피크" },
+  ];
+  bands.forEach((band, index) => {
+    const startBin = binFromHz(band.from, sampleRate, fftSize);
+    const endBin = binFromHz(Math.min(band.to, sampleRate / 2), sampleRate, fftSize);
+    const x = clamp((startBin / maxBin) * width, 0, width);
+    const bandWidth = clamp(((endBin - startBin) / maxBin) * width, 0, width - x);
+    if (bandWidth <= 0) return;
+    ctx.fillStyle = index % 2 ? "rgba(249,115,22,0.09)" : "rgba(249,115,22,0.05)";
+    ctx.fillRect(x, 0, bandWidth, height);
+    ctx.strokeStyle = "rgba(251,146,60,0.32)";
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(x, 0);
+    ctx.lineTo(x, height);
+    ctx.stroke();
+    ctx.fillStyle = "rgba(255,237,213,0.84)";
+    ctx.font = "600 12px Arial, 'Malgun Gothic', sans-serif";
+    ctx.fillText(band.label, x + 8, height - 12);
+  });
+}
+
+function updateStablePeakMarker(metrics, frequencyData) {
+  const profile = currentPipeProfile();
+  const candidateHz = Number(metrics?.peakHz || 0);
+  const peakBin = binFromHz(candidateHz, audioContext.sampleRate, analyser.fftSize);
+  const peakDb = Number.isFinite(frequencyData[peakBin]) ? frequencyData[peakBin] : -110;
+  const baseline = Math.max(Number(metrics?.lowAvg ?? -110), Number(metrics?.midAvg ?? -110));
+  const strength = peakDb - baseline;
+  const strongEnough = candidateHz >= profile.leakStart && candidateHz <= profile.ultraEnd && strength >= profile.peakStrength && Number(metrics?.score || 0) >= profile.stableScore;
+  if (!strongEnough) {
+    stablePeakConfidence = Math.max(0, stablePeakConfidence - 0.08);
+    if (stablePeakConfidence <= 0.08) stablePeakHz = null;
+    return { visible: false, hz: Math.round(stablePeakHz || candidateHz || 0) };
+  }
+  if (stablePeakHz === null) {
+    stablePeakHz = candidateHz;
+    stablePeakConfidence = 0.18;
+  } else {
+    const diff = Math.abs(candidateHz - stablePeakHz);
+    const follow = diff > 2600 ? 0.025 : diff > 1200 ? 0.055 : 0.11;
+    stablePeakHz = stablePeakHz * (1 - follow) + candidateHz * follow;
+    stablePeakConfidence = Math.min(1, stablePeakConfidence + 0.045);
+  }
+  return {
+    visible: stablePeakConfidence >= 0.38,
+    hz: Math.round(stablePeakHz),
+  };
+}
+
+function drawIdleSpectrum() {
+  const canvas = document.querySelector("#spectrum");
+  if (!canvas) return;
+  const ctx = canvas.getContext("2d");
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  ctx.fillStyle = "#071316";
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  for (let i = 0; i < 72; i += 1) {
+    const h = 22 + Math.sin(i * 0.8) * 18 + (i % 9) * 4;
+    ctx.fillStyle = i % 17 === 0 ? "#e47c24" : "#214f58";
+    ctx.fillRect(i * 16, canvas.height - h - 18, 9, h);
+  }
+}
+
+async function refreshAudioInputDevices(options = {}) {
+  if (!navigator.mediaDevices?.enumerateDevices) {
+    if (options.notifyResult) notify("이 브라우저는 입력장치 목록 확인을 지원하지 않습니다.");
+    return [];
+  }
+  try {
+    const devices = await navigator.mediaDevices.enumerateDevices();
+    audioInputDevices = devices.filter((device) => device.kind === "audioinput");
+    const preferredId = pickPreferredAudioInputDeviceId();
+    if (!state.audioInputDeviceId && preferredId) {
+      const preferred = audioInputDevices.find((device) => device.deviceId === preferredId);
+      state.audioInputDeviceId = preferredId;
+      state.audioInputLabel = preferred?.label || "외부 오디오 입력";
+      saveState();
+    }
+    if (!options.silent && options.notifyResult) {
+      const label = audioInputDevices.find((device) => device.deviceId === state.audioInputDeviceId)?.label || state.audioInputLabel || "";
+      notify(label ? `현재 오디오 입력: ${label}` : "입력장치 이름은 권한 허용 후 확인됩니다. 입력 분석을 눌러주세요.");
+    }
+    if (!options.skipRender) render();
+    return audioInputDevices;
+  } catch (error) {
+    if (options.notifyResult) notify("오디오 입력장치 확인에 실패했습니다.");
+    return [];
+  }
+}
+
+async function resolveAudioInputDeviceId() {
+  await refreshAudioInputDevices({ silent: true, skipRender: true });
+  let selectedDeviceId = pickPreferredAudioInputDeviceId();
+  const hasLabels = audioInputDevices.some((device) => device.label);
+  if (!selectedDeviceId && !hasLabels) {
+    const tempStream = await navigator.mediaDevices.getUserMedia({
+      audio: {
+        echoCancellation: false,
+        noiseSuppression: false,
+        autoGainControl: false,
+        channelCount: 1,
+      },
+      video: false,
+    });
+    tempStream.getTracks().forEach((track) => track.stop());
+    await refreshAudioInputDevices({ silent: true, skipRender: true });
+    selectedDeviceId = pickPreferredAudioInputDeviceId();
+  }
+  state.audioInputDeviceId = selectedDeviceId || "";
+  const selected = audioInputDevices.find((device) => device.deviceId === selectedDeviceId);
+  state.audioInputLabel = selected?.label || "";
+  saveState();
+  return selectedDeviceId;
+}
+
+function pickPreferredAudioInputDeviceId() {
+  if (state.audioInputDeviceId && audioInputDevices.some((device) => device.deviceId === state.audioInputDeviceId)) return state.audioInputDeviceId;
+  const externalPattern = /(usb|type-c|type c|capture|adapter|external|usb-c|외부|캡처|어댑터)/i;
+  const external = audioInputDevices.find((device) => externalPattern.test(device.label || ""));
+  return external?.deviceId || "";
+}
+
+function markSelectedAudioInput() {
+  const track = micStream?.getAudioTracks?.()[0];
+  const label = track?.label || state.audioInputLabel || "";
+  state.audioInputLabel = label;
+  state.audioInputStatus = label ? `입력 연결됨: ${label}` : "입력 연결됨";
+  saveState();
+  if (label) notify(`오디오 입력 사용 중: ${label}`);
+  render();
+}
+
+function hasMeaningfulAudioInput(frequencyData) {
+  let peak = -Infinity;
+  for (const value of frequencyData) {
+    if (Number.isFinite(value) && value > peak) peak = value;
+  }
+  return peak > -92;
+}
+
+function updateAudioInputStatusElement() {
+  const status = document.querySelector(".audio-input-status");
+  if (!status) return;
+  status.textContent = trackerAnalysisStatusText();
+  status.className = `audio-input-status ${audioInputStatusClass()}`;
+}
+
+function audioInputStatusClass() {
+  const status = state.audioInputStatus || "";
+  if (/실패/i.test(status)) return "warn";
+  if (/분석중|분석 중/i.test(status)) return "ready analyzing";
+  if (/준비|감지|연결됨|대기|정지|확인 중|자동선택/i.test(status)) return "ready";
+  if (/대기|확인 중|자동선택/i.test(status)) return "";
+  return "warn";
+}
+
+function trackerAnalysisStatusText() {
+  const status = state.audioInputStatus || "";
+  if (/실패/i.test(status)) return "입력실패";
+  if (/분석중|분석 중|감지/i.test(status)) return "분석중";
+  return "대기중";
+}
+
+function clamp(value, min, max) {
+  const number = Number(value);
+  if (!Number.isFinite(number)) return min;
+  return Math.min(max, Math.max(min, number));
+}
+
+function averageFrequencyRange(data, startBin, endBin) {
+  let sum = 0;
+  let count = 0;
+  const start = Math.round(clamp(startBin, 0, data.length - 1));
+  const end = Math.round(clamp(endBin, start, data.length - 1));
+  for (let i = start; i <= end; i += 1) {
+    if (Number.isFinite(data[i])) {
+      sum += data[i];
+      count += 1;
+    }
+  }
+  return count ? sum / count : -110;
+}
+
+function maxFrequencyRange(data, startBin, endBin) {
+  let max = -Infinity;
+  const start = Math.round(clamp(startBin, 0, data.length - 1));
+  const end = Math.round(clamp(endBin, start, data.length - 1));
+  let index = start;
+  for (let i = start; i <= end; i += 1) {
+    if (Number.isFinite(data[i]) && data[i] > max) {
+      max = data[i];
+      index = i;
+    }
+  }
+  return { max: Number.isFinite(max) ? max : -110, index };
+}
+
+function binFromHz(hz, sampleRate, fftSize) {
+  const value = (Number(hz) * Number(fftSize)) / Number(sampleRate);
+  return Number.isFinite(value) ? Math.floor(value) : 0;
+}
+
+function rmsFromTimeDomain(timeDomainData) {
+  if (!timeDomainData?.length) return { rms: 0, rmsDb: -120, rmsScore: 0 };
+  let sum = 0;
+  for (const value of timeDomainData) {
+    const centered = Number(value) || 0;
+    sum += centered * centered;
+  }
+  const rms = Math.sqrt(sum / timeDomainData.length);
+  const rmsDb = 20 * Math.log10(Math.max(rms, 0.000001));
+  return {
+    rms,
+    rmsDb: Math.round(rmsDb),
+    rmsScore: Math.round(clamp((rmsDb + 62) * 1.9, 0, 39)),
+  };
+}
+
+function getLeakAudioRisk(score) {
+  if (score >= 85) return { label: "강한 누수 의심", className: "risk-danger", color: "red" };
+  if (score >= 70) return { label: "누수 의심", className: "risk-orange", color: "orange" };
+  if (score >= 40) return { label: "주의 관찰", className: "risk-yellow", color: "yellow" };
+  return { label: "정상 범위", className: "risk-green", color: "green" };
+}
+
+function getStableLeakAudioRisk(score) {
+  if (score <= 5) leakRiskState = "green";
+  if (leakRiskState === "red") {
+    if (score <= 78) leakRiskState = "orange";
+  } else if (leakRiskState === "orange") {
+    if (score >= 88) leakRiskState = "red";
+    else if (score <= 62) leakRiskState = "yellow";
+  } else if (leakRiskState === "yellow") {
+    if (score >= 74) leakRiskState = "orange";
+    else if (score <= 34) leakRiskState = "green";
+  } else if (score >= 45) {
+    leakRiskState = "yellow";
+  }
+  const riskByState = {
+    red: { label: "강한 누수 의심", className: "risk-danger", color: "red" },
+    orange: { label: "누수 의심", className: "risk-orange", color: "orange" },
+    yellow: { label: "주의 관찰", className: "risk-yellow", color: "yellow" },
+    green: { label: "정상 범위", className: "risk-green", color: "green" },
+  };
+  return riskByState[leakRiskState] || riskByState.green;
+}
+
+function calculateLeakAudioScore({ frequencyData, sampleRate, fftSize, history, profile = currentPipeProfile(), baseline = null, timeDomainData = null }) {
+  const lowStart = binFromHz(80, sampleRate, fftSize);
+  const lowEnd = binFromHz(900, sampleRate, fftSize);
+  const midStart = binFromHz(900, sampleRate, fftSize);
+  const midEnd = binFromHz(profile.leakStart, sampleRate, fftSize);
+  const leakStart = binFromHz(profile.leakStart, sampleRate, fftSize);
+  const leakEnd = binFromHz(profile.leakEnd, sampleRate, fftSize);
+  const ultraStart = binFromHz(profile.leakEnd, sampleRate, fftSize);
+  const ultraEnd = binFromHz(Math.min(profile.ultraEnd, sampleRate / 2), sampleRate, fftSize);
+  const lowAvg = averageFrequencyRange(frequencyData, lowStart, lowEnd);
+  const midAvg = averageFrequencyRange(frequencyData, midStart, midEnd);
+  const leakAvg = averageFrequencyRange(frequencyData, leakStart, leakEnd);
+  const ultraAvg = averageFrequencyRange(frequencyData, ultraStart, ultraEnd);
+  const peak = maxFrequencyRange(frequencyData, leakStart, ultraEnd);
+  const inputPeak = maxFrequencyRange(frequencyData, lowStart, ultraEnd);
+  const rmsMetrics = rmsFromTimeDomain(timeDomainData);
+  const activityScore = Math.round(clamp(Math.max((inputPeak.max + 95) * 2.2, rmsMetrics.rmsScore), 0, 39));
+  const quietInput = inputPeak.max < -92 && rmsMetrics.rmsDb < -56;
+  if (quietInput) {
+    return {
+      score: 0,
+      rawScore: 0,
+      activityScore: 0,
+      rmsDb: rmsMetrics.rmsDb,
+      rmsScore: 0,
+      repeatedPeakScore: 0,
+      peakHz: 0,
+      lowAvg: Math.round(lowAvg),
+      midAvg: Math.round(midAvg),
+      leakAvg: Math.round(leakAvg),
+      ultraAvg: Math.round(ultraAvg),
+      peakDb: Math.round(peak.max),
+      inputPeakDb: Math.round(inputPeak.max),
+      baselineDelta: 0,
+      silent: true,
+    };
+  }
+  const highVsLow = leakAvg - lowAvg;
+  const highVsMid = leakAvg - midAvg;
+  const peakStrength = peak.max - Math.max(lowAvg, midAvg);
+  const highScore = clamp((highVsLow + 22) * 2.2, 0, 40);
+  const midCompareScore = clamp((highVsMid + 18) * 1.6, 0, 25);
+  const peakScore = clamp((peakStrength + 16) * 1.5, 0, 20);
+  const ultraScore = clamp((ultraAvg - lowAvg + 24) * 0.55, 0, 10);
+  const peakHz = Math.round((peak.index * sampleRate) / fftSize);
+  const recent = history.slice(-24);
+  const stableCount = recent.filter((item) => item.rawScore >= 55).length;
+  const stableScore = clamp((stableCount / 24) * 12, 0, 12);
+  const repeatedPeaks = recent.filter((item) => item.peakHz && Math.abs(Number(item.peakHz) - peakHz) <= 450 && !item.silent).length;
+  const repeatRatio = recent.length ? repeatedPeaks / recent.length : 0;
+  const repeatedPeakScore = peakStrength >= profile.peakStrength ? clamp((repeatRatio - 0.22) * 30, 0, 18) : 0;
+  let rawScore = highScore + midCompareScore + peakScore + ultraScore + stableScore + repeatedPeakScore;
+  let baselineDelta = 0;
+  if (baseline) {
+    const leakRise = leakAvg - Number(baseline.leakAvg ?? leakAvg);
+    const ultraRise = ultraAvg - Number(baseline.ultraAvg ?? ultraAvg);
+    const peakRise = peak.max - Number(baseline.peakDb ?? peak.max);
+    baselineDelta = Math.round(Math.max(leakRise, ultraRise, peakRise));
+    const baselineScore =
+      clamp((leakRise - 3) * 2.1, 0, 24) +
+      clamp((ultraRise - 3) * 1.5, 0, 16) +
+      clamp((peakRise - 4) * 1.7, 0, 26);
+    rawScore = (highScore * 0.5) + (midCompareScore * 0.55) + (peakScore * 0.45) + (ultraScore * 0.5) + baselineScore + stableScore + repeatedPeakScore;
+    if (leakRise < 4 && ultraRise < 4 && peakRise < 5) rawScore *= 0.45;
+  }
+  if (lowAvg > leakAvg + 12) rawScore -= 15;
+  const weakLeakShape = Boolean(baseline) && peakStrength < profile.peakStrength && highVsMid < 7 && baselineDelta < 7;
+  if (weakLeakShape) rawScore = Math.min(rawScore, 38);
+  if (activityScore <= 5) rawScore = 0;
+  const score = Math.round(clamp(rawScore, 0, 100));
+  return {
+    score,
+    rawScore: score,
+    activityScore,
+    rmsDb: rmsMetrics.rmsDb,
+    rmsScore: rmsMetrics.rmsScore,
+    repeatedPeakScore: Math.round(repeatedPeakScore),
+    peakHz,
+    lowAvg: Math.round(lowAvg),
+    midAvg: Math.round(midAvg),
+    leakAvg: Math.round(leakAvg),
+    ultraAvg: Math.round(ultraAvg),
+    peakDb: Math.round(peak.max),
+    inputPeakDb: Math.round(inputPeak.max),
+    baselineDelta,
+  };
+}
+
+function updateLeakAudioPanel(metrics) {
+  const score = clamp(metrics?.score || 0, 0, 100);
+  const displayScore = Math.round(clamp(metrics?.displayScore ?? score, 0, 100));
+  const risk = getStableLeakAudioRisk(score);
+  const badge = document.querySelector("#leakRiskBadge");
+  if (badge) {
+    badge.className = `leak-risk-badge ${risk.className}`;
+    badge.textContent = risk.label;
+  }
+  const circle = document.querySelector("#leakScoreCircle");
+  if (circle) {
+    circle.style.setProperty("--score-deg", `${displayScore * 3.6}deg`);
+    circle.style.setProperty("--score-color", leakScoreColor(risk.color));
+    circle.dataset.risk = risk.color;
+  }
+  const scoreValue = document.querySelector("#leakScoreValue");
+  if (scoreValue) scoreValue.textContent = displayScore;
+  const peakHz = document.querySelector("#leakPeakHz");
+  if (peakHz) peakHz.textContent = metrics ? `${metrics.peakHz} Hz` : "- Hz";
+  const lowAvg = document.querySelector("#leakLowAvg");
+  if (lowAvg) lowAvg.textContent = metrics ? `${metrics.lowAvg} dB` : "- dB";
+  const midAvg = document.querySelector("#leakMidAvg");
+  if (midAvg) midAvg.textContent = metrics ? `${metrics.midAvg} dB` : "- dB";
+  const bandAvg = document.querySelector("#leakBandAvg");
+  if (bandAvg) bandAvg.textContent = metrics ? `${metrics.leakAvg} dB` : "- dB";
+  const baselineDelta = document.querySelector("#leakBaselineDelta");
+  if (baselineDelta) baselineDelta.textContent = metrics ? `${Math.max(0, Number(metrics.baselineDelta || 0))} dB` : "- dB";
+  const detail = document.querySelector("#leakAudioDetail");
+  if (detail) {
+    detail.textContent = metrics
+      ? `RMS 입력세기 ${Number(metrics.rmsDb ?? -120)} dB · 반복 피크 +${Number(metrics.repeatedPeakScore || 0)}점 · 활동 ${Number(metrics.activityScore || 0)}%`
+      : "RMS 입력세기 대기 · 반복 피크 대기";
+  }
+}
+
+function leakScoreColor(color) {
+  if (color === "red") return "#ef4444";
+  if (color === "orange") return "#f97316";
+  if (color === "yellow") return "#eab308";
+  return "#22c55e";
+}
+
+function buildLeakAudioPoint(name) {
+  const risk = getLeakAudioRisk(lastLeakAudioMetrics.score);
+  return {
+    id: `leak-${Date.now()}`,
+    name,
+    score: lastLeakAudioMetrics.score,
+    risk: risk.label,
+    color: risk.color,
+    pipeMaterial: currentPipeProfile(currentJob()).label,
+    metrics: lastLeakAudioMetrics,
+    createdAt: new Date().toISOString(),
+  };
+}
+
+function saveLeakAudioPoint() {
+  if (!lastLeakAudioMetrics) {
+    notify("입력 분석을 먼저 시작한 뒤 저장하세요.");
+    return;
+  }
+  const job = currentJob();
+  const slots = ["1", "2", "3", "4"];
+  const nextSlot = slots.find((slot) => !job.leakComparePoints?.[slot]);
+  if (!nextSlot) {
+    notify("1~4지점이 모두 저장되었습니다. 다시 측정하려면 필요한 지점을 삭제하세요.");
+    return;
+  }
+  const point = buildLeakAudioPoint(`${nextSlot}지점`);
+  point.slot = nextSlot;
+  job.leakComparePoints = {
+    ...(job.leakComparePoints || {}),
+    [nextSlot]: point,
+  };
+  job.leakAudioPoints = [point, ...(job.leakAudioPoints || [])];
+  job.updatedAt = new Date().toISOString();
+  saveState();
+  render();
+  notify(`${nextSlot}지점을 저장했습니다.`);
+}
+
+function averageLeakMetrics(metricsList) {
+  const valid = metricsList.filter((item) => item && !item.silent);
+  if (!valid.length) return null;
+  const average = (field) => valid.reduce((sum, item) => sum + Number(item[field] || 0), 0) / valid.length;
+  return {
+    lowAvg: Math.round(average("lowAvg")),
+    midAvg: Math.round(average("midAvg")),
+    leakAvg: Math.round(average("leakAvg")),
+    ultraAvg: Math.round(average("ultraAvg")),
+    peakDb: Math.round(average("peakDb")),
+    inputPeakDb: Math.round(average("inputPeakDb")),
+    activityScore: Math.round(average("activityScore")),
+    rmsDb: Math.round(average("rmsDb")),
+    repeatedPeakScore: Math.round(average("repeatedPeakScore")),
+  };
+}
+
+function saveLeakAudioBaseline() {
+  const recentBaseline = averageLeakMetrics(leakAudioHistory.slice(-45)) || averageLeakMetrics([lastLeakAudioMetrics]);
+  if (!recentBaseline) {
+    notify("입력 분석을 먼저 켜고 조용한 상태에서 기준을 저장하세요.");
+    return;
+  }
+  const job = currentJob();
+  const profile = currentPipeProfile(job);
+  job.leakAudioBaseline = {
+    ...recentBaseline,
+    pipeMaterial: profile.id,
+    pipeLabel: profile.label,
+    createdAt: new Date().toISOString(),
+  };
+  leakAudioHistory = [];
+  leakDisplayScore = null;
+  audioActivityDisplayScore = null;
+  leakRiskState = "green";
+  job.updatedAt = new Date().toISOString();
+  saveState();
+  render();
+  notify("정상 기준을 저장했습니다. 이제 기준보다 튀는 소리를 중심으로 분석합니다.");
+}
+
+function clearLeakAudioBaseline() {
+  const job = currentJob();
+  const pipeMaterial = job.pipeMaterial || currentPipeProfile(job).id;
+  job.leakAudioBaseline = null;
+  if (state.leakPipeCalibrations && pipeMaterial) {
+    delete state.leakPipeCalibrations[pipeMaterial];
+  }
+  if (job.leakPipeCalibration?.pipeMaterial === pipeMaterial || !pipeMaterial) {
+    job.leakPipeCalibration = null;
+  }
+  leakAudioHistory = [];
+  stablePeakHz = null;
+  stablePeakConfidence = 0;
+  leakDisplayScore = null;
+  audioActivityDisplayScore = null;
+  leakRiskState = "green";
+  job.updatedAt = new Date().toISOString();
+  saveState();
+  render();
+  notify("정상 기준과 배관 기준 보정을 함께 초기화했습니다.");
+}
+
+function saveLeakGraphSnapshot() {
+  const canvas = document.querySelector("#spectrum");
+  if (!canvas || !lastLeakAudioMetrics) {
+    notify("입력 분석을 먼저 시작한 뒤 그래프를 저장하세요.");
+    return;
+  }
+  const job = currentJob();
+  const profile = currentPipeProfile(job);
+  const snapshot = {
+    id: `graph-${Date.now()}`,
+    name: `그래프 ${new Date().toLocaleTimeString()}`,
+    dataUrl: canvas.toDataURL("image/jpeg", 0.86),
+    metrics: lastLeakAudioMetrics,
+    pipeMaterial: profile.id,
+    pipeLabel: profile.label,
+    createdAt: new Date().toISOString(),
+  };
+  job.leakGraphSnapshots = [snapshot, ...(job.leakGraphSnapshots || [])].slice(0, 12);
+  job.updatedAt = new Date().toISOString();
+  saveState();
+  render();
+  notify("현재 주파수 그래프를 저장했습니다.");
+}
+
+function calibrateCurrentPipeProfile() {
+  const job = currentJob();
+  const profile = currentPipeProfile(job);
+  const pointMetrics = (job.leakAudioPoints || []).map((point) => point.metrics);
+  const snapshotMetrics = (job.leakGraphSnapshots || []).map((snapshot) => snapshot.metrics);
+  const samples = [...pointMetrics, ...snapshotMetrics].filter((metrics) =>
+    metrics &&
+    !metrics.silent &&
+    Number(metrics.peakHz || 0) > 0 &&
+    Number(metrics.score || 0) >= 35
+  );
+  if (samples.length < 2) {
+    notify("배관 기준 보정에는 저장된 지점 또는 그래프가 2개 이상 필요합니다.");
+    return;
+  }
+  const avg = (field) => samples.reduce((sum, item) => sum + Number(item[field] || 0), 0) / samples.length;
+  const avgPeak = avg("peakHz");
+  const variance = samples.reduce((sum, item) => sum + Math.pow(Number(item.peakHz || avgPeak) - avgPeak, 2), 0) / samples.length;
+  const spread = clamp(Math.sqrt(variance) * 1.8, 900, 3600);
+  const avgStrength = samples.reduce((sum, item) => {
+    const base = Math.max(Number(item.lowAvg ?? -110), Number(item.midAvg ?? -110));
+    return sum + (Number(item.peakDb ?? base) - base);
+  }, 0) / samples.length;
+  const calibration = {
+    leakStart: Math.round(clamp(avgPeak - spread, 300, 17000)),
+    leakMid: Math.round(clamp(avgPeak, 500, 18000)),
+    leakEnd: Math.round(clamp(avgPeak + spread, 900, 19000)),
+    ultraEnd: Math.round(clamp(avgPeak + spread * 1.7, 1400, 20000)),
+    peakStrength: Math.round(clamp(avgStrength * 0.75, 5, 18)),
+    stableScore: Math.round(clamp(avg("score") * 0.65, 30, 62)),
+    samples: samples.length,
+    updatedAt: new Date().toISOString(),
+  };
+  state.leakPipeCalibrations = {
+    ...(state.leakPipeCalibrations || {}),
+    [profile.id]: calibration,
+  };
+  job.leakPipeCalibration = { pipeMaterial: profile.id, pipeLabel: profile.label, ...calibration };
+  job.updatedAt = new Date().toISOString();
+  leakAudioHistory = [];
+  stablePeakHz = null;
+  stablePeakConfidence = 0;
+  saveState();
+  render();
+  notify(`${profile.label} 기준을 현장 데이터 ${samples.length}개로 보정했습니다.`);
+}
+
+function deleteLeakAudioPoint(id) {
+  const job = currentJob();
+  job.leakAudioPoints = (job.leakAudioPoints || []).filter((point) => point.id !== id);
+  if (job.leakComparePoints) {
+    Object.entries(job.leakComparePoints).forEach(([slot, point]) => {
+      if (point?.id === id) delete job.leakComparePoints[slot];
+    });
+  }
+  job.updatedAt = new Date().toISOString();
+  saveState();
+  render();
+}
+
+function updatePressureDial(value) {
+  const dial = document.querySelector(".pressure-dial b");
+  if (dial) dial.textContent = Number(value || 0).toFixed(1);
+}
+
+function generateReport(job) {
+  const checkedPlumbing = checkedInspectionChecks(job.plumbingChecks);
+  const checkedWaterproof = checkedInspectionChecks(job.waterproofChecks);
+  const plumbingIssues = checkedPlumbing.filter((check) => check.result !== "정상");
+  const waterproofIssues = checkedWaterproof.filter((check) => check.result !== "정상");
+  const general = generalWorkSummary(job);
+  if (!hasReportSourceData(job, checkedPlumbing, checkedWaterproof, general)) {
+    return "점검박스를 확인하세요.";
+  }
+  const leakAudioSummary = (job.leakAudioPoints || [])
+    .map((point) => `- ${point.name}: ${point.score}% / ${point.risk} / 피크 ${point.metrics?.peakHz || "-"} Hz / RMS ${point.metrics?.rmsDb ?? "-"} dB / 반복피크 +${point.metrics?.repeatedPeakScore ?? 0}`)
+    .join("\n") || "저장된 AI 청음 측정 지점이 없습니다.";
+  const profile = currentPipeProfile(job);
+  const trackerDataSummary = [
+    `- 그래프 스냅샷: ${(job.leakGraphSnapshots || []).length ? `${job.leakGraphSnapshots.length}장` : "없음"}`,
+    `- 배관 기준 보정: ${profile.calibrated ? `${profile.label} 보정 적용` : "기본 기준 사용"}`,
+  ].join("\n");
+  const v2EvidenceSummary = [
+    `- 소머즈 누수 레벨: ${job.somersLeakLevel || "미기록"}`,
+    `- 소머즈 주파수: ${job.somersFrequency || "미기록"}`,
+    `- 소머즈 주황 표시: ${job.somersOrangeMark || "미기록"}`,
+    `- 소머즈 의심 위치: ${job.somersSuspectLocation || "미기록"}`,
+    `- 소머즈 촬영 자료: ${(job.somersPhotos || []).length ? `${job.somersPhotos.length}장 (${job.somersPhotos.join(", ")})` : "미기록"}`,
+    `- 소머즈 촬영 메모: ${job.somersCaptureMemo || "미기록"}`,
+    `- 최종 누수 위치: ${job.finalLeakLocation || "미기록"}`,
+    `- 실제 굴착 결과: ${job.excavationResult || "미기록"}`,
+  ].join("\n");
+  return `[누수진단 소견서]
+
+진단일자: ${job.date}
+고객 이름: ${job.customerName || "미입력"}
+현장주소: ${job.address || "미입력"}
+연락처: ${job.phone || "미입력"}
+작성자: ${PROVIDER.name}
+사업자번호: ${PROVIDER.bizNo}
+공급자 주소: ${PROVIDER.address}
+공급자 확인: ${PROVIDER.owner}
+
+1. 현장 상황
+${job.situation || "현장 상황 기록이 필요합니다."}
+${general ? `\n\n1-1. 공사요청기록\n${general}` : ""}
+
+2. 배관 누수 점검 결과
+${checkedPlumbing.length ? summaryLines(checkedPlumbing) : "- 기본검사에서 체크된 배관 항목 없음"}
+${pipeLeakTypeSummary(job)}
+
+3. 방수 및 외부 요인 점검 결과
+${checkedWaterproof.length ? summaryLines(checkedWaterproof) : "- 기본검사에서 체크된 방수 항목 없음"}
+
+4. AI 청음 누수 분석
+${leakAudioSummary}
+${trackerDataSummary}
+
+5. 누수추적기 V2 기록
+${v2EvidenceSummary}
+
+6. 종합 의견
+${plumbingIssues.length ? "배관 계통 누수 가능성이 확인 또는 의심됩니다. 압력검사, 청음, 열화상/가스탐지 등 다각적 추적을 권장합니다." : "기본 배관 점검에서는 중대한 누수 징후가 제한적입니다."}
+${waterproofIssues.length ? "외부 요인 또는 방수층 문제 가능성도 함께 검토해야 합니다." : "방수 및 외부 요인은 현재 기록 기준 특이사항이 적습니다."}
+
+7. 첨부자료
+사진: ${(job.photos || []).length ? `${job.photos.length}장 (${job.photos.join(", ")})` : "없음"}`;
+}
+
+function hasReportSourceData(job, checkedPlumbing = checkedInspectionChecks(job.plumbingChecks), checkedWaterproof = checkedInspectionChecks(job.waterproofChecks), general = generalWorkSummary(job)) {
+  return Boolean(
+    String(job.situation || "").trim()
+    || String(general || "").trim()
+    || checkedPlumbing.length
+    || checkedWaterproof.length
+    || (job.leakAudioPoints || []).length
+    || (job.leakGraphSnapshots || []).length
+    || (job.somersPhotos || []).length
+    || (job.somersPhotoFiles || []).length
+    || String(job.somersLeakLevel || "").trim()
+    || String(job.somersFrequency || "").trim()
+    || String(job.somersOrangeMark || "").trim()
+    || String(job.somersSuspectLocation || "").trim()
+    || String(job.somersCaptureMemo || "").trim()
+    || String(job.finalLeakLocation || "").trim()
+    || String(job.excavationResult || "").trim()
+  );
+}
+
+function generateBlog(job, custom = null) {
+  const keyword = custom?.keyword || "누수진단";
+  const category = custom?.category || "누수탐지 및 설비 점검";
+  const title = `${keyword} 현장 점검 방법`;
+  const description = fitDescription(`${keyword}은 ${category}에서 중요한 기준이며 문제 상황, 점검 순서, 기록 내용을 차분히 확인해 원인을 좁히고 필요한 조치를 판단하는 과정입니다.`);
+  const general = generalWorkSummary(job);
+  const situationParts = [
+    job.situation || "고객 진술과 피해 위치를 기준으로 누수 범위를 좁혀 확인했습니다.",
+    general ? `공사요청기록: ${general}` : "",
+  ].filter(Boolean);
+  const situation = situationParts.join(" ");
+  const checkedChecks = checkedInspectionChecks([...(job.plumbingChecks || []), ...(job.waterproofChecks || [])]);
+  const pipeSummary = pipeLeakTypeSummary(job);
+  const checks = [summaryLines(checkedChecks), pipeSummary].filter(Boolean).join("\n");
+  if (custom) {
+    return `제목: ${title}
+디스크립션: ${description}
+본문:
+<h2>${keyword} 기본 개념을 먼저 정리했습니다</h2>
+${category} 분야에서 ${keyword}은 단순히 하나의 정보를 확인하는 일이 아니라 전체 상황을 차분히 살피는 과정입니다. 먼저 현재 문제가 왜 생겼는지, 어떤 기준으로 판단해야 하는지, 어떤 기록이 필요한지를 순서대로 확인해야 합니다. 특히 처음 접하는 분들은 눈에 보이는 결과만 보고 바로 결론을 내리기 쉽지만, 실제로는 원인과 결과가 다르게 나타나는 경우가 많습니다. 그래서 ${keyword}을 확인할 때는 현장의 조건, 사용 환경, 반복되는 증상, 이전 기록을 함께 보는 것이 중요합니다. 이런 방식으로 접근하면 불필요한 시행착오를 줄이고 필요한 조치를 더 정확하게 선택할 수 있습니다. [사진 삽입: ${keyword}과 관련된 현장 또는 준비 장면]
+
+<h2>${keyword} 확인 절차를 단계별로 살펴봤습니다</h2>
+${keyword}을 제대로 판단하려면 먼저 큰 범위에서 작은 범위로 좁혀 가는 순서가 필요합니다. 처음에는 전체 상황을 기록하고, 다음에는 의심되는 부분을 나누어 확인하며, 마지막에는 실제 조치가 필요한 지점을 정리하는 방식이 좋습니다. 이 과정에서 중요한 것은 한 번의 느낌으로 판단하지 않는 것입니다. 같은 증상처럼 보여도 원인은 다를 수 있기 때문에 확인한 내용과 확인하지 못한 내용을 구분해서 남겨야 합니다. 또한 사진, 메모, 날짜, 장소 같은 기본 정보가 함께 있으면 나중에 비교할 때 훨씬 도움이 됩니다. ${category} 주제로 글을 작성할 때도 이런 순서를 유지하면 독자가 내용을 쉽게 이해하고 실제 상황에 적용하기 좋습니다. [사진 삽입: 단계별 확인 과정 또는 체크리스트 장면]
+
+<h2>${keyword} 기록은 문제 해결의 기준이 됩니다</h2>
+${keyword}에서 마지막으로 중요한 부분은 기록을 남기는 일입니다. 기록이 있어야 같은 문제가 다시 생겼을 때 이전 상태와 현재 상태를 비교할 수 있고, 어떤 조치가 효과가 있었는지도 판단할 수 있습니다. 글을 작성할 때도 단순한 설명보다 왜 이 절차가 필요한지, 어떤 점을 주의해야 하는지, 실제로 어떤 순서로 확인하면 좋은지를 함께 적으면 정보의 신뢰도가 높아집니다. 특히 구글 애드센스 승인을 목표로 한다면 과장된 표현보다 차분하고 정확한 문장이 좋습니다. 제목에는 메인 키워드를 앞에 배치하고, 디스크립션에는 핵심 내용을 자연스럽게 포함하며, 본문은 H2 소제목을 중심으로 충분한 설명을 넣는 방식이 안정적입니다. 이렇게 정리하면 독자에게도 도움이 되고 검색에도 적합한 글이 됩니다.`;
+  }
+  return `제목: ${title}
+디스크립션: ${description}
+본문:
+<h2>누수진단 현장 상황을 먼저 확인했습니다</h2>
+오늘은 ${job.date || "접수 당일"} 접수된 누수 의심 현장을 방문해 고객이 겪고 있는 피해 상황과 물이 번진 방향을 먼저 확인했습니다. ${job.address ? `${job.address} 현장은 ` : "이번 현장은 "}단순히 눈에 보이는 물자국만 보고 판단하기보다, 물이 시작된 위치와 이동한 방향을 나누어 살피는 것이 중요했습니다. 누수진단은 한 번에 답을 정하는 작업이 아니라 가능성이 높은 원인을 순서대로 배제해 가는 과정입니다. 현장에서 확인한 상황은 다음과 같습니다. ${situation} 이처럼 초기 상황을 자세히 기록하면 이후 배관 문제인지, 방수 문제인지, 외부 유입인지 판단하는 기준이 분명해집니다. 특히 아래층 천장 얼룩이나 벽면 젖음은 실제 누수 위치와 다르게 나타날 수 있으므로 계량기, 밸브, 사용 환경을 함께 확인해야 했습니다. [사진 삽입: 현장 누수 흔적과 점검 전 상태]
+
+<h2>배관과 방수 항목을 순서대로 점검했습니다</h2>
+이번 점검에서는 먼저 배관누수 가능성을 확인하기 위해 밸브를 잠그고 열면서 계량기 반응을 확인했습니다. 이후 화장실 변기부속, 각 밸브류, 창틀, 우수관, 화장실 방수상태, 유가, 변기 주변 상태를 차례로 살폈습니다. 점검 결과는 다음과 같이 정리할 수 있습니다. ${checks} 배관누수검사는 단순히 물소리만 듣는 과정이 아니라 계량기 움직임, 밸브 차단 후 변화, 사용하지 않는 시간대의 압력 변화 등을 함께 보는 작업입니다. 반대로 방수 문제는 물을 사용했을 때만 증상이 나타나는 경우가 많아 배관 검사와 구분해서 판단해야 합니다. 이런 이유로 현장에서는 배관 계통과 방수 계통을 나누어 확인했고, 외부 요인까지 함께 검토했습니다. [사진 삽입: 계량기 확인 또는 배관 점검 장면]
+
+<h2>누수 원인은 기록을 남기며 좁혀가야 합니다</h2>
+누수진단에서 가장 중요한 것은 추측보다 기록입니다. 어느 밸브를 잠갔을 때 변화가 있었는지, 물 사용 전후에 계량기가 어떻게 반응했는지, 피해 부위가 어느 방향으로 번졌는지를 남겨야 같은 문제가 반복될 때 빠르게 비교할 수 있습니다. 이번 현장도 배관, 방수, 외부 유입 가능성을 한꺼번에 단정하지 않고 순서대로 확인했습니다. 누수는 작은 틈에서 시작해 넓은 피해로 이어질 수 있기 때문에 초기에 정확히 판단하는 것이 공사 범위와 비용을 줄이는 데 도움이 됩니다. 앞으로 같은 증상이 반복된다면 오늘 기록한 점검 결과를 기준으로 추가 압력검사, 청음, 내시경, 열화상 확인 등을 이어가면 원인 파악이 훨씬 수월합니다. 최종적으로는 현장 상황과 점검 결과를 종합해 필요한 보수 범위를 결정하는 것이 바람직합니다.`;
+}
+
+function fitDescription(text) {
+  const compact = String(text).replace(/\s+/g, " ").trim();
+  if (compact.length >= 150 && compact.length <= 160) return compact;
+  if (compact.length > 160) return compact.slice(0, 157) + "...";
+  return (compact + " 정확한 기록과 순차 점검이 필요합니다.").slice(0, 160);
+}
+
+function customBlogInfo(job) {
+  return {
+    category: (job.blogCategory || "").trim(),
+    keyword: (job.blogKeyword || "").trim(),
+  };
+}
+
+function validateCustomBlog(job) {
+  const info = customBlogInfo(job);
+  if (!info.category || !info.keyword) {
+    notify("카테고리와 메인키워드를 모두 입력하세요.");
+    return null;
+  }
+  return info;
+}
+
+function buildBlogPrompt(job, custom = null) {
+  const category = custom?.category || "누수탐지 및 설비 점검";
+  const keyword = custom?.keyword || "누수진단";
+  const isCustom = Boolean(custom);
+  const evidence = buildBlogEvidenceSection(job);
+  const hashtags = buildLocationHashtags(keyword);
+  return `당신은 구글 애드센스 승인을 목표로 하는 블로그 글 작성 전문가입니다.
+아래 조건에 맞춰 블로그 글을 작성해 주십시오.
+
+[조건]
+- 주제(카테고리): ${category}
+- 메인 키워드: ${keyword}
+- 제목: 메인 키워드를 맨 앞에 배치, 15~20자 내외
+- 디스크립션: 메인 키워드 포함, 공백 포함 150~160자
+- 문체: 합쇼체(~했습니다, ~합니다), 구어체 절대 금지
+- 본문: H2 소제목 3개 이상, 소제목당 500자 내외, 총 1,500자 이상
+- 사진 설명: 본문 중 적절한 위치에 [사진 삽입: 설명] 형태로 표시
+- 글 맨 아래에 "연관 해시태그:" 항목을 만들고, 위치 기반 해시태그를 앞쪽에 먼저 배치해 주십시오.
+- 해시태그 시작 예시: ${hashtags.join(" ")}
+
+${evidence ? `[${isCustom ? "참고 가능한 현장 자료" : "반영할 현장 자료"}]\n${evidence}\n` : ""}
+
+[출력 형식]
+제목:
+디스크립션:
+본문:
+연관 해시태그:`;
+}
+
+function buildBlogEvidenceSection(job = currentJob()) {
+  const sections = [];
+  const general = generalWorkSummary(job);
+  const basics = blogBasicEvidenceLines(job);
+  const tracker = blogTrackerEvidenceLines(job);
+  if (general) sections.push(`일반공사 공사요청기록\n- ${general}`);
+  if (basics.length) sections.push(`기본검사\n${basics.join("\n")}`);
+  if (tracker.length) sections.push(`누수추적\n${tracker.join("\n")}`);
+  return sections.join("\n\n");
+}
+
+function blogBasicEvidenceLines(job = currentJob()) {
+  const lines = [];
+  const checkLines = blogCheckLines([...(job.plumbingChecks || []), ...(job.waterproofChecks || [])]);
+  const pipeLine = pipeLeakTypeSummary(job);
+  if (!/미선택/.test(pipeLine)) lines.push(pipeLine);
+  lines.push(...checkLines);
+  return lines;
+}
+
+function blogCheckLines(checks = []) {
+  return checks
+    .filter((check) => check?.done)
+    .map((check) => {
+      const parts = [];
+      if (check.result && check.result !== "대기") parts.push(check.result);
+      if (check.done) parts.push("점검완료");
+      if (String(check.memo || "").trim()) parts.push(check.memo.trim());
+      return `- ${check.title}: ${parts.join(" / ")}`;
+    })
+    .filter((line) => !/: $/.test(line));
+}
+
+function blogTrackerEvidenceLines(job = currentJob()) {
+  const lines = [];
+  const leakPoints = (job.leakAudioPoints || []).filter((point) => point?.name || Number(point?.score || 0) > 0 || point?.risk);
+  leakPoints.forEach((point) => {
+    lines.push(`- 청음 측정: ${[point.name, point.score ? `${point.score}%` : "", point.risk].filter(Boolean).join(" / ")}`);
+  });
+  [
+    ["소머즈 누수 레벨", job.somersLeakLevel],
+    ["소머즈 주파수", job.somersFrequency],
+    ["소머즈 주황 표시", job.somersOrangeMark],
+    ["소머즈 의심 위치", job.somersSuspectLocation],
+    ["소머즈 촬영 메모", job.somersCaptureMemo],
+    ["최종 누수 위치", job.finalLeakLocation],
+    ["실제 굴착 결과", job.excavationResult],
+  ].forEach(([label, value]) => {
+    if (String(value || "").trim()) lines.push(`- ${label}: ${String(value).trim()}`);
+  });
+  if ((job.somersPhotoFiles || []).some((photo) => photo?.dataUrl) || (job.somersPhotos || []).length) {
+    lines.push(`- 소머즈 사진 자료: ${(job.somersPhotoFiles || []).length || (job.somersPhotos || []).length}장`);
+  }
+  const recordings = job.recordings || [];
+  if (recordings.some((recording) => recording.targetKey === "somers:sound")) lines.push("- 소머즈 소리 자료: 저장됨");
+  if (recordings.some((recording) => recording.targetKey === "tracker")) lines.push("- 대성 청음 소리 자료: 저장됨");
+  return lines;
+}
+
+function buildLocationHashtags(keyword = "누수진단") {
+  const rawKeyword = String(keyword || "누수진단").replace(/\s+/g, "");
+  const locations = ["속초", "강원", "양양", "강릉", "고성"];
+  const services = ["누수", "방수", "누수탐지"];
+  const tags = [];
+  locations.forEach((location) => {
+    services.forEach((service) => tags.push(`#${location}${service}`));
+  });
+  tags.push(`#${rawKeyword}`, `#${rawKeyword}전문`, "#누수진단", "#누수탐지", "#방수공사");
+  return [...new Set(tags)];
+}
+
+function copyBlogPrompt(job, useCustom = false) {
+  const custom = useCustom ? validateCustomBlog(job) : null;
+  if (useCustom && !custom) return;
+  navigator.clipboard.writeText(buildBlogPrompt(job, custom)).then(() => notify("AI 블로그 프롬프트를 복사했습니다."));
+}
+
+function openChatGptWithPrompt(job, useCustom = false) {
+  const custom = useCustom ? validateCustomBlog(job) : null;
+  if (useCustom && !custom) return;
+  navigator.clipboard.writeText(buildBlogPrompt(job, custom)).then(() => {
+    notify("프롬프트를 복사했습니다. Claude 입력창에 붙여넣으세요.");
+    window.open(AI_ASSISTANT_URL, "_blank", "noopener");
+  });
+}
+
+function buildReportPrompt(job = currentJob()) {
+  const baseReport = reportContentForDocument(job.report || generateReport(job));
+  return `전문 누수탐지 기사 현장 소견서를 다듬어줘.
+
+조건:
+- 기존 사실관계와 점검 결과를 바꾸지 말 것
+- 과장 광고 문구 금지
+- 고객에게 설명 가능한 전문적이고 차분한 문체
+- 출력은 바로 소견서에 붙여넣을 본문만 작성
+
+[현장정보]
+진단일자: ${job.date || ""}
+고객명: ${job.customerName || ""}
+주소: ${job.address || ""}
+연락처: ${job.phone || ""}
+
+[배관 누수 체크]
+${pipeLeakTypeSummary(job)}
+
+[현재 소견서 초안]
+${baseReport}`;
+}
+
+function openChatGptReport(job = currentJob()) {
+  navigator.clipboard.writeText(buildReportPrompt(job)).then(() => {
+    notify("소견서 프롬프트를 복사했습니다. Claude에 붙여넣으세요.");
+    window.open(AI_ASSISTANT_URL, "_blank", "noopener");
+  });
+}
+
+function clearEstimateData() {
+  const job = currentJob();
+  job.estimateItems = [];
+  job.estimateNote = "";
+  job.estimateNo = "";
+  job.estimateValidUntil = "";
+  job.updatedAt = new Date().toISOString();
+  saveState();
+  render();
+  notify("견적서 내용을 삭제했습니다.");
+}
+
+function summaryLines(checks) {
+  const checked = checkedInspectionChecks(checks);
+  return checked.length
+    ? checked.map((check) => `- ${check.title}: ${check.result}${check.memo ? ` (${check.memo})` : ""}`).join("\n")
+    : "- 체크된 검사 항목 없음";
+}
+
+function checkedInspectionChecks(checks = []) {
+  return (checks || []).filter((check) => check?.done);
+}
+
+function pipeLeakTypeSummary(job = currentJob()) {
+  const pipeCheck = (job.plumbingChecks || []).find((check) => check.id === "hot_water");
+  if (!pipeCheck?.done) return "";
+  const types = job.pipeLeakTypes || {};
+  const labels = [
+    ["cold", "냉수"],
+    ["hot", "온수"],
+    ["heating", "난방"],
+  ];
+  const selected = labels.filter(([key]) => types[key]).map(([, label]) => label);
+  return selected.length ? `- 누수 체크박스: ${selected.join(", ")}` : "- 누수 체크박스: 미선택";
+}
+
+function currentPipeProfile(job = currentJob()) {
+  const base = PIPE_MATERIALS.find((item) => item.id === job.pipeMaterial) || PIPE_MATERIALS[0];
+  const calibration = state.leakPipeCalibrations?.[base.id] || (job.leakPipeCalibration?.pipeMaterial === base.id ? job.leakPipeCalibration : null);
+  return calibration ? { ...base, ...calibration, calibrated: true } : base;
+}
+
+function cyclePipeMaterial(direction = 1) {
+  const job = currentJob();
+  const currentIndex = Math.max(0, PIPE_MATERIALS.findIndex((item) => item.id === job.pipeMaterial));
+  const nextIndex = (currentIndex + direction + PIPE_MATERIALS.length) % PIPE_MATERIALS.length;
+  job.pipeMaterial = PIPE_MATERIALS[nextIndex].id;
+  job.updatedAt = new Date().toISOString();
+  leakAudioHistory = [];
+  leakDisplayScore = null;
+  stablePeakHz = null;
+  stablePeakConfidence = 0;
+  saveState();
+  render();
+  if (analyser && audioContext) requestAnimationFrame(renderSpectrum);
+  notify(`배관 종류: ${PIPE_MATERIALS[nextIndex].label}`);
+}
+
+function countDone(checks) {
+  return checks.filter((check) => check.done).length;
+}
+
+function copyText(text) {
+  if (!text) {
+    notify("복사할 블로그 글이 없습니다.");
+    return;
+  }
+  navigator.clipboard.writeText(text).then(() => notify("블로그 글을 복사했습니다."));
+}
+
+function saveBlogEditor() {
+  const editor = document.querySelector("#blogEditor");
+  if (!editor) return;
+  updateJob({ blog: editor.innerHTML.trim() });
+  state.blogEditorOpen = false;
+  saveState();
+  render();
+  notify("블로그 글을 앱에 임시 저장했습니다. Google Drive에는 자료 백업 때 함께 올라갑니다.");
+}
+
+function clearBlogEditor() {
+  const editor = document.querySelector("#blogEditor");
+  if (editor) editor.innerHTML = "";
+  const job = currentJob();
+  job.blog = "";
+  job.updatedAt = new Date().toISOString();
+  saveState();
+  notify("작성 화면과 저장된 블로그 원고를 삭제했습니다.");
+}
+
+function clearBlogData() {
+  const job = currentJob();
+  job.blog = "";
+  job.updatedAt = new Date().toISOString();
+  saveState();
+  render();
+  notify("블로그 자료를 삭제했습니다.");
+}
+
+function applyBlogFormat(command) {
+  const editor = document.querySelector("#blogEditor");
+  if (!editor) return;
+  editor.focus();
+  document.execCommand(command, false, null);
+}
+
+function applyBlogBlock(block) {
+  const editor = document.querySelector("#blogEditor");
+  if (!editor) return;
+  editor.focus();
+  document.execCommand("formatBlock", false, block === "h2" ? "h2" : "p");
+}
+
+function saveBlogSelection() {
+  const editor = document.querySelector("#blogEditor");
+  const selection = window.getSelection();
+  if (!editor || !selection?.rangeCount) return;
+  const range = selection.getRangeAt(0);
+  if (editor.contains(range.commonAncestorContainer)) savedBlogSelection = range.cloneRange();
+}
+
+function restoreBlogSelection() {
+  const editor = document.querySelector("#blogEditor");
+  if (!editor) return;
+  editor.focus();
+  if (!savedBlogSelection) return;
+  const selection = window.getSelection();
+  selection.removeAllRanges();
+  selection.addRange(savedBlogSelection);
+}
+
+function insertBlogEmoji(emoji) {
+  restoreBlogSelection();
+  document.execCommand("insertText", false, emoji);
+  saveBlogSelection();
+  const picker = document.querySelector(".emoji-picker");
+  if (picker) picker.hidden = true;
+}
+
+function toggleEmojiPicker() {
+  const picker = document.querySelector(".emoji-picker");
+  if (!picker) return;
+  picker.hidden = !picker.hidden;
+}
+
+function insertSelectedBlogPhotos() {
+  const job = currentJob();
+  const selected = state.blogEditorPhotoNames || [];
+  const photos = selected
+    .map((name) => (job.photoFiles || []).find((photo) => photo.name === name))
+    .filter((photo) => photo?.dataUrl);
+  if (!photos.length) {
+    notify("삽입할 사진을 선택하세요.");
+    return;
+  }
+  restoreBlogSelection();
+  const html = photos.map((photo) => `
+    <figure class="blog-inserted-photo" contenteditable="false" style="--rotate:0deg">
+      <div class="photo-rotate-tools">
+        <button class="btn ghost" data-action="rotate-blog-photo" data-direction="-90" type="button">회전-</button>
+        <button class="btn ghost" data-action="rotate-blog-photo" data-direction="90" type="button">회전+</button>
+      </div>
+      <img src="${escapeAttr(photo.dataUrl)}" alt="${escapeAttr(photo.name || "현장 사진")}" />
+      <figcaption>${escapeHtml(photo.name || "현장 사진")}</figcaption>
+    </figure><p><br></p>
+  `).join("");
+  const marker = document.querySelector("#blog-photo-cursor-marker");
+  if (marker) {
+    marker.insertAdjacentHTML("beforebegin", html);
+    marker.remove();
+  } else {
+    restoreBlogSelection();
+    document.execCommand("insertHTML", false, html);
+  }
+  state.blogPhotoPickerOpen = false;
+  state.blogEditorPhotoNames = [];
+  saveState();
+  document.querySelector(".photo-picker-backdrop")?.remove();
+  saveBlogSelection();
+  notify("선택한 사진을 원고에 삽입했습니다.");
+}
+
+function rotateBlogPhoto(direction = "90", sourceElement = null) {
+  const button = sourceElement?.closest("[data-action='rotate-blog-photo']");
+  const figure = button?.closest(".blog-inserted-photo");
+  if (!figure) return;
+  const current = Number(figure.dataset.rotate || 0);
+  const next = (current + Number(direction || 90) + 360) % 360;
+  figure.dataset.rotate = String(next);
+  figure.style.setProperty("--rotate", `${next}deg`);
+}
+
+function copyBlogEditor() {
+  const editor = document.querySelector("#blogEditor");
+  const text = editor?.innerText || currentJob().blog || "";
+  if (!text.trim()) {
+    notify("복사할 블로그 글이 없습니다.");
+    return;
+  }
+  navigator.clipboard.writeText(text).then(() => notify("블로그 내용을 복사했습니다."));
+}
+
+function openExternalLink(url) {
+  if (!url) return;
+  const win = window.open(url, "_blank", "noopener,noreferrer");
+  if (!win) notify("팝업이 차단되었습니다. 브라우저 팝업 허용 후 다시 시도하세요.");
+}
+
+function printBlogPreview() {
+  const content = document.querySelector("#blogEditor")?.innerHTML || currentJob().blog || "";
+  const win = window.open("", "_blank");
+  if (!win) {
+    notify("팝업이 차단되었습니다. 브라우저 팝업 허용 후 다시 시도하세요.");
+    return;
+  }
+  win.document.write(`
+    <!doctype html>
+    <html lang="ko">
+      <head>
+        <meta charset="UTF-8" />
+        <title>블로그 원고</title>
+        <style>
+          body { color: #111827; font-family: "Malgun Gothic", Arial, sans-serif; line-height: 1.75; margin: 34px; }
+          h1, h2 { line-height: 1.35; }
+          img { max-width: 100%; }
+          .doc { max-width: 760px; margin: 0 auto; }
+          @media print { body { print-color-adjust: exact; -webkit-print-color-adjust: exact; } }
+        </style>
+      </head>
+      <body><main class="doc">${formatBlogContent(content || "블로그 글이 없습니다.")}</main></body>
+    </html>
+  `);
+  win.document.close();
+  win.addEventListener("load", () => setTimeout(() => win.print(), 250));
+}
+
+function formatBlogEditorContent(value) {
+  const text = String(value || "");
+  if (/<[a-z][\s\S]*>/i.test(text)) return text;
+  return escapeHtml(text).replace(/\n/g, "<br>");
+}
+
+function formatBlogContent(value) {
+  const text = String(value || "");
+  if (/<[a-z][\s\S]*>/i.test(text)) return text;
+  return escapeHtml(text).replace(/\n/g, "<br>");
+}
+
+function buildBlogBackupHtml(job, content) {
+  return `<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <title>${escapeHtml([job.date, job.address || job.customerName, "블로그 원고"].filter(Boolean).join(" - "))}</title>
+    <style>
+      body { color: #111827; font-family: "Malgun Gothic", Arial, sans-serif; line-height: 1.75; margin: 34px; }
+      .doc { max-width: 760px; margin: 0 auto; }
+      .meta { border-bottom: 1px solid #d1d5db; color: #4b5563; font-size: 14px; margin-bottom: 24px; padding-bottom: 12px; }
+      h1, h2 { line-height: 1.35; }
+      img { max-width: 100%; }
+    </style>
+  </head>
+  <body>
+    <main class="doc">
+      <section class="meta">
+        <div>저장일자: ${escapeHtml(job.date || "")}</div>
+        <div>현장주소: ${escapeHtml(job.address || "")}</div>
+        <div>고객명: ${escapeHtml(job.customerName || "")}</div>
+      </section>
+      ${formatBlogContent(content)}
+    </main>
+  </body>
+</html>`;
+}
+
+function blogPlainTextForBackup(content) {
+  const text = String(content || "");
+  if (!/<[a-z][\s\S]*>/i.test(text)) return text;
+  const container = document.createElement("div");
+  container.innerHTML = text;
+  return container.innerText.trim();
+}
+
+function notify(message) {
+  const status = document.querySelector("#recordingStatus") || document.querySelector("#peakStatus");
+  if (status) status.textContent = message;
+  let toast = document.querySelector(".app-toast");
+  if (!toast) {
+    toast = document.createElement("div");
+    toast.className = "app-toast";
+    document.body.appendChild(toast);
+  }
+  toast.textContent = message;
+  toast.classList.add("show");
+  clearTimeout(notify.timer);
+  notify.timer = setTimeout(() => {
+    toast.classList.remove("show");
+  }, 1800);
+}
+
+function escapeHtml(value) {
+  return String(value ?? "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#039;");
+}
+
+function escapeAttr(value) {
+  return escapeHtml(value);
+}
+
+render();
